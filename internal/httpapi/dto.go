@@ -120,12 +120,12 @@ func scheduleText(t model.Takeover) string {
 		}
 		return fmt.Sprintf("%s %s", friendlyDate(*t.StartDate), playTime)
 	case model.ScheduleDaily:
-		return fmt.Sprintf("Daily %s", playTime)
+		return fmt.Sprintf("每天 %s", playTime)
 	case model.ScheduleDateRange:
 		if t.StartDate == nil || t.EndDate == nil {
 			return playTime
 		}
-		return fmt.Sprintf("%s to %s %s", friendlyDate(*t.StartDate), friendlyDate(*t.EndDate), playTime)
+		return fmt.Sprintf("%s 至 %s %s", friendlyDate(*t.StartDate), friendlyDate(*t.EndDate), playTime)
 	default:
 		return playTime
 	}
@@ -136,9 +136,9 @@ func friendlyDate(value time.Time) string {
 	day := truncateDate(value)
 	switch {
 	case sameDate(day, today):
-		return "Today"
+		return "今天"
 	case sameDate(day, today.AddDate(0, 0, 1)):
-		return "Tomorrow"
+		return "明天"
 	default:
 		return day.Format("01/02")
 	}
