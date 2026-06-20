@@ -19,6 +19,8 @@ const (
 	tokenTypeAdmin = "admin"
 )
 
+var errTokenUserMissing = errors.New("token user missing")
+
 type tokenClaims struct {
 	TokenType string `json:"typ"`
 	UserID    uint64 `json:"uid,omitempty"`
@@ -52,8 +54,13 @@ func (h *Handler) signAdminToken() (string, error) {
 
 func (h *Handler) UserAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user, okAuth := h.currentUserFromRequest(c)
-		if !okAuth {
+		user, authErr := h.currentUserFromRequest(c)
+		if errors.Is(authErr, errTokenUserMissing) {
+			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+			c.Abort()
+			return
+		}
+		if authErr != nil {
 			fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
 			c.Abort()
 			return
@@ -81,20 +88,23 @@ func (h *Handler) AdminAuth() gin.HandlerFunc {
 	}
 }
 
-func (h *Handler) currentUserFromRequest(c *gin.Context) (model.User, bool) {
+func (h *Handler) currentUserFromRequest(c *gin.Context) (model.User, error) {
 	tokenValue := bearerToken(c)
 	if tokenValue == "" {
-		return model.User{}, false
+		return model.User{}, errors.New("missing token")
 	}
 	claims, err := parseToken(tokenValue, h.cfg.JWTSecret)
 	if err != nil || claims.TokenType != tokenTypeUser || claims.UserID == 0 {
-		return model.User{}, false
+		return model.User{}, errors.New("invalid token")
 	}
 	var user model.User
 	if err := h.db.First(&user, claims.UserID).Error; err != nil {
-		return model.User{}, false
+		if isNotFound(err) {
+			return model.User{}, errTokenUserMissing
+		}
+		return model.User{}, err
 	}
-	return user, true
+	return user, nil
 }
 
 func currentUser(c *gin.Context) (model.User, bool) {

@@ -139,8 +139,12 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 
 	var takeover model.Takeover
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		freshUser, err := h.lockProfileUser(tx, user.ID)
+		if err != nil {
+			return err
+		}
 		takeover = model.Takeover{
-			CreatorUserID:    user.ID,
+			CreatorUserID:    freshUser.ID,
 			Title:            parsed.Title,
 			ParticipantLimit: parsed.ParticipantLimit,
 			ScheduleType:     parsed.ScheduleType,
@@ -156,11 +160,19 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 
 		member := model.TakeoverMember{
 			TakeoverID:  takeover.ID,
-			UserID:      user.ID,
+			UserID:      freshUser.ID,
 			MemberState: model.MemberStateJoined,
 		}
 		return tx.Create(&member).Error
 	}); err != nil {
+		if errors.Is(err, errProfileRequired) {
+			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+			return
+		}
+		if errors.Is(err, errUserBlocked) {
+			fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+			return
+		}
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
 		return
 	}
@@ -181,6 +193,11 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 
 	var joinedCount int64
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		freshUser, err := h.lockProfileUser(tx, user.ID)
+		if err != nil {
+			return err
+		}
+
 		var takeover model.Takeover
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND is_deleted = ? AND takeover_state = ?", takeoverID, false, model.TakeoverStateNormal).
@@ -189,7 +206,7 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		}
 
 		var member model.TakeoverMember
-		err := tx.Where("takeover_id = ? AND user_id = ?", takeoverID, user.ID).First(&member).Error
+		err = tx.Where("takeover_id = ? AND user_id = ?", takeoverID, freshUser.ID).First(&member).Error
 		if err == nil && member.MemberState == model.MemberStateJoined {
 			return errAlreadyJoined
 		}
@@ -197,11 +214,11 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			return err
 		}
 
-		if err := tx.Model(&model.TakeoverMember{}).
-			Where("takeover_id = ? AND member_state = ?", takeoverID, model.MemberStateJoined).
-			Count(&joinedCount).Error; err != nil {
+		count, err := countValidJoinedMembers(tx, takeoverID)
+		if err != nil {
 			return err
 		}
+		joinedCount = count
 		if uint(joinedCount) >= takeover.ParticipantLimit {
 			return errTakeoverFull
 		}
@@ -211,7 +228,7 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 				return err
 			}
 		} else {
-			member = model.TakeoverMember{TakeoverID: takeoverID, UserID: user.ID, MemberState: model.MemberStateJoined}
+			member = model.TakeoverMember{TakeoverID: takeoverID, UserID: freshUser.ID, MemberState: model.MemberStateJoined}
 			if err := tx.Create(&member).Error; err != nil {
 				return err
 			}
@@ -227,6 +244,10 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			fail(c, http.StatusConflict, CodeAlreadyJoined, "already joined")
 		case errors.Is(err, errTakeoverFull):
 			fail(c, http.StatusConflict, CodeTakeoverFull, "takeover full")
+		case errors.Is(err, errProfileRequired):
+			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+		case errors.Is(err, errUserBlocked):
+			fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
 		default:
 			fail(c, http.StatusInternalServerError, CodeSystemError, "join failed")
 		}
@@ -236,10 +257,83 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 	ok(c, "joined", gin.H{"hasJoined": true, "joinedCount": joinedCount})
 }
 
+func (h *Handler) LeaveTakeover(c *gin.Context) {
+	user, _ := currentUser(c)
+	if !ensureUserAllowed(c, user, true) {
+		return
+	}
+
+	takeoverID, okID := pathUint64(c, "takeoverId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+
+	var joinedCount int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var takeover model.Takeover
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND is_deleted = ? AND takeover_state = ?", takeoverID, false, model.TakeoverStateNormal).
+			First(&takeover).Error; err != nil {
+			return err
+		}
+
+		result := tx.Model(&model.TakeoverMember{}).
+			Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, user.ID, model.MemberStateJoined).
+			Update("member_state", model.MemberStateExited)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errNotJoined
+		}
+
+		count, err := countValidJoinedMembers(tx, takeoverID)
+		if err != nil {
+			return err
+		}
+		joinedCount = count
+		return nil
+	})
+	if err != nil {
+		switch {
+		case isNotFound(err):
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		case errors.Is(err, errNotJoined):
+			fail(c, http.StatusConflict, CodeParamInvalid, "not joined")
+		default:
+			fail(c, http.StatusInternalServerError, CodeSystemError, "leave failed")
+		}
+		return
+	}
+
+	ok(c, "left", gin.H{"hasJoined": false, "joinedCount": joinedCount})
+}
+
 var (
-	errAlreadyJoined = errors.New("already joined")
-	errTakeoverFull  = errors.New("takeover full")
+	errAlreadyJoined   = errors.New("already joined")
+	errTakeoverFull    = errors.New("takeover full")
+	errNotJoined       = errors.New("not joined")
+	errProfileRequired = errors.New("profile required")
+	errUserBlocked     = errors.New("user blocked")
 )
+
+func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error) {
+	var user model.User
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+		if isNotFound(err) {
+			return model.User{}, errProfileRequired
+		}
+		return model.User{}, err
+	}
+	if user.IsBlocked {
+		return model.User{}, errUserBlocked
+	}
+	if !user.IsProfileCompleted {
+		return model.User{}, errProfileRequired
+	}
+	return user, nil
+}
 
 func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) bool {
 	if user.IsBlocked {
@@ -254,10 +348,8 @@ func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) boo
 }
 
 func (h *Handler) takeoverStats(takeoverID uint64, userID uint64) (int64, bool, error) {
-	var joinedCount int64
-	if err := h.db.Model(&model.TakeoverMember{}).
-		Where("takeover_id = ? AND member_state = ?", takeoverID, model.MemberStateJoined).
-		Count(&joinedCount).Error; err != nil {
+	joinedCount, err := countValidJoinedMembers(h.db, takeoverID)
+	if err != nil {
 		return 0, false, err
 	}
 	if userID == 0 {
@@ -270,6 +362,15 @@ func (h *Handler) takeoverStats(takeoverID uint64, userID uint64) (int64, bool, 
 		return 0, false, err
 	}
 	return joinedCount, hasJoinedCount > 0, nil
+}
+
+func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
+	var joinedCount int64
+	err := db.Table("ttw_takeover_member AS m").
+		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
+		Where("m.takeover_id = ? AND m.member_state = ?", takeoverID, model.MemberStateJoined).
+		Count(&joinedCount).Error
+	return joinedCount, err
 }
 
 func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit int) ([]memberDTO, error) {

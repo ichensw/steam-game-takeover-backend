@@ -58,10 +58,8 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		return
 	}
 
-	var joinedCount int64
-	if err := h.db.Model(&model.TakeoverMember{}).
-		Where("takeover_id = ? AND member_state = ?", takeoverID, model.MemberStateJoined).
-		Count(&joinedCount).Error; err != nil {
+	joinedCount, err := countValidJoinedMembers(h.db, takeoverID)
+	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 		return
 	}
@@ -164,6 +162,11 @@ func (h *Handler) AdminBlockUser(c *gin.Context) {
 		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("is_blocked", true).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&model.TakeoverMember{}).
+			Where("user_id = ? AND member_state = ?", user.ID, model.MemberStateJoined).
+			Update("member_state", model.MemberStateExited).Error; err != nil {
+			return err
+		}
 		return tx.Create(&model.AdminOperateLog{
 			OperateType:    "USER_BLOCK",
 			TargetType:     "user",
@@ -238,11 +241,15 @@ func (h *Handler) AdminBlockedUsers(c *gin.Context) {
 	}
 
 	var rows []blockedUserRow
-	if err := h.db.Table("ttw_block_user AS b").
+	query := h.db.Table("ttw_block_user AS b").
 		Select("b.user_id, b.openid, b.nickname_snapshot AS nickname, b.steam_id_snapshot AS steam_id, b.block_reason AS reason, b.gmt_create AS blocked_at").
-		Where("b.is_deleted = ?", false).
-		Order("b.gmt_create DESC").
-		Scan(&rows).Error; err != nil {
+		Where("b.is_deleted = ?", false)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("b.nickname_snapshot LIKE ? OR b.steam_id_snapshot LIKE ?", like, like)
+	}
+	if err := query.Order("b.gmt_create DESC").Scan(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}

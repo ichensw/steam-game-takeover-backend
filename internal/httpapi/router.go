@@ -1,6 +1,9 @@
 package httpapi
 
 import (
+	"net/http"
+	"strings"
+
 	"steam-game-takeover-backend/internal/config"
 
 	"github.com/gin-gonic/gin"
@@ -10,17 +13,20 @@ import (
 func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
+	r.Use(corsMiddleware())
 
 	h := NewHandler(cfg, db)
 
 	api := r.Group("/api")
 	api.GET("/health", h.Health)
 	api.POST("/auth/wx-login", h.WXLogin)
+	api.POST("/auth/web-login", h.WebLogin)
 
 	api.GET("/takeovers", h.UserAuth(), h.ListTakeovers)
 	api.GET("/takeovers/:takeoverId", h.UserAuth(), h.GetTakeover)
 	api.POST("/takeovers", h.UserAuth(), h.CreateTakeover)
 	api.POST("/takeovers/:takeoverId/join", h.UserAuth(), h.JoinTakeover)
+	api.POST("/takeovers/:takeoverId/leave", h.UserAuth(), h.LeaveTakeover)
 
 	api.GET("/me/profile", h.UserAuth(), h.GetProfile)
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)
@@ -36,4 +42,30 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	admin.GET("/blocked-users", h.AdminBlockedUsers)
 
 	return r
+}
+
+func corsMiddleware() gin.HandlerFunc {
+	allowedOrigins := map[string]struct{}{
+		"http://127.0.0.1:5177":           {},
+		"http://localhost:5177":           {},
+		"https://tabbits-nest.vercel.app": {},
+	}
+
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		if _, ok := allowedOrigins[origin]; ok || strings.HasSuffix(origin, ".vercel.app") {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Vary", "Origin")
+			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		}
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
+	}
 }
