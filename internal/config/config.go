@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -22,7 +23,7 @@ type Config struct {
 }
 
 func Load() Config {
-	_ = godotenv.Load()
+	loadEnv()
 
 	return Config{
 		Addr:             env("APP_ADDR", ":8081"),
@@ -35,6 +36,22 @@ func Load() Config {
 		WXAppID:          env("WX_APP_ID", ""),
 		WXAppSecret:      env("WX_APP_SECRET", ""),
 		WXLoginMock:      envBool("WX_LOGIN_MOCK", false),
+	}
+}
+
+func loadEnv() {
+	paths := []string{".env"}
+	if exePath, err := os.Executable(); err == nil {
+		paths = append(paths, filepath.Join(filepath.Dir(exePath), ".env"))
+	}
+
+	seen := map[string]struct{}{}
+	for _, path := range paths {
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		_ = godotenv.Load(path)
 	}
 }
 

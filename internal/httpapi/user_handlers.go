@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ func (h *Handler) WXLogin(c *gin.Context) {
 
 	session, err := h.codeToSession(req.Code)
 	if err != nil {
+		log.Printf("wx-login codeToSession failed: %v", err)
 		fail(c, http.StatusBadGateway, CodeSystemError, "wechat login failed")
 		return
 	}
