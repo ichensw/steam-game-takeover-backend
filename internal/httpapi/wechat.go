@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -28,7 +29,6 @@ func (h *Handler) codeToSession(code string) (wxSession, error) {
 		return wxSession{}, errors.New("wechat app config missing")
 	}
 
-	var session wxSession
 	resp, err := resty.New().R().
 		SetQueryParams(map[string]string{
 			"appid":      h.cfg.WXAppID,
@@ -36,7 +36,6 @@ func (h *Handler) codeToSession(code string) (wxSession, error) {
 			"js_code":    code,
 			"grant_type": "authorization_code",
 		}).
-		SetResult(&session).
 		Get("https://api.weixin.qq.com/sns/jscode2session")
 	if err != nil {
 		return wxSession{}, err
@@ -44,11 +43,24 @@ func (h *Handler) codeToSession(code string) (wxSession, error) {
 	if resp.IsError() {
 		return wxSession{}, fmt.Errorf("wechat http status %d", resp.StatusCode())
 	}
+
+	var session wxSession
+	body := resp.Body()
+	if err := json.Unmarshal(body, &session); err != nil {
+		return wxSession{}, fmt.Errorf("decode wechat response: %w", err)
+	}
 	if session.ErrCode != 0 {
 		return wxSession{}, fmt.Errorf("wechat error %d: %s", session.ErrCode, session.ErrMsg)
 	}
 	if session.OpenID == "" {
-		return wxSession{}, errors.New("wechat openid empty")
+		return wxSession{}, fmt.Errorf("wechat openid empty: %s", truncateString(string(body), 300))
 	}
 	return session, nil
+}
+
+func truncateString(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit]
 }
