@@ -28,8 +28,8 @@ type User struct {
 	IsProfileCompleted bool       `gorm:"column:is_profile_completed"`
 	IsBlocked          bool       `gorm:"column:is_blocked"`
 	LastLoginTime      *time.Time `gorm:"column:last_login_time"`
-	GmtCreate          time.Time  `gorm:"column:gmt_create"`
-	GmtModified        time.Time  `gorm:"column:gmt_modified"`
+	GmtCreate          time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified        time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
 }
 
 func (User) TableName() string { return "ttw_user" }
@@ -46,8 +46,8 @@ type Takeover struct {
 	Description      *string    `gorm:"column:description;size:500"`
 	TakeoverState    uint8      `gorm:"column:takeover_state"`
 	IsDeleted        bool       `gorm:"column:is_deleted"`
-	GmtCreate        time.Time  `gorm:"column:gmt_create;index:idx_gmt_create"`
-	GmtModified      time.Time  `gorm:"column:gmt_modified"`
+	GmtCreate        time.Time  `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
+	GmtModified      time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
 }
 
 func (Takeover) TableName() string { return "ttw_takeover" }
@@ -57,8 +57,8 @@ type TakeoverMember struct {
 	TakeoverID  uint64    `gorm:"column:takeover_id;uniqueIndex:uk_takeover_user"`
 	UserID      uint64    `gorm:"column:user_id;uniqueIndex:uk_takeover_user;index:idx_user_id"`
 	MemberState uint8     `gorm:"column:member_state"`
-	GmtCreate   time.Time `gorm:"column:gmt_create"`
-	GmtModified time.Time `gorm:"column:gmt_modified"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
 }
 
 func (TakeoverMember) TableName() string { return "ttw_takeover_member" }
@@ -71,8 +71,8 @@ type BlockUser struct {
 	SteamIDSnap  *string   `gorm:"column:steam_id_snapshot;size:64"`
 	BlockReason  *string   `gorm:"column:block_reason;size:255"`
 	IsDeleted    bool      `gorm:"column:is_deleted"`
-	GmtCreate    time.Time `gorm:"column:gmt_create"`
-	GmtModified  time.Time `gorm:"column:gmt_modified"`
+	GmtCreate    time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified  time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
 }
 
 func (BlockUser) TableName() string { return "ttw_block_user" }
@@ -83,7 +83,7 @@ type AdminOperateLog struct {
 	TargetType     string    `gorm:"column:target_type;size:32;index:idx_target"`
 	TargetID       uint64    `gorm:"column:target_id;index:idx_target"`
 	OperateContent *string   `gorm:"column:operate_content;size:1000"`
-	GmtCreate      time.Time `gorm:"column:gmt_create;index:idx_gmt_create"`
+	GmtCreate      time.Time `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
 }
 
 func (AdminOperateLog) TableName() string { return "ttw_admin_operate_log" }
