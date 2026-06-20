@@ -48,7 +48,8 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 	if !timePattern.MatchString(playTime) {
 		return parsedTakeoverInput{}, errors.New("playTime must be HH:mm")
 	}
-	if _, err := time.Parse("15:04", playTime); err != nil {
+	parsedPlayTime, err := time.Parse("15:04", playTime)
+	if err != nil {
 		return parsedTakeoverInput{}, errors.New("invalid playTime")
 	}
 	if len([]rune(description)) > 500 {
@@ -75,6 +76,9 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 		}
 		if checkPast && truncateDate(*startDate).Before(today) {
 			return parsedTakeoverInput{}, errors.New("startDate cannot be before today")
+		}
+		if checkPast && sameDate(*startDate, today) && !isPlayTimeAfterNow(parsedPlayTime) {
+			return parsedTakeoverInput{}, errors.New("playTime must be after current time")
 		}
 	case model.ScheduleDaily:
 		startDate = nil
@@ -122,4 +126,10 @@ func sameDate(a, b time.Time) bool {
 	ay, am, ad := a.Date()
 	by, bm, bd := b.Date()
 	return ay == by && am == bm && ad == bd
+}
+
+func isPlayTimeAfterNow(playTime time.Time) bool {
+	now := time.Now()
+	candidate := time.Date(now.Year(), now.Month(), now.Day(), playTime.Hour(), playTime.Minute(), 0, 0, now.Location())
+	return candidate.After(now)
 }
