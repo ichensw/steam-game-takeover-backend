@@ -326,18 +326,18 @@ func applyTimeFilter(query *gorm.DB, c *gin.Context) (*gorm.DB, error) {
 	case "custom_range":
 		start, err := parseOptionalDate(stringPtr(c.Query("startDate")))
 		if err != nil || start == nil {
-			return nil, errors.New("startDate must be YYYY-MM-DD")
+			return nil, errors.New("开始日期格式不正确")
 		}
 		end, err := parseOptionalDate(stringPtr(c.Query("endDate")))
 		if err != nil || end == nil {
-			return nil, errors.New("endDate must be YYYY-MM-DD")
+			return nil, errors.New("结束日期格式不正确")
 		}
 		if end.Before(*start) {
-			return nil, errors.New("endDate cannot be before startDate")
+			return nil, errors.New("结束日期不能早于开始日期")
 		}
 		return applyRangeHit(query, *start, *end), nil
 	default:
-		return nil, errors.New("invalid timeFilter")
+		return nil, errors.New("筛选条件不正确")
 	}
 }
 

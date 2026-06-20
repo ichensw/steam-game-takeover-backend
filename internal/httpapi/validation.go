@@ -37,23 +37,23 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 	playTime := strings.TrimSpace(input.PlayTime)
 
 	if title == "" || len([]rune(title)) > 50 {
-		return parsedTakeoverInput{}, errors.New("title is required and must be at most 50 characters")
+		return parsedTakeoverInput{}, errors.New("请输入 50 个字以内的标题")
 	}
 	if input.ParticipantLimit < 2 || input.ParticipantLimit > 99 {
-		return parsedTakeoverInput{}, errors.New("participantLimit must be between 2 and 99")
+		return parsedTakeoverInput{}, errors.New("人数上限必须在 2-99 之间")
 	}
 	if input.ScheduleType < model.ScheduleSpecifiedDate || input.ScheduleType > model.ScheduleDateRange {
-		return parsedTakeoverInput{}, errors.New("invalid scheduleType")
+		return parsedTakeoverInput{}, errors.New("请选择正确的时间类型")
 	}
 	if !timePattern.MatchString(playTime) {
-		return parsedTakeoverInput{}, errors.New("playTime must be HH:mm")
+		return parsedTakeoverInput{}, errors.New("请选择固定时间")
 	}
 	parsedPlayTime, err := time.Parse("15:04", playTime)
 	if err != nil {
-		return parsedTakeoverInput{}, errors.New("invalid playTime")
+		return parsedTakeoverInput{}, errors.New("固定时间格式不正确")
 	}
 	if len([]rune(description)) > 500 {
-		return parsedTakeoverInput{}, errors.New("description must be at most 500 characters")
+		return parsedTakeoverInput{}, errors.New("介绍不能超过 500 个字")
 	}
 
 	startDate, err := parseOptionalDate(input.StartDate)
@@ -69,29 +69,29 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 	switch input.ScheduleType {
 	case model.ScheduleSpecifiedDate:
 		if startDate == nil {
-			return parsedTakeoverInput{}, errors.New("startDate is required for specified date")
+			return parsedTakeoverInput{}, errors.New("请选择指定日期")
 		}
 		if endDate != nil && !sameDate(*startDate, *endDate) {
-			return parsedTakeoverInput{}, errors.New("endDate must be empty or equal to startDate for specified date")
+			return parsedTakeoverInput{}, errors.New("指定日期不需要填写结束日期")
 		}
 		if checkPast && truncateDate(*startDate).Before(today) {
-			return parsedTakeoverInput{}, errors.New("startDate cannot be before today")
+			return parsedTakeoverInput{}, errors.New("不能选择今天之前的日期")
 		}
 		if checkPast && sameDate(*startDate, today) && !isPlayTimeAfterNow(parsedPlayTime) {
-			return parsedTakeoverInput{}, errors.New("playTime must be after current time")
+			return parsedTakeoverInput{}, errors.New("固定时间必须晚于当前时间")
 		}
 	case model.ScheduleDaily:
 		startDate = nil
 		endDate = nil
 	case model.ScheduleDateRange:
 		if startDate == nil || endDate == nil {
-			return parsedTakeoverInput{}, errors.New("startDate and endDate are required for date range")
+			return parsedTakeoverInput{}, errors.New("请选择日期范围")
 		}
 		if endDate.Before(*startDate) {
-			return parsedTakeoverInput{}, errors.New("endDate cannot be before startDate")
+			return parsedTakeoverInput{}, errors.New("结束日期不能早于开始日期")
 		}
 		if checkPast && truncateDate(*endDate).Before(today) {
-			return parsedTakeoverInput{}, errors.New("date range cannot end before today")
+			return parsedTakeoverInput{}, errors.New("日期范围不能早于今天")
 		}
 	}
 
@@ -112,7 +112,7 @@ func parseOptionalDate(value *string) (*time.Time, error) {
 	}
 	parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(*value), time.Local)
 	if err != nil {
-		return nil, errors.New("date must be YYYY-MM-DD")
+		return nil, errors.New("日期格式不正确")
 	}
 	return &parsed, nil
 }
