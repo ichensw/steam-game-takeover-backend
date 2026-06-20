@@ -64,15 +64,15 @@ type TakeoverMember struct {
 func (TakeoverMember) TableName() string { return "ttw_takeover_member" }
 
 type BlockUser struct {
-	ID              uint64    `gorm:"primaryKey;column:id"`
-	UserID          uint64    `gorm:"column:user_id;uniqueIndex:uk_user_id"`
-	OpenID          string    `gorm:"column:openid;size:64;index:idx_openid"`
-	NicknameSnap    *string   `gorm:"column:nickname_snapshot;size:32"`
-	SteamIDSnap     *string   `gorm:"column:steam_id_snapshot;size:64"`
-	BlockReason     *string   `gorm:"column:block_reason;size:255"`
-	IsDeleted       bool      `gorm:"column:is_deleted"`
-	GmtCreate       time.Time `gorm:"column:gmt_create"`
-	GmtModified     time.Time `gorm:"column:gmt_modified"`
+	ID           uint64    `gorm:"primaryKey;column:id"`
+	UserID       uint64    `gorm:"column:user_id;uniqueIndex:uk_user_id"`
+	OpenID       string    `gorm:"column:openid;size:64;index:idx_openid"`
+	NicknameSnap *string   `gorm:"column:nickname_snapshot;size:32"`
+	SteamIDSnap  *string   `gorm:"column:steam_id_snapshot;size:64"`
+	BlockReason  *string   `gorm:"column:block_reason;size:255"`
+	IsDeleted    bool      `gorm:"column:is_deleted"`
+	GmtCreate    time.Time `gorm:"column:gmt_create"`
+	GmtModified  time.Time `gorm:"column:gmt_modified"`
 }
 
 func (BlockUser) TableName() string { return "ttw_block_user" }

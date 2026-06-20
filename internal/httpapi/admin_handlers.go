@@ -37,7 +37,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 	_ = h.writeAdminLog("ADMIN_LOGIN", "admin", 0, nil)
 	ok(c, "logged in", gin.H{
 		"adminToken": token,
-		"expiresIn": int(h.cfg.AdminTokenTTL.Seconds()),
+		"expiresIn":  int(h.cfg.AdminTokenTTL.Seconds()),
 	})
 }
 
