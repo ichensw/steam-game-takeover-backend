@@ -24,6 +24,7 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 
 	api.GET("/me/profile", h.UserAuth(), h.GetProfile)
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)
+	api.POST("/uploads/image", h.UserAuth(), h.UploadImage)
 
 	api.POST("/admin/login", h.AdminLogin)
 	admin := api.Group("/admin", h.AdminAuth())
