@@ -5,12 +5,15 @@
 ## 已实现接口
 
 - `POST /api/auth/wx-login`
+- `POST /api/auth/web-login`
 - `GET /api/me/profile`
 - `PUT /api/me/profile`
+- `POST /api/uploads/image`
 - `GET /api/takeovers`
 - `GET /api/takeovers/:takeoverId`
 - `POST /api/takeovers`
 - `POST /api/takeovers/:takeoverId/join`
+- `POST /api/takeovers/:takeoverId/leave`
 - `POST /api/admin/login`
 - `GET /api/admin/takeovers/:takeoverId`
 - `PUT /api/admin/takeovers/:takeoverId`
@@ -19,6 +22,8 @@
 - `POST /api/admin/users/:userId/unblock`
 - `GET /api/admin/blocked-users`
 - `GET /api/health`
+
+详细字段、参数、响应示例和错误码见 [`docs/api.md`](docs/api.md)。
 
 ## 启动
 
