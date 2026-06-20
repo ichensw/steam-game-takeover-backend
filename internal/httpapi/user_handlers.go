@@ -111,5 +111,9 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 		return
 	}
-	ok(c, "saved", gin.H{"profileCompleted": true})
+	if err := h.db.First(&user, user.ID).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	ok(c, "saved", toUserDTO(user))
 }
