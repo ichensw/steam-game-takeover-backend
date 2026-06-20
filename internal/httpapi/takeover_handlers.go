@@ -137,22 +137,34 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		return
 	}
 
-	takeover := model.Takeover{
-		CreatorUserID:    user.ID,
-		Title:            parsed.Title,
-		ParticipantLimit: parsed.ParticipantLimit,
-		ScheduleType:     parsed.ScheduleType,
-		StartDate:        parsed.StartDate,
-		EndDate:          parsed.EndDate,
-		PlayTime:         parsed.PlayTime,
-		Description:      parsed.Description,
-		TakeoverState:    model.TakeoverStateNormal,
-	}
-	if err := h.db.Create(&takeover).Error; err != nil {
+	var takeover model.Takeover
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		takeover = model.Takeover{
+			CreatorUserID:    user.ID,
+			Title:            parsed.Title,
+			ParticipantLimit: parsed.ParticipantLimit,
+			ScheduleType:     parsed.ScheduleType,
+			StartDate:        parsed.StartDate,
+			EndDate:          parsed.EndDate,
+			PlayTime:         parsed.PlayTime,
+			Description:      parsed.Description,
+			TakeoverState:    model.TakeoverStateNormal,
+		}
+		if err := tx.Create(&takeover).Error; err != nil {
+			return err
+		}
+
+		member := model.TakeoverMember{
+			TakeoverID:  takeover.ID,
+			UserID:      user.ID,
+			MemberState: model.MemberStateJoined,
+		}
+		return tx.Create(&member).Error
+	}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
 		return
 	}
-	ok(c, "created", gin.H{"id": takeover.ID})
+	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": true, "joinedCount": 1})
 }
 
 func (h *Handler) JoinTakeover(c *gin.Context) {
