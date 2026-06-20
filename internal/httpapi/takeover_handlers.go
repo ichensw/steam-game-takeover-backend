@@ -356,8 +356,9 @@ func (h *Handler) takeoverStats(takeoverID uint64, userID uint64) (int64, bool, 
 		return joinedCount, false, nil
 	}
 	var hasJoinedCount int64
-	if err := h.db.Model(&model.TakeoverMember{}).
-		Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, userID, model.MemberStateJoined).
+	if err := h.db.Table("ttw_takeover_member AS m").
+		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
+		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_blocked = ?", takeoverID, userID, model.MemberStateJoined, false).
 		Count(&hasJoinedCount).Error; err != nil {
 		return 0, false, err
 	}
@@ -368,7 +369,7 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 	var joinedCount int64
 	err := db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.member_state = ?", takeoverID, model.MemberStateJoined).
+		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ?", takeoverID, model.MemberStateJoined, false).
 		Count(&joinedCount).Error
 	return joinedCount, err
 }
@@ -378,7 +379,7 @@ func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit i
 	query := h.db.Table("ttw_takeover_member AS m").
 		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, m.gmt_create AS joined_at").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.member_state = ?", takeoverID, model.MemberStateJoined).
+		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ?", takeoverID, model.MemberStateJoined, false).
 		Order("m.gmt_create ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
