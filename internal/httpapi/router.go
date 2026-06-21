@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"steam-game-takeover-backend/internal/config"
@@ -21,6 +22,7 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	api.GET("/health", h.Health)
 	api.POST("/auth/wx-login", h.WXLogin)
 	api.POST("/auth/web-login", h.WebLogin)
+	api.POST("/auth/bot-login", h.BotLogin)
 
 	api.GET("/takeovers", h.UserAuth(), h.ListTakeovers)
 	api.GET("/takeovers/:takeoverId", h.UserAuth(), h.GetTakeover)
@@ -53,7 +55,7 @@ func corsMiddleware() gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
-		if _, ok := allowedOrigins[origin]; ok || strings.HasSuffix(origin, ".vercel.app") {
+		if _, ok := allowedOrigins[origin]; ok || isAllowedLocalDevOrigin(origin) || strings.HasSuffix(origin, ".vercel.app") {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
 			c.Header("Access-Control-Allow-Credentials", "true")
@@ -68,4 +70,18 @@ func corsMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func isAllowedLocalDevOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	if parsed.Scheme != "http" {
+		return false
+	}
+
+	host := parsed.Hostname()
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }

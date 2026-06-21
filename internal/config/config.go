@@ -20,6 +20,11 @@ type Config struct {
 	WXAppID            string
 	WXAppSecret        string
 	WXLoginMock        bool
+	BotQueryEnabled    bool
+	BotQuerySteamID    string
+	BotQueryNickname   string
+	BotQueryGender     uint8
+	BotQueryAvatarURL  string
 	OSSEndpoint        string
 	OSSBucket          string
 	OSSAccessKeyID     string
@@ -41,6 +46,11 @@ func Load() Config {
 		WXAppID:            env("WX_APP_ID", ""),
 		WXAppSecret:        env("WX_APP_SECRET", ""),
 		WXLoginMock:        envBool("WX_LOGIN_MOCK", false),
+		BotQueryEnabled:    envBool("BOT_QUERY_ENABLED", true),
+		BotQuerySteamID:    env("BOT_QUERY_STEAM_ID", "wechat-bot-query"),
+		BotQueryNickname:   env("BOT_QUERY_NICKNAME", "WeChat Bot"),
+		BotQueryGender:     uint8Value("BOT_QUERY_GENDER", 1),
+		BotQueryAvatarURL:  env("BOT_QUERY_AVATAR_URL", ""),
 		OSSEndpoint:        env("OSS_ENDPOINT", ""),
 		OSSBucket:          env("OSS_BUCKET", ""),
 		OSSAccessKeyID:     env("OSS_ACCESS_KEY_ID", ""),
@@ -94,4 +104,16 @@ func durationHours(key string, fallback int) time.Duration {
 		return time.Duration(fallback) * time.Hour
 	}
 	return time.Duration(parsed) * time.Hour
+}
+
+func uint8Value(key string, fallback uint8) uint8 {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 || parsed > 255 {
+		return fallback
+	}
+	return uint8(parsed)
 }

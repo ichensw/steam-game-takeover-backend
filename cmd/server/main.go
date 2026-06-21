@@ -15,6 +15,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
+	if _, err := httpapi.EnsureBotQueryUser(db, cfg); err != nil {
+		log.Fatalf("ensure bot query account: %v", err)
+	}
 
 	router := httpapi.NewRouter(cfg, db)
 	log.Printf("server listening on %s", cfg.Addr)

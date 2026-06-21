@@ -59,7 +59,7 @@ func toUserDTO(user model.User) userDTO {
 		Nickname:         stringValue(user.Nickname),
 		SteamID:          stringValue(user.SteamID),
 		Gender:           user.Gender,
-		AvatarURL:        stringValue(user.AvatarURL),
+		AvatarURL:        normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
 		ProfileCompleted: user.IsProfileCompleted,
 		Blocked:          user.IsBlocked,
 	}
@@ -87,7 +87,7 @@ func toMemberDTO(row memberRow, includeOpenID bool) memberDTO {
 		Nickname:  stringValue(row.Nickname),
 		SteamID:   stringValue(row.SteamID),
 		Gender:    row.Gender,
-		AvatarURL: stringValue(row.AvatarURL),
+		AvatarURL: normalizeAvatarURL(stringValue(row.AvatarURL), row.Gender),
 		JoinedAt:  row.JoinedAt.Format("2006-01-02 15:04:05"),
 	}
 	if includeOpenID {
@@ -156,4 +156,30 @@ func stringPtr(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+const (
+	defaultMaleAvatarURL   = "https://wechat-bot-images.oss-cn-hangzhou.aliyuncs.com/miniapp/default-avatar/avatar-male.jpg"
+	defaultFemaleAvatarURL = "https://wechat-bot-images.oss-cn-hangzhou.aliyuncs.com/miniapp/default-avatar/avatar-female.jpg"
+)
+
+func normalizeAvatarURL(value string, gender *uint8) string {
+	switch value {
+	case "./assets/avatar-male.jpg", "/assets/avatar-male.jpg", "assets/avatar-male.jpg":
+		return defaultMaleAvatarURL
+	case "./assets/avatar-female.jpg", "/assets/avatar-female.jpg", "assets/avatar-female.jpg":
+		return defaultFemaleAvatarURL
+	}
+
+	if value != "" {
+		return value
+	}
+	if gender != nil && *gender == model.GenderFemale {
+		return defaultFemaleAvatarURL
+	}
+	return defaultMaleAvatarURL
+}
+
+func normalizeAvatarURLForGender(value string, gender uint8) string {
+	return normalizeAvatarURL(value, &gender)
 }

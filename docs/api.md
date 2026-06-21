@@ -327,6 +327,48 @@ Content-Type: application/json
 
 ## 接龙接口
 
+### 微信机器人查询账号
+
+后台启动时会默认创建一个仅用于查询的机器人账户。该账户不会标记为资料完善，因此可以查询接龙列表、今日接龙和接龙详情，但不能创建或加入接龙。
+
+#### 微信机器人登录
+
+```http
+POST /api/auth/bot-login
+Content-Type: application/json
+```
+
+说明：
+- 默认账户由环境变量 `BOT_QUERY_*` 控制，服务启动时自动创建或更新。
+- 返回的是普通用户 token，可用于 `GET /api/takeovers` 和 `GET /api/takeovers/{takeoverId}`。
+- 机器人项目可直接调用该接口获取 token，无需手工配置 SteamID。
+
+响应：
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "token": "user-token",
+    "user": {
+      "id": 1,
+      "nickname": "WeChat Bot",
+      "steamId": "wechat-bot-query",
+      "gender": 1,
+      "avatarUrl": "",
+      "profileCompleted": false,
+      "blocked": false
+    }
+  }
+}
+```
+
+微信机器人使用的查询接口：
+- 今日接龙：`GET /api/takeovers?timeFilter=today&page=1&pageSize=10`
+- 接龙列表：`GET /api/takeovers?timeFilter=all&page=1&pageSize=10`
+- 接龙详情：`GET /api/takeovers/{takeoverId}`
+
 ### 查询接龙列表
 
 ```http

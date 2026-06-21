@@ -124,6 +124,7 @@ func (h *Handler) WebLogin(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "gender must be 1 or 2")
 		return
 	}
+	avatarURL = normalizeAvatarURLForGender(avatarURL, req.Gender)
 	if len([]rune(avatarURL)) > 255 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "avatarUrl must be at most 255 characters")
 		return
@@ -200,6 +201,7 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "gender must be 1 or 2")
 		return
 	}
+	avatarURL = normalizeAvatarURLForGender(avatarURL, req.Gender)
 	if len([]rune(avatarURL)) > 255 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "avatarUrl must be at most 255 characters")
 		return

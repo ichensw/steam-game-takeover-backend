@@ -14,6 +14,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const duplicateCreateWindow = 10 * time.Second
+
 func (h *Handler) ListTakeovers(c *gin.Context) {
 	user, _ := currentUser(c)
 	if !ensureUserAllowed(c, user, false) {
@@ -138,10 +140,20 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 	}
 
 	var takeover model.Takeover
+	deduplicated := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		freshUser, err := h.lockProfileUser(tx, user.ID)
 		if err != nil {
 			return err
+		}
+		existing, err := h.findRecentDuplicateTakeover(tx, freshUser.ID, parsed)
+		if err != nil {
+			return err
+		}
+		if existing.ID != 0 {
+			takeover = existing
+			deduplicated = true
+			return nil
 		}
 		takeover = model.Takeover{
 			CreatorUserID:    freshUser.ID,
@@ -176,7 +188,47 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
 		return
 	}
-	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": true, "joinedCount": 1})
+	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": true, "joinedCount": 1, "deduplicated": deduplicated})
+}
+
+func (h *Handler) findRecentDuplicateTakeover(tx *gorm.DB, creatorUserID uint64, parsed parsedTakeoverInput) (model.Takeover, error) {
+	var takeover model.Takeover
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
+		"creator_user_id = ? AND title = ? AND participant_limit = ? AND schedule_type = ? AND play_time = ? AND is_deleted = ? AND takeover_state = ? AND gmt_create >= ?",
+		creatorUserID,
+		parsed.Title,
+		parsed.ParticipantLimit,
+		parsed.ScheduleType,
+		parsed.PlayTime,
+		false,
+		model.TakeoverStateNormal,
+		time.Now().Add(-duplicateCreateWindow),
+	)
+	query = whereNullableTime(query, "start_date", parsed.StartDate)
+	query = whereNullableTime(query, "end_date", parsed.EndDate)
+	query = whereNullableString(query, "description", parsed.Description)
+
+	if err := query.Order("id DESC").First(&takeover).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Takeover{}, nil
+		}
+		return model.Takeover{}, err
+	}
+	return takeover, nil
+}
+
+func whereNullableTime(query *gorm.DB, column string, value *time.Time) *gorm.DB {
+	if value == nil {
+		return query.Where(column + " IS NULL")
+	}
+	return query.Where(column+" = ?", value)
+}
+
+func whereNullableString(query *gorm.DB, column string, value *string) *gorm.DB {
+	if value == nil {
+		return query.Where(column + " IS NULL")
+	}
+	return query.Where(column+" = ?", *value)
 }
 
 func (h *Handler) JoinTakeover(c *gin.Context) {
