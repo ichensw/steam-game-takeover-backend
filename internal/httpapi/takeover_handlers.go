@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,22 +39,13 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 		return
 	}
 
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
-	}
-
 	var takeovers []model.Takeover
-	if err := query.Order("gmt_create DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&takeovers).Error; err != nil {
+	if err := query.Find(&takeovers).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
 
-	list := make([]takeoverDTO, 0, len(takeovers))
+	allList := make([]takeoverDTO, 0, len(takeovers))
 	for _, takeover := range takeovers {
 		joinedCount, hasJoined, err := h.takeoverStats(takeover.ID, user.ID)
 		if err != nil {
@@ -69,8 +61,21 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 			return
 		}
 		dto.PreviewMembers = members
-		list = append(list, dto)
+		if dto.StatusLabel != "已结束" {
+			allList = append(allList, dto)
+		}
 	}
+	sortTakeoverList(allList)
+	total := int64(len(allList))
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > len(allList) {
+		start = len(allList)
+	}
+	if end > len(allList) {
+		end = len(allList)
+	}
+	list := allList[start:end]
 
 	ok(c, "success", gin.H{
 		"page":     page,
@@ -78,6 +83,30 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 		"total":    total,
 		"list":     list,
 	})
+}
+
+func sortTakeoverList(list []takeoverDTO) {
+	sort.SliceStable(list, func(i, j int) bool {
+		leftRank := takeoverListStatusRank(list[i].StatusLabel)
+		rightRank := takeoverListStatusRank(list[j].StatusLabel)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return list[i].ID > list[j].ID
+	})
+}
+
+func takeoverListStatusRank(statusLabel string) int {
+	switch statusLabel {
+	case "招募中":
+		return 0
+	case "已满员":
+		return 1
+	case "已结束":
+		return 2
+	default:
+		return 3
+	}
 }
 
 func (h *Handler) GetTakeover(c *gin.Context) {
@@ -484,11 +513,11 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 }
 
 var (
-	errAlreadyJoined   = errors.New("already joined")
-	errTakeoverFull    = errors.New("takeover full")
-	errNotJoined       = errors.New("not joined")
-	errProfileRequired = errors.New("profile required")
-	errUserBlocked     = errors.New("user blocked")
+	errAlreadyJoined      = errors.New("already joined")
+	errTakeoverFull       = errors.New("takeover full")
+	errNotJoined          = errors.New("not joined")
+	errProfileRequired    = errors.New("profile required")
+	errUserBlocked        = errors.New("user blocked")
 	errCreatorCannotLeave = errors.New("creator cannot leave takeover")
 )
 

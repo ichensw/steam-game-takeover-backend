@@ -39,6 +39,7 @@ type takeoverDTO struct {
 	EndDate          *string     `json:"endDate"`
 	PlayTime         string      `json:"playTime"`
 	ScheduleText     string      `json:"scheduleText"`
+	StatusLabel      string      `json:"statusLabel"`
 	Description      string      `json:"description"`
 	HasJoined        bool        `json:"hasJoined"`
 	IsCreator        bool        `json:"isCreator"`
@@ -82,6 +83,7 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 		EndDate:          dateString(t.EndDate),
 		PlayTime:         shortTime(t.PlayTime),
 		ScheduleText:     scheduleText(t),
+		StatusLabel:      takeoverStatusLabel(t, joinedCount),
 		Description:      stringValue(t.Description),
 		HasJoined:        hasJoined,
 	}
@@ -135,6 +137,53 @@ func scheduleText(t model.Takeover) string {
 	default:
 		return playTime
 	}
+}
+
+func takeoverStatusLabel(t model.Takeover, joinedCount int64) string {
+	if isTakeoverExpired(t) {
+		return "已结束"
+	}
+	if t.ParticipantLimit > 0 && joinedCount >= int64(t.ParticipantLimit) {
+		return "已满员"
+	}
+	return "招募中"
+}
+
+func isTakeoverExpired(t model.Takeover) bool {
+	var endDate *time.Time
+	switch t.ScheduleType {
+	case model.ScheduleSpecifiedDate:
+		endDate = t.StartDate
+	case model.ScheduleDateRange:
+		endDate = t.EndDate
+	default:
+		return false
+	}
+	if endDate == nil {
+		return false
+	}
+	endAt, err := combineDateAndPlayTime(*endDate, t.PlayTime)
+	if err != nil {
+		return false
+	}
+	return time.Now().After(endAt)
+}
+
+func combineDateAndPlayTime(date time.Time, playTime string) (time.Time, error) {
+	parsedTime, err := time.Parse("15:04", shortTime(playTime))
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Date(
+		date.Year(),
+		date.Month(),
+		date.Day(),
+		parsedTime.Hour(),
+		parsedTime.Minute(),
+		0,
+		0,
+		time.Local,
+	), nil
 }
 
 func friendlyDate(value time.Time) string {
