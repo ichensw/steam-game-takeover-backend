@@ -61,6 +61,8 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 			return
 		}
 		dto := toTakeoverDTO(takeover, joinedCount, hasJoined)
+		dto.IsCreator = isTakeoverCreator(user, takeover)
+		dto.CanManage = canManageTakeover(user, takeover)
 		members, err := h.takeoverMembers(takeover.ID, false, 5)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
@@ -83,14 +85,14 @@ func (h *Handler) GetTakeover(c *gin.Context) {
 	if !ensureUserAllowed(c, user, false) {
 		return
 	}
-	h.getTakeoverDetail(c, false, user.ID)
+	h.getTakeoverDetail(c, false, user)
 }
 
 func (h *Handler) AdminGetTakeover(c *gin.Context) {
-	h.getTakeoverDetail(c, true, 0)
+	h.getTakeoverDetail(c, true, model.User{IsAdmin: true})
 }
 
-func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, currentUserID uint64) {
+func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user model.User) {
 	takeoverID, okID := pathUint64(c, "takeoverId")
 	if !okID {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
@@ -107,7 +109,7 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, currentU
 		return
 	}
 
-	joinedCount, hasJoined, err := h.takeoverStats(takeover.ID, currentUserID)
+	joinedCount, hasJoined, err := h.takeoverStats(takeover.ID, user.ID)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
@@ -118,8 +120,122 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, currentU
 		return
 	}
 	dto := toTakeoverDTO(takeover, joinedCount, hasJoined)
+	dto.IsCreator = isTakeoverCreator(user, takeover)
+	dto.CanManage = canManageTakeover(user, takeover)
 	dto.Members = members
 	ok(c, "success", dto)
+}
+
+func (h *Handler) UpdateTakeover(c *gin.Context) {
+	user, _ := currentUser(c)
+	if !ensureUserAllowed(c, user, false) {
+		return
+	}
+
+	takeoverID, okID := pathUint64(c, "takeoverId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+
+	var takeover model.Takeover
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if !canManageTakeover(user, takeover) {
+		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
+		return
+	}
+
+	var req takeoverInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	parsed, err := validateTakeoverInput(req, false)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+
+	joinedCount, err := countValidJoinedMembers(h.db, takeoverID)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	if uint(joinedCount) > parsed.ParticipantLimit {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "participantLimit cannot be lower than joinedCount")
+		return
+	}
+
+	result := h.db.Model(&model.Takeover{}).
+		Where("id = ? AND is_deleted = ?", takeoverID, false).
+		Updates(map[string]interface{}{
+			"title":             parsed.Title,
+			"participant_limit": parsed.ParticipantLimit,
+			"schedule_type":     parsed.ScheduleType,
+			"start_date":        parsed.StartDate,
+			"end_date":          parsed.EndDate,
+			"play_time":         parsed.PlayTime,
+			"description":       parsed.Description,
+		})
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	if result.RowsAffected == 0 {
+		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		return
+	}
+	content := "update takeover: " + parsed.Title
+	_ = h.writeAdminLog("TAKEOVER_UPDATE", "takeover", takeoverID, &content)
+	ok(c, "saved", nil)
+}
+
+func (h *Handler) DeleteTakeover(c *gin.Context) {
+	user, _ := currentUser(c)
+	if !ensureUserAllowed(c, user, false) {
+		return
+	}
+
+	takeoverID, okID := pathUint64(c, "takeoverId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+
+	var takeover model.Takeover
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if !canManageTakeover(user, takeover) {
+		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
+		return
+	}
+
+	result := h.db.Model(&model.Takeover{}).
+		Where("id = ? AND is_deleted = ?", takeoverID, false).
+		Update("is_deleted", true)
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "delete failed")
+		return
+	}
+	if result.RowsAffected == 0 {
+		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		return
+	}
+	_ = h.writeAdminLog("TAKEOVER_DELETE", "takeover", takeoverID, nil)
+	ok(c, "deleted", nil)
 }
 
 func (h *Handler) CreateTakeover(c *gin.Context) {
@@ -329,6 +445,9 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 			First(&takeover).Error; err != nil {
 			return err
 		}
+		if takeover.CreatorUserID == user.ID {
+			return errCreatorCannotLeave
+		}
 
 		result := tx.Model(&model.TakeoverMember{}).
 			Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, user.ID, model.MemberStateJoined).
@@ -353,6 +472,8 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		case errors.Is(err, errNotJoined):
 			fail(c, http.StatusConflict, CodeParamInvalid, "not joined")
+		case errors.Is(err, errCreatorCannotLeave):
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "creator cannot leave takeover")
 		default:
 			fail(c, http.StatusInternalServerError, CodeSystemError, "leave failed")
 		}
@@ -368,6 +489,7 @@ var (
 	errNotJoined       = errors.New("not joined")
 	errProfileRequired = errors.New("profile required")
 	errUserBlocked     = errors.New("user blocked")
+	errCreatorCannotLeave = errors.New("creator cannot leave takeover")
 )
 
 func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error) {
@@ -397,6 +519,14 @@ func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) boo
 		return false
 	}
 	return true
+}
+
+func canManageTakeover(user model.User, takeover model.Takeover) bool {
+	return user.IsAdmin || isTakeoverCreator(user, takeover)
+}
+
+func isTakeoverCreator(user model.User, takeover model.Takeover) bool {
+	return user.ID != 0 && takeover.CreatorUserID == user.ID
 }
 
 func (h *Handler) takeoverStats(takeoverID uint64, userID uint64) (int64, bool, error) {

@@ -27,6 +27,7 @@ type User struct {
 	AvatarURL          *string    `gorm:"column:avatar_url;size:255"`
 	IsProfileCompleted bool       `gorm:"column:is_profile_completed"`
 	IsBlocked          bool       `gorm:"column:is_blocked"`
+	IsAdmin            bool       `gorm:"column:is_admin"`
 	LastLoginTime      *time.Time `gorm:"column:last_login_time"`
 	GmtCreate          time.Time  `gorm:"column:gmt_create;autoCreateTime"`
 	GmtModified        time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`

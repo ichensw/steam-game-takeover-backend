@@ -63,12 +63,13 @@ var codeTranslations = map[string]string{
 
 var messageTranslations = map[string]string{
 	"admin password is not configured":         "管理员密码尚未配置",
-	"admin unauthorized":                       "管理员登录已失效，请重新登录",
+	"admin unauthorized":                       "当前账号暂无管理员权限",
 	"already joined":                           "您已经加入过这个接龙",
 	"avatarUrl must be at most 255 characters": "头像地址过长，请重新上传",
 	"block failed":                             "拉黑失败，请稍后再试",
 	"code is required":                         "登录凭证缺失，请重新进入小程序",
 	"create failed":                            "创建接龙失败，请稍后再试",
+	"creator cannot leave takeover":            "创建人不能退出自己创建的接龙",
 	"delete failed":                            "删除失败，请稍后再试",
 	"file is required":                         "请选择要上传的图片",
 	"gender must be 1 or 2":                    "请选择性别",

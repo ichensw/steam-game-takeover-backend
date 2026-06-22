@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS `ttw_user` (
   `avatar_url` varchar(255) DEFAULT NULL COMMENT '用户头像地址',
   `is_profile_completed` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '资料是否完善：0否，1是',
   `is_blocked` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否被拉黑：0否，1是',
+  `is_admin` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否管理员：0否，1是',
   `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',

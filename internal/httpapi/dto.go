@@ -15,6 +15,7 @@ type userDTO struct {
 	AvatarURL        string `json:"avatarUrl"`
 	ProfileCompleted bool   `json:"profileCompleted"`
 	Blocked          bool   `json:"blocked"`
+	IsAdmin          bool   `json:"isAdmin"`
 }
 
 type memberDTO struct {
@@ -29,6 +30,7 @@ type memberDTO struct {
 
 type takeoverDTO struct {
 	ID               uint64      `json:"id"`
+	CreatorUserID    uint64      `json:"creatorUserId"`
 	Title            string      `json:"title"`
 	ParticipantLimit uint        `json:"participantLimit"`
 	JoinedCount      int64       `json:"joinedCount"`
@@ -39,6 +41,8 @@ type takeoverDTO struct {
 	ScheduleText     string      `json:"scheduleText"`
 	Description      string      `json:"description"`
 	HasJoined        bool        `json:"hasJoined"`
+	IsCreator        bool        `json:"isCreator"`
+	CanManage        bool        `json:"canManage"`
 	PreviewMembers   []memberDTO `json:"previewMembers,omitempty"`
 	Members          []memberDTO `json:"members,omitempty"`
 }
@@ -62,12 +66,14 @@ func toUserDTO(user model.User) userDTO {
 		AvatarURL:        normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
 		ProfileCompleted: user.IsProfileCompleted,
 		Blocked:          user.IsBlocked,
+		IsAdmin:          user.IsAdmin,
 	}
 }
 
 func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {
 	return takeoverDTO{
 		ID:               t.ID,
+		CreatorUserID:    t.CreatorUserID,
 		Title:            t.Title,
 		ParticipantLimit: t.ParticipantLimit,
 		JoinedCount:      joinedCount,

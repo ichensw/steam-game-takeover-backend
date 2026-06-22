@@ -220,6 +220,9 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 			if linked.IsBlocked {
 				user.IsBlocked = true
 			}
+			if linked.IsAdmin {
+				user.IsAdmin = true
+			}
 		}
 		return tx.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
 			"nickname":             nickname,
@@ -228,6 +231,7 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 			"avatar_url":           stringPtr(avatarURL),
 			"is_profile_completed": true,
 			"is_blocked":           user.IsBlocked,
+			"is_admin":             user.IsAdmin,
 		}).Error
 	}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")

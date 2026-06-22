@@ -72,6 +72,17 @@ func (h *Handler) UserAuth() gin.HandlerFunc {
 
 func (h *Handler) AdminAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if user, err := h.currentUserFromRequest(c); err == nil {
+			if user.IsAdmin {
+				c.Set(contextUserKey, user)
+				c.Next()
+				return
+			}
+			fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
+			c.Abort()
+			return
+		}
+
 		tokenValue := bearerToken(c)
 		if tokenValue == "" {
 			fail(c, http.StatusUnauthorized, CodeAdminUnauthorized, "admin unauthorized")
