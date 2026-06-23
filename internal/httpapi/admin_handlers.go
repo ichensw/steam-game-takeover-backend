@@ -47,6 +47,19 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
 		return
 	}
+	var takeover model.Takeover
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if isTakeoverExpired(takeover) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be modified")
+		return
+	}
 	var req takeoverInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
@@ -98,6 +111,19 @@ func (h *Handler) AdminDeleteTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
 		return
 	}
+	var takeover model.Takeover
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if isTakeoverExpired(takeover) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be deleted")
+		return
+	}
 	result := h.db.Model(&model.Takeover{}).
 		Where("id = ? AND is_deleted = ?", takeoverID, false).
 		Update("is_deleted", true)
@@ -134,7 +160,7 @@ func (h *Handler) AdminBlockUser(c *gin.Context) {
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var user model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
 			return err
 		}
 		block := model.BlockUser{
@@ -194,7 +220,7 @@ func (h *Handler) AdminUnblockUser(c *gin.Context) {
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		var user model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&model.BlockUser{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
@@ -220,6 +246,55 @@ func (h *Handler) AdminUnblockUser(c *gin.Context) {
 		return
 	}
 	ok(c, "unblocked", nil)
+}
+
+func (h *Handler) AdminRestoreUserCredit(c *gin.Context) {
+	userID, okID := pathUint64(c, "userId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
+		return
+	}
+	var req struct {
+		Delta   uint `json:"delta"`
+		ToScore uint `json:"toScore"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
+			return err
+		}
+		score := req.ToScore
+		if score == 0 {
+			score = user.CreditScore + req.Delta
+		}
+		if score > model.DefaultCreditScore {
+			score = model.DefaultCreditScore
+		}
+		if err := tx.Model(&model.User{}).Where("id = ?", userID).Update("credit_score", score).Error; err != nil {
+			return err
+		}
+		content := "restore credit"
+		return tx.Create(&model.AdminOperateLog{
+			OperateType:    "USER_CREDIT_RESTORE",
+			TargetType:     "user",
+			TargetID:       user.ID,
+			OperateContent: &content,
+		}).Error
+	})
+	if err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "credit restore failed")
+		return
+	}
+	ok(c, "restored", nil)
 }
 
 func (h *Handler) AdminBlockedUsers(c *gin.Context) {

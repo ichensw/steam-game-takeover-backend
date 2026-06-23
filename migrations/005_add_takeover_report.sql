@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS `ttw_takeover_report` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `takeover_id` bigint unsigned NOT NULL COMMENT '接龙ID',
+  `reporter_user_id` bigint unsigned NOT NULL COMMENT '举报人用户ID',
+  `reported_user_id` bigint unsigned NOT NULL COMMENT '被举报人用户ID',
+  `report_content` varchar(500) NOT NULL COMMENT '举报内容',
+  `image_url` varchar(255) DEFAULT NULL COMMENT '举报截图',
+  `penalty_score` int unsigned NOT NULL DEFAULT '0' COMMENT '扣除分数',
+  `handle_note` varchar(500) DEFAULT NULL COMMENT '处理说明',
+  `handled_by_admin_id` bigint unsigned DEFAULT NULL COMMENT '处理管理员ID',
+  `handled_at` datetime DEFAULT NULL COMMENT '处理时间',
+  `report_state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1待处理，2已处理未扣分，3已处理已扣分',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_takeover_id` (`takeover_id`),
+  KEY `idx_reporter_user_id` (`reporter_user_id`),
+  KEY `idx_reported_user_id` (`reported_user_id`),
+  KEY `idx_gmt_create` (`gmt_create`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接龙举报表';

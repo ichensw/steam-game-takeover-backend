@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"steam-game-takeover-backend/internal/model"
+
+	"gorm.io/gorm"
 )
 
 type userDTO struct {
@@ -16,46 +18,54 @@ type userDTO struct {
 	ProfileCompleted bool   `json:"profileCompleted"`
 	Blocked          bool   `json:"blocked"`
 	IsAdmin          bool   `json:"isAdmin"`
+	CreditScore      uint   `json:"creditScore"`
+	CreditStatus     string `json:"creditStatus"`
 }
 
 type memberDTO struct {
-	UserID    uint64 `json:"userId"`
-	OpenID    string `json:"openid,omitempty"`
-	Nickname  string `json:"nickname"`
-	SteamID   string `json:"steamId"`
-	Gender    *uint8 `json:"gender"`
-	AvatarURL string `json:"avatarUrl"`
-	JoinedAt  string `json:"joinedAt,omitempty"`
+	UserID       uint64 `json:"userId"`
+	OpenID       string `json:"openid,omitempty"`
+	Nickname     string `json:"nickname"`
+	SteamID      string `json:"steamId"`
+	Gender       *uint8 `json:"gender"`
+	AvatarURL    string `json:"avatarUrl"`
+	CreditScore  uint   `json:"creditScore"`
+	CreditStatus string `json:"creditStatus"`
+	JoinedAt     string `json:"joinedAt,omitempty"`
 }
 
 type takeoverDTO struct {
-	ID               uint64      `json:"id"`
-	CreatorUserID    uint64      `json:"creatorUserId"`
-	Title            string      `json:"title"`
-	ParticipantLimit uint        `json:"participantLimit"`
-	JoinedCount      int64       `json:"joinedCount"`
-	ScheduleType     uint8       `json:"scheduleType"`
-	StartDate        *string     `json:"startDate"`
-	EndDate          *string     `json:"endDate"`
-	PlayTime         string      `json:"playTime"`
-	ScheduleText     string      `json:"scheduleText"`
-	StatusLabel      string      `json:"statusLabel"`
-	Description      string      `json:"description"`
-	HasJoined        bool        `json:"hasJoined"`
-	IsCreator        bool        `json:"isCreator"`
-	CanManage        bool        `json:"canManage"`
-	PreviewMembers   []memberDTO `json:"previewMembers,omitempty"`
-	Members          []memberDTO `json:"members,omitempty"`
+	ID                  uint64      `json:"id"`
+	CreatorUserID       uint64      `json:"creatorUserId"`
+	CreatorName         string      `json:"creatorName"`
+	CreatorCreditScore  uint        `json:"creatorCreditScore"`
+	CreatorCreditStatus string      `json:"creatorCreditStatus"`
+	Title               string      `json:"title"`
+	ParticipantLimit    uint        `json:"participantLimit"`
+	JoinedCount         int64       `json:"joinedCount"`
+	ScheduleType        uint8       `json:"scheduleType"`
+	StartDate           *string     `json:"startDate"`
+	EndDate             *string     `json:"endDate"`
+	PlayTime            string      `json:"playTime"`
+	ScheduleText        string      `json:"scheduleText"`
+	StatusLabel         string      `json:"statusLabel"`
+	Description         string      `json:"description"`
+	HasJoined           bool        `json:"hasJoined"`
+	IsCreator           bool        `json:"isCreator"`
+	CanManage           bool        `json:"canManage"`
+	PreviewMembers      []memberDTO `json:"previewMembers,omitempty"`
+	Members             []memberDTO `json:"members,omitempty"`
 }
 
 type memberRow struct {
-	UserID    uint64
-	OpenID    string
-	Nickname  *string
-	SteamID   *string
-	Gender    *uint8
-	AvatarURL *string
-	JoinedAt  time.Time
+	UserID      uint64
+	OpenID      string
+	Nickname    *string
+	SteamID     *string
+	Gender      *uint8
+	AvatarURL   *string
+	CreditScore uint
+	JoinedAt    time.Time
 }
 
 func toUserDTO(user model.User) userDTO {
@@ -68,6 +78,8 @@ func toUserDTO(user model.User) userDTO {
 		ProfileCompleted: user.IsProfileCompleted,
 		Blocked:          user.IsBlocked,
 		IsAdmin:          user.IsAdmin,
+		CreditScore:      user.CreditScore,
+		CreditStatus:     creditStatus(user.CreditScore),
 	}
 }
 
@@ -89,14 +101,27 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 	}
 }
 
+func toTakeoverDTOWithCreator(db *gorm.DB, t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {
+	dto := toTakeoverDTO(t, joinedCount, hasJoined)
+	var creator model.User
+	if err := db.Where("id = ? AND is_deleted = ?", t.CreatorUserID, false).First(&creator).Error; err == nil {
+		dto.CreatorName = stringValue(creator.Nickname)
+		dto.CreatorCreditScore = creator.CreditScore
+		dto.CreatorCreditStatus = creditStatus(creator.CreditScore)
+	}
+	return dto
+}
+
 func toMemberDTO(row memberRow, includeOpenID bool) memberDTO {
 	dto := memberDTO{
-		UserID:    row.UserID,
-		Nickname:  stringValue(row.Nickname),
-		SteamID:   stringValue(row.SteamID),
-		Gender:    row.Gender,
-		AvatarURL: normalizeAvatarURL(stringValue(row.AvatarURL), row.Gender),
-		JoinedAt:  row.JoinedAt.Format("2006-01-02 15:04:05"),
+		UserID:       row.UserID,
+		Nickname:     stringValue(row.Nickname),
+		SteamID:      stringValue(row.SteamID),
+		Gender:       row.Gender,
+		AvatarURL:    normalizeAvatarURL(stringValue(row.AvatarURL), row.Gender),
+		CreditScore:  row.CreditScore,
+		CreditStatus: creditStatus(row.CreditScore),
+		JoinedAt:     row.JoinedAt.Format("2006-01-02 15:04:05"),
 	}
 	if includeOpenID {
 		dto.OpenID = row.OpenID
@@ -204,6 +229,17 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func creditStatus(score uint) string {
+	switch {
+	case score <= 50:
+		return "disabled"
+	case score < model.MinJoinCreditScore:
+		return "limited"
+	default:
+		return "normal"
+	}
 }
 
 func stringPtr(value string) *string {

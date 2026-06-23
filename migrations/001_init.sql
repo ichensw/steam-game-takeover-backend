@@ -9,11 +9,13 @@ CREATE TABLE IF NOT EXISTS `ttw_user` (
   `is_profile_completed` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '资料是否完善：0否，1是',
   `is_blocked` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否被拉黑：0否，1是',
   `is_admin` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否管理员：0否，1是',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否删除：0否，1是',
+  `credit_score` int unsigned NOT NULL DEFAULT '100' COMMENT '信誉分',
   `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_openid` (`openid`),
+  KEY `idx_openid` (`openid`),
   KEY `idx_steam_id` (`steam_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
@@ -49,6 +51,27 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover_member` (
   KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接龙成员表';
 
+CREATE TABLE IF NOT EXISTS `ttw_takeover_report` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `takeover_id` bigint unsigned NOT NULL COMMENT '接龙ID',
+  `reporter_user_id` bigint unsigned NOT NULL COMMENT '举报人用户ID',
+  `reported_user_id` bigint unsigned NOT NULL COMMENT '被举报人用户ID',
+  `report_content` varchar(500) NOT NULL COMMENT '举报内容',
+  `image_url` varchar(255) DEFAULT NULL COMMENT '举报截图',
+  `penalty_score` int unsigned NOT NULL DEFAULT '0' COMMENT '扣除分数',
+  `handle_note` varchar(500) DEFAULT NULL COMMENT '处理说明',
+  `handled_by_admin_id` bigint unsigned DEFAULT NULL COMMENT '处理管理员ID',
+  `handled_at` datetime DEFAULT NULL COMMENT '处理时间',
+  `report_state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1待处理，2已处理未扣分，3已处理已扣分',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_takeover_id` (`takeover_id`),
+  KEY `idx_reporter_user_id` (`reporter_user_id`),
+  KEY `idx_reported_user_id` (`reported_user_id`),
+  KEY `idx_gmt_create` (`gmt_create`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接龙举报表';
+
 CREATE TABLE IF NOT EXISTS `ttw_block_user` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
   `user_id` bigint unsigned NOT NULL COMMENT '被拉黑用户ID',
@@ -75,3 +98,15 @@ CREATE TABLE IF NOT EXISTS `ttw_admin_operate_log` (
   KEY `idx_target` (`target_type`, `target_id`),
   KEY `idx_gmt_create` (`gmt_create`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='管理员操作日志表';
+
+CREATE TABLE IF NOT EXISTS `ttw_app_config` (
+  `config_key` varchar(64) NOT NULL COMMENT '配置键',
+  `config_value` varchar(255) NOT NULL COMMENT '配置值',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
+  PRIMARY KEY (`config_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='应用配置表';
+
+INSERT INTO `ttw_app_config` (`config_key`, `config_value`)
+VALUES ('publish_takeover_enabled', 'false')
+ON DUPLICATE KEY UPDATE `config_key` = `config_key`;

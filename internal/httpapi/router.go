@@ -31,8 +31,11 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	api.DELETE("/takeovers/:takeoverId", h.UserAuth(), h.DeleteTakeover)
 	api.POST("/takeovers/:takeoverId/join", h.UserAuth(), h.JoinTakeover)
 	api.POST("/takeovers/:takeoverId/leave", h.UserAuth(), h.LeaveTakeover)
+	api.POST("/takeovers/:takeoverId/reports", h.UserAuth(), h.ReportTakeoverMember)
 
 	api.GET("/me/profile", h.UserAuth(), h.GetProfile)
+	api.GET("/me/summary", h.UserAuth(), h.GetMeSummary)
+	api.GET("/me/takeovers", h.UserAuth(), h.ListMyTakeovers)
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)
 	api.POST("/uploads/image", h.UserAuth(), h.UploadImage)
 
@@ -43,7 +46,10 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	admin.DELETE("/takeovers/:takeoverId", h.AdminDeleteTakeover)
 	admin.POST("/users/:userId/block", h.AdminBlockUser)
 	admin.POST("/users/:userId/unblock", h.AdminUnblockUser)
+	admin.POST("/users/:userId/credit", h.AdminRestoreUserCredit)
 	admin.GET("/blocked-users", h.AdminBlockedUsers)
+	admin.GET("/reports", h.AdminListReports)
+	admin.POST("/reports/:reportId/handle", h.AdminHandleReport)
 
 	return r
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const botQueryOpenID = "bot_query_default"
@@ -58,32 +57,42 @@ func ensureBotQueryUser(db *gorm.DB, cfg config.Config) (model.User, error) {
 	avatarURL := normalizeAvatarURLForGender(strings.TrimSpace(cfg.BotQueryAvatarURL), gender)
 	now := time.Now()
 
-	user := model.User{
-		OpenID:             botQueryOpenID,
-		Nickname:           stringPtr(nickname),
-		SteamID:            stringPtr(steamID),
-		Gender:             &gender,
-		AvatarURL:          stringPtr(avatarURL),
-		IsProfileCompleted: false,
-		IsBlocked:          false,
-		LastLoginTime:      &now,
-	}
-	if err := db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "openid"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"nickname":             stringPtr(nickname),
-			"steam_id":             stringPtr(steamID),
-			"gender":               gender,
-			"avatar_url":           stringPtr(avatarURL),
-			"is_profile_completed": false,
-			"is_blocked":           false,
-			"last_login_time":      now,
-			"gmt_modified":         now,
-		}),
-	}).Create(&user).Error; err != nil {
+	var user model.User
+	err := db.Where("openid = ? AND is_deleted = ?", botQueryOpenID, false).First(&user).Error
+	if err != nil && !isNotFound(err) {
 		return model.User{}, err
 	}
-	if err := db.Where("openid = ?", botQueryOpenID).First(&user).Error; err != nil {
+	if user.ID == 0 {
+		user = model.User{
+			OpenID:             botQueryOpenID,
+			Nickname:           stringPtr(nickname),
+			SteamID:            stringPtr(steamID),
+			Gender:             &gender,
+			AvatarURL:          stringPtr(avatarURL),
+			IsProfileCompleted: false,
+			IsBlocked:          false,
+			IsDeleted:          false,
+			LastLoginTime:      &now,
+		}
+		if err := db.Create(&user).Error; err != nil {
+			return model.User{}, err
+		}
+		return user, nil
+	}
+	if err := db.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"nickname":             stringPtr(nickname),
+		"steam_id":             stringPtr(steamID),
+		"gender":               gender,
+		"avatar_url":           stringPtr(avatarURL),
+		"is_profile_completed": false,
+		"is_blocked":           false,
+		"is_deleted":           false,
+		"last_login_time":      now,
+		"gmt_modified":         now,
+	}).Error; err != nil {
+		return model.User{}, err
+	}
+	if err := db.Where("id = ? AND is_deleted = ?", user.ID, false).First(&user).Error; err != nil {
 		return model.User{}, err
 	}
 	return user, nil

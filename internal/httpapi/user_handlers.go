@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (h *Handler) Health(c *gin.Context) {
@@ -37,23 +36,8 @@ func (h *Handler) WXLogin(c *gin.Context) {
 
 	now := time.Now()
 	unionID := stringPtr(session.UnionID)
-	user := model.User{
-		OpenID:        session.OpenID,
-		UnionID:       unionID,
-		LastLoginTime: &now,
-	}
-	if err := h.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "openid"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"unionid":         unionID,
-			"last_login_time": now,
-			"gmt_modified":    now,
-		}),
-	}).Create(&user).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "login failed")
-		return
-	}
-	if err := h.db.Where("openid = ?", session.OpenID).First(&user).Error; err != nil {
+	user, err := h.upsertActiveWXUser(session.OpenID, unionID, now)
+	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "login failed")
 		return
 	}
@@ -63,7 +47,11 @@ func (h *Handler) WXLogin(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "token sign failed")
 		return
 	}
-	ok(c, "success", gin.H{"token": token, "user": toUserDTO(user)})
+	ok(c, "success", gin.H{
+		"token":                  token,
+		"user":                   toUserDTO(user),
+		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
+	})
 }
 
 func (h *Handler) WebLogin(c *gin.Context) {
@@ -108,7 +96,7 @@ func (h *Handler) WebLogin(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "login failed")
 			return
 		}
-		if err := h.db.First(&user, user.ID).Error; err != nil {
+		if err := h.db.Where("id = ? AND is_deleted = ?", user.ID, false).First(&user).Error; err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "login failed")
 			return
 		}
@@ -161,7 +149,7 @@ func (h *Handler) WebLogin(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "login failed")
 		return
 	}
-	if err := h.db.First(&user, user.ID).Error; err != nil {
+	if err := h.db.Where("id = ? AND is_deleted = ?", user.ID, false).First(&user).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "login failed")
 		return
 	}
@@ -171,6 +159,136 @@ func (h *Handler) WebLogin(c *gin.Context) {
 func (h *Handler) GetProfile(c *gin.Context) {
 	user, _ := currentUser(c)
 	ok(c, "success", toUserDTO(user))
+}
+
+func (h *Handler) GetMeSummary(c *gin.Context) {
+	user, _ := currentUser(c)
+
+	var createdCount int64
+	if err := h.db.Model(&model.Takeover{}).
+		Where("creator_user_id = ? AND is_deleted = ?", user.ID, false).
+		Count(&createdCount).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var joinedCount int64
+	if err := h.db.Table("ttw_takeover_member AS m").
+		Joins("JOIN ttw_takeover AS t ON t.id = m.takeover_id").
+		Where("m.user_id = ? AND m.member_state = ? AND t.is_deleted = ? AND t.creator_user_id <> ?", user.ID, model.MemberStateJoined, false, user.ID).
+		Count(&joinedCount).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var takeovers []model.Takeover
+	if err := h.db.Table("ttw_takeover AS t").
+		Select("DISTINCT t.*").
+		Joins("LEFT JOIN ttw_takeover_member AS m ON m.takeover_id = t.id AND m.user_id = ? AND m.member_state = ?", user.ID, model.MemberStateJoined).
+		Where("t.is_deleted = ? AND (t.creator_user_id = ? OR m.user_id IS NOT NULL)", false, user.ID).
+		Order("t.gmt_create DESC").
+		Limit(1).
+		Scan(&takeovers).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	recent := make([]takeoverDTO, 0, len(takeovers))
+	for _, takeover := range takeovers {
+		joined, hasJoined, err := h.takeoverStats(takeover.ID, user.ID)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		dto := toTakeoverDTOWithCreator(h.db, takeover, joined, hasJoined)
+		dto.IsCreator = isTakeoverCreator(user, takeover)
+		members, err := h.takeoverMembers(takeover.ID, false, 5)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		dto.PreviewMembers = members
+		recent = append(recent, dto)
+	}
+
+	ok(c, "success", gin.H{
+		"user":         toUserDTO(user),
+		"createdCount": createdCount,
+		"joinedCount":  joinedCount,
+		"recent":       recent,
+	})
+}
+
+func (h *Handler) ListMyTakeovers(c *gin.Context) {
+	user, _ := currentUser(c)
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(c.Query("pageSize"), 10)
+	if pageSize > 50 {
+		pageSize = 50
+	}
+
+	query := h.db.Table("ttw_takeover AS t").
+		Where("t.is_deleted = ? AND (t.creator_user_id = ? OR EXISTS (SELECT 1 FROM ttw_takeover_member m WHERE m.takeover_id = t.id AND m.user_id = ? AND m.member_state = ?))", false, user.ID, user.ID, model.MemberStateJoined)
+	query = applyMyTakeoverKeywordFilter(query, c.Query("keyword"))
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var takeovers []model.Takeover
+	if err := query.Select("t.*").
+		Order("t.gmt_create DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Scan(&takeovers).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	list := make([]takeoverDTO, 0, len(takeovers))
+	for _, takeover := range takeovers {
+		joined, hasJoined, err := h.takeoverStats(takeover.ID, user.ID)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		dto := toTakeoverDTOWithCreator(h.db, takeover, joined, hasJoined)
+		dto.IsCreator = isTakeoverCreator(user, takeover)
+		members, err := h.takeoverMembers(takeover.ID, false, 5)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		dto.PreviewMembers = members
+		list = append(list, dto)
+	}
+
+	ok(c, "success", gin.H{
+		"page":     page,
+		"pageSize": pageSize,
+		"total":    total,
+		"list":     list,
+	})
+}
+
+func applyMyTakeoverKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return query
+	}
+	like := "%" + keyword + "%"
+	return query.Where(
+		"t.title LIKE ? OR t.description LIKE ? OR EXISTS (SELECT 1 FROM ttw_user cu WHERE cu.id = t.creator_user_id AND cu.is_deleted = ? AND cu.nickname LIKE ?) OR EXISTS (SELECT 1 FROM ttw_takeover_member km JOIN ttw_user ku ON ku.id = km.user_id WHERE km.takeover_id = t.id AND km.member_state = ? AND ku.is_deleted = ? AND ku.nickname LIKE ?)",
+		like,
+		like,
+		false,
+		like,
+		model.MemberStateJoined,
+		false,
+		like,
+	)
 }
 
 func (h *Handler) SaveProfile(c *gin.Context) {
@@ -206,10 +324,14 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "avatarUrl must be at most 255 characters")
 		return
 	}
+	if user.SteamID != nil && *user.SteamID != "" && *user.SteamID != steamID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId cannot be changed")
+		return
+	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		var linked model.User
-		err := tx.Where("steam_id = ? AND id <> ? AND openid LIKE ?", steamID, user.ID, "web_%").Order("id ASC").First(&linked).Error
+		err := tx.Where("steam_id = ? AND id <> ? AND openid LIKE ? AND is_deleted = ?", steamID, user.ID, "web_%", false).Order("id ASC").First(&linked).Error
 		if err != nil && !isNotFound(err) {
 			return err
 		}
@@ -237,7 +359,7 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 		return
 	}
-	if err := h.db.First(&user, user.ID).Error; err != nil {
+	if err := h.db.Where("id = ? AND is_deleted = ?", user.ID, false).First(&user).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 		return
 	}
@@ -250,12 +372,16 @@ func (h *Handler) respondWebLogin(c *gin.Context, user model.User) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "token sign failed")
 		return
 	}
-	ok(c, "success", gin.H{"token": token, "user": toUserDTO(user)})
+	ok(c, "success", gin.H{
+		"token":                  token,
+		"user":                   toUserDTO(user),
+		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
+	})
 }
 
 func (h *Handler) findUserBySteamID(steamID string) (model.User, error) {
 	var users []model.User
-	if err := h.db.Where("steam_id = ?", steamID).Order("id ASC").Find(&users).Error; err != nil {
+	if err := h.db.Where("steam_id = ? AND is_deleted = ?", steamID, false).Order("id ASC").Find(&users).Error; err != nil {
 		return model.User{}, err
 	}
 	if len(users) == 0 {
@@ -267,6 +393,30 @@ func (h *Handler) findUserBySteamID(steamID string) (model.User, error) {
 		}
 	}
 	return users[0], nil
+}
+
+func (h *Handler) upsertActiveWXUser(openID string, unionID *string, now time.Time) (model.User, error) {
+	var user model.User
+	err := h.db.Where("openid = ? AND is_deleted = ?", openID, false).First(&user).Error
+	if err != nil && !isNotFound(err) {
+		return model.User{}, err
+	}
+	if user.ID == 0 {
+		user = model.User{
+			OpenID:        openID,
+			UnionID:       unionID,
+			LastLoginTime: &now,
+		}
+		return user, h.db.Create(&user).Error
+	}
+	err = h.db.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
+		"unionid":         unionID,
+		"last_login_time": now,
+	}).Error
+	if err != nil {
+		return model.User{}, err
+	}
+	return user, h.db.Where("id = ? AND is_deleted = ?", user.ID, false).First(&user).Error
 }
 
 func webOpenIDForSteamID(steamID string) string {

@@ -15,6 +15,14 @@ const (
 
 	MemberStateJoined = 1
 	MemberStateExited = 2
+
+	ReportStatePending   = 1
+	ReportStateIgnored   = 2
+	ReportStatePenalized = 3
+
+	DefaultCreditScore   = 100
+	MinJoinCreditScore   = 70
+	MinCreateCreditScore = 51
 )
 
 type User struct {
@@ -28,6 +36,8 @@ type User struct {
 	IsProfileCompleted bool       `gorm:"column:is_profile_completed"`
 	IsBlocked          bool       `gorm:"column:is_blocked"`
 	IsAdmin            bool       `gorm:"column:is_admin"`
+	IsDeleted          bool       `gorm:"column:is_deleted"`
+	CreditScore        uint       `gorm:"column:credit_score;default:100"`
 	LastLoginTime      *time.Time `gorm:"column:last_login_time"`
 	GmtCreate          time.Time  `gorm:"column:gmt_create;autoCreateTime"`
 	GmtModified        time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
@@ -64,6 +74,24 @@ type TakeoverMember struct {
 
 func (TakeoverMember) TableName() string { return "ttw_takeover_member" }
 
+type TakeoverReport struct {
+	ID               uint64     `gorm:"primaryKey;column:id"`
+	TakeoverID       uint64     `gorm:"column:takeover_id;index:idx_takeover_id"`
+	ReporterUserID   uint64     `gorm:"column:reporter_user_id;index:idx_reporter_user_id"`
+	ReportedUserID   uint64     `gorm:"column:reported_user_id;index:idx_reported_user_id"`
+	ReportContent    string     `gorm:"column:report_content;size:500"`
+	ImageURL         *string    `gorm:"column:image_url;size:255"`
+	PenaltyScore     uint       `gorm:"column:penalty_score"`
+	HandleNote       *string    `gorm:"column:handle_note;size:500"`
+	HandledByAdminID *uint64    `gorm:"column:handled_by_admin_id"`
+	HandledAt        *time.Time `gorm:"column:handled_at"`
+	ReportState      uint8      `gorm:"column:report_state"`
+	GmtCreate        time.Time  `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
+	GmtModified      time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (TakeoverReport) TableName() string { return "ttw_takeover_report" }
+
 type BlockUser struct {
 	ID           uint64    `gorm:"primaryKey;column:id"`
 	UserID       uint64    `gorm:"column:user_id;uniqueIndex:uk_user_id"`
@@ -88,3 +116,14 @@ type AdminOperateLog struct {
 }
 
 func (AdminOperateLog) TableName() string { return "ttw_admin_operate_log" }
+
+const AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
+
+type AppConfig struct {
+	ConfigKey   string    `gorm:"primaryKey;column:config_key;size:64"`
+	ConfigValue string    `gorm:"column:config_value;size:255"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (AppConfig) TableName() string { return "ttw_app_config" }

@@ -52,7 +52,7 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 			return
 		}
-		dto := toTakeoverDTO(takeover, joinedCount, hasJoined)
+		dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
 		dto.IsCreator = isTakeoverCreator(user, takeover)
 		dto.CanManage = canManageTakeover(user, takeover)
 		members, err := h.takeoverMembers(takeover.ID, false, 5)
@@ -148,7 +148,7 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	dto := toTakeoverDTO(takeover, joinedCount, hasJoined)
+	dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
 	dto.IsCreator = isTakeoverCreator(user, takeover)
 	dto.CanManage = canManageTakeover(user, takeover)
 	dto.Members = members
@@ -178,6 +178,10 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 	}
 	if !canManageTakeover(user, takeover) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
+		return
+	}
+	if isTakeoverExpired(takeover) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be modified")
 		return
 	}
 
@@ -251,6 +255,10 @@ func (h *Handler) DeleteTakeover(c *gin.Context) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
 		return
 	}
+	if isTakeoverExpired(takeover) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be deleted")
+		return
+	}
 
 	result := h.db.Model(&model.Takeover{}).
 		Where("id = ? AND is_deleted = ?", takeoverID, false).
@@ -272,6 +280,10 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 	if !ensureUserAllowed(c, user, true) {
 		return
 	}
+	if !h.publishTakeoverEnabled() {
+		fail(c, http.StatusForbidden, CodeParamInvalid, "publish takeover disabled")
+		return
+	}
 
 	var req takeoverInput
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -290,6 +302,9 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		freshUser, err := h.lockProfileUser(tx, user.ID)
 		if err != nil {
 			return err
+		}
+		if freshUser.CreditScore < model.MinCreateCreditScore {
+			return errCreditTooLowForCreate
 		}
 		existing, err := h.findRecentDuplicateTakeover(tx, freshUser.ID, parsed)
 		if err != nil {
@@ -328,6 +343,10 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		}
 		if errors.Is(err, errUserBlocked) {
 			fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+			return
+		}
+		if errors.Is(err, errCreditTooLowForCreate) {
+			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for create")
 			return
 		}
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
@@ -394,6 +413,9 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		if freshUser.CreditScore < model.MinJoinCreditScore {
+			return errCreditTooLowForJoin
+		}
 
 		var takeover model.Takeover
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -445,6 +467,8 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
 		case errors.Is(err, errUserBlocked):
 			fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+		case errors.Is(err, errCreditTooLowForJoin):
+			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for join")
 		default:
 			fail(c, http.StatusInternalServerError, CodeSystemError, "join failed")
 		}
@@ -513,17 +537,19 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 }
 
 var (
-	errAlreadyJoined      = errors.New("already joined")
-	errTakeoverFull       = errors.New("takeover full")
-	errNotJoined          = errors.New("not joined")
-	errProfileRequired    = errors.New("profile required")
-	errUserBlocked        = errors.New("user blocked")
-	errCreatorCannotLeave = errors.New("creator cannot leave takeover")
+	errAlreadyJoined         = errors.New("already joined")
+	errTakeoverFull          = errors.New("takeover full")
+	errNotJoined             = errors.New("not joined")
+	errProfileRequired       = errors.New("profile required")
+	errUserBlocked           = errors.New("user blocked")
+	errCreditTooLowForCreate = errors.New("credit too low for create")
+	errCreditTooLowForJoin   = errors.New("credit too low for join")
+	errCreatorCannotLeave    = errors.New("creator cannot leave takeover")
 )
 
 func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error) {
 	var user model.User
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, userID).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
 		if isNotFound(err) {
 			return model.User{}, errProfileRequired
 		}
@@ -541,6 +567,10 @@ func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error
 func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) bool {
 	if user.IsBlocked {
 		fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+		return false
+	}
+	if user.IsDeleted {
+		fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
 		return false
 	}
 	if requireProfile && !user.IsProfileCompleted {
@@ -569,7 +599,7 @@ func (h *Handler) takeoverStats(takeoverID uint64, userID uint64) (int64, bool, 
 	var hasJoinedCount int64
 	if err := h.db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_blocked = ?", takeoverID, userID, model.MemberStateJoined, false).
+		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, userID, model.MemberStateJoined, false, false).
 		Count(&hasJoinedCount).Error; err != nil {
 		return 0, false, err
 	}
@@ -580,7 +610,7 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 	var joinedCount int64
 	err := db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ?", takeoverID, model.MemberStateJoined, false).
+		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false, false).
 		Count(&joinedCount).Error
 	return joinedCount, err
 }
@@ -588,9 +618,9 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit int) ([]memberDTO, error) {
 	var rows []memberRow
 	query := h.db.Table("ttw_takeover_member AS m").
-		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, m.gmt_create AS joined_at").
+		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, u.credit_score, m.gmt_create AS joined_at").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ?", takeoverID, model.MemberStateJoined, false).
+		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false, false).
 		Order("m.gmt_create ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -611,7 +641,16 @@ func applyKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
 		return query
 	}
 	like := "%" + keyword + "%"
-	return query.Where("title LIKE ? OR description LIKE ?", like, like)
+	return query.Where(
+		"title LIKE ? OR description LIKE ? OR EXISTS (SELECT 1 FROM ttw_user cu WHERE cu.id = ttw_takeover.creator_user_id AND cu.is_deleted = ? AND cu.nickname LIKE ?) OR EXISTS (SELECT 1 FROM ttw_takeover_member km JOIN ttw_user ku ON ku.id = km.user_id WHERE km.takeover_id = ttw_takeover.id AND km.member_state = ? AND ku.is_deleted = ? AND ku.nickname LIKE ?)",
+		like,
+		like,
+		false,
+		like,
+		model.MemberStateJoined,
+		false,
+		like,
+	)
 }
 
 func applyTimeFilter(query *gorm.DB, c *gin.Context) (*gorm.DB, error) {

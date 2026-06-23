@@ -109,7 +109,7 @@ func (h *Handler) currentUserFromRequest(c *gin.Context) (model.User, error) {
 		return model.User{}, errors.New("invalid token")
 	}
 	var user model.User
-	if err := h.db.First(&user, claims.UserID).Error; err != nil {
+	if err := h.db.Where("id = ? AND is_deleted = ?", claims.UserID, false).First(&user).Error; err != nil {
 		if isNotFound(err) {
 			return model.User{}, errTokenUserMissing
 		}
