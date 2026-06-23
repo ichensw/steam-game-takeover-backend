@@ -17,7 +17,6 @@ import (
 type takeoverReportInput struct {
 	ReportedUserID uint64   `json:"reportedUserId"`
 	Content        string   `json:"content"`
-	ImageURL       string   `json:"imageUrl"`
 	ImageURLs      []string `json:"imageUrls"`
 }
 
@@ -40,13 +39,13 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	}
 
 	content := strings.TrimSpace(req.Content)
-	imageURLs, imageErr := normalizeReportImageURLs(req.ImageURL, req.ImageURLs)
+	imageURLs, imageErr := normalizeReportImageURLs(req.ImageURLs)
 	if req.ReportedUserID == 0 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
 		return
 	}
 	if req.ReportedUserID == user.ID {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "cannot report yourself")
+		fail(c, http.StatusBadRequest, CodeCannotReportSelf, "不能举报自己")
 		return
 	}
 	if content == "" || len([]rune(content)) > 500 {
@@ -89,7 +88,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		return
 	}
 	if reportCount > 0 {
-		fail(c, http.StatusConflict, CodeParamInvalid, "report already submitted")
+		fail(c, http.StatusConflict, CodeReportAlreadyExists, "已举报过该用户")
 		return
 	}
 
@@ -109,14 +108,14 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	}
 	if err := h.db.Create(&report).Error; err != nil {
 		if strings.Contains(err.Error(), "Duplicate entry") {
-			fail(c, http.StatusConflict, CodeParamInvalid, "report already submitted")
+			fail(c, http.StatusConflict, CodeReportAlreadyExists, "已举报过该用户")
 			return
 		}
 		fail(c, http.StatusInternalServerError, CodeSystemError, "report failed")
 		return
 	}
 
-	ok(c, "reported", gin.H{"id": report.ID})
+	ok(c, "reported", nil)
 }
 
 func (h *Handler) AdminListReports(c *gin.Context) {
@@ -286,17 +285,13 @@ func (h *Handler) AdminHandleReport(c *gin.Context) {
 
 var errReportHandled = errors.New("report already handled")
 
-func normalizeReportImageURLs(imageURL string, imageURLs []string) ([]string, error) {
-	values := imageURLs
-	if len(values) == 0 && strings.TrimSpace(imageURL) != "" {
-		values = []string{imageURL}
-	}
-	if len(values) > 9 {
+func normalizeReportImageURLs(imageURLs []string) ([]string, error) {
+	if len(imageURLs) > 9 {
 		return nil, errors.New("report images must be at most 9")
 	}
 
-	result := make([]string, 0, len(values))
-	for _, value := range values {
+	result := make([]string, 0, len(imageURLs))
+	for _, value := range imageURLs {
 		trimmed := strings.TrimSpace(value)
 		if trimmed == "" {
 			return nil, errors.New("report image url is required")

@@ -15,6 +15,8 @@ const (
 	CodeTakeoverNotFound     = "TAKEOVER_NOT_FOUND"
 	CodeTakeoverFull         = "TAKEOVER_FULL"
 	CodeAlreadyJoined        = "ALREADY_JOINED"
+	CodeReportAlreadyExists  = "REPORT_ALREADY_EXISTS"
+	CodeCannotReportSelf     = "CANNOT_REPORT_SELF"
 	CodeAdminUnauthorized    = "ADMIN_UNAUTHORIZED"
 	CodeAdminPasswordInvalid = "ADMIN_PASSWORD_INVALID"
 	CodeSystemError          = "SYSTEM_ERROR"
@@ -56,6 +58,8 @@ var codeTranslations = map[string]string{
 	CodeTakeoverNotFound:     "接龙不存在或已被删除",
 	CodeTakeoverFull:         "接龙人数已满",
 	CodeAlreadyJoined:        "您已经加入过这个接龙",
+	CodeReportAlreadyExists:  "已举报过该用户",
+	CodeCannotReportSelf:     "不能举报自己",
 	CodeAdminUnauthorized:    "管理员登录已失效，请重新登录",
 	CodeAdminPasswordInvalid: "管理员密码不正确",
 	CodeSystemError:          "系统开小差了，请稍后再试",

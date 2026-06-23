@@ -33,6 +33,7 @@ type memberDTO struct {
 	CreditScore  uint   `json:"creditScore"`
 	CreditStatus string `json:"creditStatus"`
 	JoinedAt     string `json:"joinedAt,omitempty"`
+	HasReported  bool   `json:"hasReported"`
 }
 
 type takeoverDTO struct {

@@ -148,6 +148,16 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
+	if user.ID != 0 {
+		reportedUserIDs, err := h.reportedUserIDs(takeover.ID, user.ID)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		for index := range members {
+			members[index].HasReported = reportedUserIDs[members[index].UserID]
+		}
+	}
 	dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
 	dto.IsCreator = isTakeoverCreator(user, takeover)
 	dto.CanManage = canManageTakeover(user, takeover)
@@ -633,6 +643,24 @@ func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit i
 		members = append(members, toMemberDTO(row, includeOpenID))
 	}
 	return members, nil
+}
+
+func (h *Handler) reportedUserIDs(takeoverID uint64, reporterUserID uint64) (map[uint64]bool, error) {
+	var reportRows []struct {
+		ReportedUserID uint64
+	}
+	if err := h.db.Model(&model.TakeoverReport{}).
+		Select("reported_user_id").
+		Where("takeover_id = ? AND reporter_user_id = ?", takeoverID, reporterUserID).
+		Scan(&reportRows).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[uint64]bool, len(reportRows))
+	for _, row := range reportRows {
+		result[row.ReportedUserID] = true
+	}
+	return result, nil
 }
 
 func applyKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
