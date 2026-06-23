@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover_report` (
   `reporter_user_id` bigint unsigned NOT NULL COMMENT '举报人用户ID',
   `reported_user_id` bigint unsigned NOT NULL COMMENT '被举报人用户ID',
   `report_content` varchar(500) NOT NULL COMMENT '举报内容',
-  `image_url` varchar(255) DEFAULT NULL COMMENT '举报截图',
+  `image_url` varchar(512) DEFAULT NULL COMMENT '举报截图',
   `penalty_score` int unsigned NOT NULL DEFAULT '0' COMMENT '扣除分数',
   `handle_note` varchar(500) DEFAULT NULL COMMENT '处理说明',
   `handled_by_admin_id` bigint unsigned DEFAULT NULL COMMENT '处理管理员ID',
@@ -71,6 +71,18 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover_report` (
   KEY `idx_reported_user_id` (`reported_user_id`),
   KEY `idx_gmt_create` (`gmt_create`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接龙举报表';
+
+CREATE TABLE IF NOT EXISTS `ttw_takeover_report_image` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'primary key',
+  `report_id` bigint unsigned NOT NULL COMMENT 'report id',
+  `image_url` varchar(512) NOT NULL COMMENT 'report image url',
+  `sort_order` int unsigned NOT NULL DEFAULT '0' COMMENT 'sort order',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'is deleted: 0 no, 1 yes',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'created time',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'modified time',
+  PRIMARY KEY (`id`),
+  KEY `idx_report_id` (`report_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='takeover report image table';
 
 CREATE TABLE IF NOT EXISTS `ttw_block_user` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',

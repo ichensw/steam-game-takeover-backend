@@ -80,7 +80,7 @@ type TakeoverReport struct {
 	ReporterUserID   uint64     `gorm:"column:reporter_user_id;index:idx_reporter_user_id"`
 	ReportedUserID   uint64     `gorm:"column:reported_user_id;index:idx_reported_user_id"`
 	ReportContent    string     `gorm:"column:report_content;size:500"`
-	ImageURL         *string    `gorm:"column:image_url;size:255"`
+	ImageURL         *string    `gorm:"column:image_url;size:512"`
 	PenaltyScore     uint       `gorm:"column:penalty_score"`
 	HandleNote       *string    `gorm:"column:handle_note;size:500"`
 	HandledByAdminID *uint64    `gorm:"column:handled_by_admin_id"`
@@ -91,6 +91,18 @@ type TakeoverReport struct {
 }
 
 func (TakeoverReport) TableName() string { return "ttw_takeover_report" }
+
+type TakeoverReportImage struct {
+	ID          uint64    `gorm:"primaryKey;column:id"`
+	ReportID    uint64    `gorm:"column:report_id;index:idx_report_id"`
+	ImageURL    string    `gorm:"column:image_url;size:512"`
+	SortOrder   uint      `gorm:"column:sort_order"`
+	IsDeleted   bool      `gorm:"column:is_deleted"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (TakeoverReportImage) TableName() string { return "ttw_takeover_report_image" }
 
 type BlockUser struct {
 	ID           uint64    `gorm:"primaryKey;column:id"`

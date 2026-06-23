@@ -14,9 +14,10 @@ import (
 )
 
 type takeoverReportInput struct {
-	ReportedUserID uint64 `json:"reportedUserId"`
-	Content        string `json:"content"`
-	ImageURL       string `json:"imageUrl"`
+	ReportedUserID uint64   `json:"reportedUserId"`
+	Content        string   `json:"content"`
+	ImageURL       string   `json:"imageUrl"`
+	ImageURLs      []string `json:"imageUrls"`
 }
 
 func (h *Handler) ReportTakeoverMember(c *gin.Context) {
@@ -38,7 +39,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	}
 
 	content := strings.TrimSpace(req.Content)
-	imageURL := strings.TrimSpace(req.ImageURL)
+	imageURLs, imageErr := normalizeReportImageURLs(req.ImageURL, req.ImageURLs)
 	if req.ReportedUserID == 0 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
 		return
@@ -47,8 +48,8 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "report content is required and must be at most 500 characters")
 		return
 	}
-	if len([]rune(imageURL)) > 255 {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "report image url must be at most 255 characters")
+	if imageErr != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, imageErr.Error())
 		return
 	}
 
@@ -76,8 +77,8 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	}
 
 	var imageURLPtr *string
-	if imageURL != "" {
-		imageURLPtr = &imageURL
+	if len(imageURLs) > 0 {
+		imageURLPtr = &imageURLs[0]
 	}
 
 	report := model.TakeoverReport{
@@ -88,7 +89,22 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		ImageURL:       imageURLPtr,
 		ReportState:    model.ReportStatePending,
 	}
-	if err := h.db.Create(&report).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&report).Error; err != nil {
+			return err
+		}
+		for index, imageURL := range imageURLs {
+			image := model.TakeoverReportImage{
+				ReportID:  report.ID,
+				ImageURL:  imageURL,
+				SortOrder: uint(index),
+			}
+			if err := tx.Create(&image).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "report failed")
 		return
 	}
@@ -147,8 +163,19 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		return
 	}
 
+	reportIDs := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		reportIDs = append(reportIDs, row.ID)
+	}
+	imagesByReportID, err := h.takeoverReportImagesByReportID(reportIDs)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
 	list := make([]gin.H, 0, len(rows))
 	for _, row := range rows {
+		imageURLs := reportImageURLs(row.ImageURL, imagesByReportID[row.ID])
 		list = append(list, gin.H{
 			"id":                   row.ID,
 			"takeoverId":           row.TakeoverID,
@@ -161,7 +188,8 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 			"reportedCreditScore":  row.ReportedCredit,
 			"reportedCreditStatus": creditStatus(row.ReportedCredit),
 			"content":              row.ReportContent,
-			"imageUrl":             stringValue(row.ImageURL),
+			"imageUrl":             firstReportImageURL(imageURLs),
+			"imageUrls":            imageURLs,
 			"state":                row.ReportState,
 			"penaltyScore":         row.PenaltyScore,
 			"handleNote":           stringValue(row.HandleNote),
@@ -259,6 +287,65 @@ func (h *Handler) AdminHandleReport(c *gin.Context) {
 }
 
 var errReportHandled = errors.New("report already handled")
+
+func normalizeReportImageURLs(imageURL string, imageURLs []string) ([]string, error) {
+	values := imageURLs
+	if len(values) == 0 && strings.TrimSpace(imageURL) != "" {
+		values = []string{imageURL}
+	}
+	if len(values) > 9 {
+		return nil, errors.New("report images must be at most 9")
+	}
+
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return nil, errors.New("report image url is required")
+		}
+		if len([]rune(trimmed)) > 512 {
+			return nil, errors.New("report image url must be at most 512 characters")
+		}
+		result = append(result, trimmed)
+	}
+	return result, nil
+}
+
+func (h *Handler) takeoverReportImagesByReportID(reportIDs []uint64) (map[uint64][]string, error) {
+	result := make(map[uint64][]string, len(reportIDs))
+	if len(reportIDs) == 0 {
+		return result, nil
+	}
+
+	var images []model.TakeoverReportImage
+	if err := h.db.Where("report_id IN ? AND is_deleted = ?", reportIDs, false).
+		Order("report_id ASC, sort_order ASC, id ASC").
+		Find(&images).Error; err != nil {
+		return nil, err
+	}
+	for _, image := range images {
+		result[image.ReportID] = append(result[image.ReportID], image.ImageURL)
+	}
+	return result, nil
+}
+
+func reportImageURLs(legacyImageURL *string, imageURLs []string) []string {
+	if len(imageURLs) > 0 {
+		return imageURLs
+	}
+	legacy := strings.TrimSpace(stringValue(legacyImageURL))
+	if legacy == "" {
+		return []string{}
+	}
+	return []string{legacy}
+}
+
+func firstReportImageURL(imageURLs []string) string {
+	if len(imageURLs) == 0 {
+		return ""
+	}
+	return imageURLs[0]
+}
 
 func timeString(value *time.Time) string {
 	if value == nil {
