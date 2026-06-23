@@ -80,7 +80,6 @@ type TakeoverReport struct {
 	ReporterUserID   uint64     `gorm:"column:reporter_user_id;index:idx_reporter_user_id"`
 	ReportedUserID   uint64     `gorm:"column:reported_user_id;index:idx_reported_user_id"`
 	ReportContent    string     `gorm:"column:report_content;size:500"`
-	ImageURL         *string    `gorm:"column:image_url;size:512"`
 	ImageURLs        *string    `gorm:"column:image_urls;type:json"`
 	PenaltyScore     uint       `gorm:"column:penalty_score"`
 	HandleNote       *string    `gorm:"column:handle_note;size:500"`

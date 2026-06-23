@@ -92,17 +92,11 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		return
 	}
 
-	var imageURLPtr *string
-	if len(imageURLs) > 0 {
-		imageURLPtr = &imageURLs[0]
-	}
-
 	report := model.TakeoverReport{
 		TakeoverID:     takeoverID,
 		ReporterUserID: user.ID,
 		ReportedUserID: req.ReportedUserID,
 		ReportContent:  content,
-		ImageURL:       imageURLPtr,
 		ImageURLs:      reportImageURLsJSON(imageURLs),
 		ReportState:    model.ReportStatePending,
 	}
@@ -136,7 +130,6 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		ReportedSteamID  *string
 		ReportedCredit   uint
 		ReportContent    string
-		ImageURL         *string
 		ImageURLs        *string
 		ReportState      uint8
 		PenaltyScore     uint
@@ -161,7 +154,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 	}
 
 	var rows []reportRow
-	if err := query.Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_url, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
+	if err := query.Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
 		Order("r.gmt_create DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
@@ -172,7 +165,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 
 	list := make([]gin.H, 0, len(rows))
 	for _, row := range rows {
-		imageURLs := reportImageURLs(row.ImageURL, row.ImageURLs)
+		imageURLs := reportImageURLs(row.ImageURLs)
 		list = append(list, gin.H{
 			"id":                   row.ID,
 			"takeoverId":           row.TakeoverID,
@@ -185,7 +178,6 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 			"reportedCreditScore":  row.ReportedCredit,
 			"reportedCreditStatus": creditStatus(row.ReportedCredit),
 			"content":              row.ReportContent,
-			"imageUrl":             firstReportImageURL(imageURLs),
 			"imageUrls":            imageURLs,
 			"state":                row.ReportState,
 			"penaltyScore":         row.PenaltyScore,
@@ -316,25 +308,14 @@ func reportImageURLsJSON(imageURLs []string) *string {
 	return &value
 }
 
-func reportImageURLs(legacyImageURL *string, imageURLsJSON *string) []string {
+func reportImageURLs(imageURLsJSON *string) []string {
 	if imageURLsJSON != nil && strings.TrimSpace(*imageURLsJSON) != "" {
 		var imageURLs []string
 		if err := json.Unmarshal([]byte(*imageURLsJSON), &imageURLs); err == nil && len(imageURLs) > 0 {
 			return imageURLs
 		}
 	}
-	legacy := strings.TrimSpace(stringValue(legacyImageURL))
-	if legacy == "" {
-		return []string{}
-	}
-	return []string{legacy}
-}
-
-func firstReportImageURL(imageURLs []string) string {
-	if len(imageURLs) == 0 {
-		return ""
-	}
-	return imageURLs[0]
+	return []string{}
 }
 
 func timeString(value *time.Time) string {

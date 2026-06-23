@@ -58,23 +58,21 @@ func TestNormalizeReportImageURLsRejectsInvalidImages(t *testing.T) {
 	}
 }
 
-func TestReportImageURLsUsesJSONBeforeLegacy(t *testing.T) {
-	legacy := "https://example.com/old.png"
+func TestReportImageURLsUsesJSON(t *testing.T) {
 	imageURLsJSON := `["https://example.com/1.png","https://example.com/2.png"]`
 
-	got := reportImageURLs(&legacy, &imageURLsJSON)
+	got := reportImageURLs(&imageURLsJSON)
 	want := []string{"https://example.com/1.png", "https://example.com/2.png"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("reportImageURLs() = %#v, want %#v", got, want)
 	}
 }
 
-func TestReportImageURLsFallsBackToLegacy(t *testing.T) {
-	legacy := "https://example.com/old.png"
+func TestReportImageURLsReturnsEmptyForBadJSON(t *testing.T) {
 	badJSON := `not json`
 
-	got := reportImageURLs(&legacy, &badJSON)
-	if len(got) != 1 || got[0] != legacy {
-		t.Fatalf("reportImageURLs() = %#v, want legacy image URL", got)
+	got := reportImageURLs(&badJSON)
+	if len(got) != 0 {
+		t.Fatalf("reportImageURLs() = %#v, want empty", got)
 	}
 }
