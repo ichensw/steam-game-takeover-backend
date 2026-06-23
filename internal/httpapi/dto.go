@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"steam-game-takeover-backend/internal/model"
@@ -75,7 +76,7 @@ func toUserDTO(user model.User) userDTO {
 		SteamID:          stringValue(user.SteamID),
 		Gender:           user.Gender,
 		AvatarURL:        normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
-		ProfileCompleted: user.IsProfileCompleted,
+		ProfileCompleted: isUserProfileCompleted(user),
 		Blocked:          user.IsBlocked,
 		IsAdmin:          user.IsAdmin,
 		CreditScore:      user.CreditScore,
@@ -229,6 +230,23 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func hasUserProfileFields(user model.User) bool {
+	if strings.TrimSpace(stringValue(user.Nickname)) == "" {
+		return false
+	}
+	if strings.TrimSpace(stringValue(user.SteamID)) == "" {
+		return false
+	}
+	if user.Gender == nil {
+		return false
+	}
+	return *user.Gender == model.GenderMale || *user.Gender == model.GenderFemale
+}
+
+func isUserProfileCompleted(user model.User) bool {
+	return !user.IsDeleted && !user.IsBlocked && hasUserProfileFields(user)
 }
 
 func creditStatus(score uint) string {

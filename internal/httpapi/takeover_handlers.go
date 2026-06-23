@@ -338,11 +338,11 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		return tx.Create(&member).Error
 	}); err != nil {
 		if errors.Is(err, errProfileRequired) {
-			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+			fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
 			return
 		}
 		if errors.Is(err, errUserBlocked) {
-			fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+			fail(c, http.StatusForbidden, CodeUserBlocked, "您已被管理员拉黑")
 			return
 		}
 		if errors.Is(err, errCreditTooLowForCreate) {
@@ -464,9 +464,9 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		case errors.Is(err, errTakeoverFull):
 			fail(c, http.StatusConflict, CodeTakeoverFull, "takeover full")
 		case errors.Is(err, errProfileRequired):
-			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+			fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
 		case errors.Is(err, errUserBlocked):
-			fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+			fail(c, http.StatusForbidden, CodeUserBlocked, "您已被管理员拉黑")
 		case errors.Is(err, errCreditTooLowForJoin):
 			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for join")
 		default:
@@ -558,7 +558,7 @@ func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error
 	if user.IsBlocked {
 		return model.User{}, errUserBlocked
 	}
-	if !user.IsProfileCompleted {
+	if !hasUserProfileFields(user) {
 		return model.User{}, errProfileRequired
 	}
 	return user, nil
@@ -566,15 +566,15 @@ func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error
 
 func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) bool {
 	if user.IsBlocked {
-		fail(c, http.StatusForbidden, CodeUserBlocked, "user blocked")
+		fail(c, http.StatusForbidden, CodeUserBlocked, "您已被管理员拉黑")
 		return false
 	}
 	if user.IsDeleted {
-		fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+		fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
 		return false
 	}
-	if requireProfile && !user.IsProfileCompleted {
-		fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
+	if requireProfile && !hasUserProfileFields(user) {
+		fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
 		return false
 	}
 	return true

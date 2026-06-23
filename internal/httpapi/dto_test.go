@@ -92,3 +92,25 @@ func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
 		}
 	}
 }
+
+func TestIsUserProfileCompletedUsesStoredFields(t *testing.T) {
+	gender := uint8(model.GenderFemale)
+	nickname := "兔兔"
+	steamID := "7656119"
+
+	user := model.User{
+		Nickname:           &nickname,
+		SteamID:            &steamID,
+		Gender:             &gender,
+		IsProfileCompleted: false,
+	}
+	if !isUserProfileCompleted(user) {
+		t.Fatal("expected profile completed from stored profile fields")
+	}
+
+	user.SteamID = nil
+	user.IsProfileCompleted = true
+	if isUserProfileCompleted(user) {
+		t.Fatal("expected incomplete when required profile fields are missing")
+	}
+}
