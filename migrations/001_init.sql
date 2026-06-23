@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover_report` (
   KEY `idx_takeover_id` (`takeover_id`),
   KEY `idx_reporter_user_id` (`reporter_user_id`),
   KEY `idx_reported_user_id` (`reported_user_id`),
+  UNIQUE KEY `uk_takeover_report_pair` (`takeover_id`, `reporter_user_id`, `reported_user_id`),
   KEY `idx_gmt_create` (`gmt_create`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接龙举报表';
 

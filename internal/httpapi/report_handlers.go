@@ -45,6 +45,10 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
 		return
 	}
+	if req.ReportedUserID == user.ID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "cannot report yourself")
+		return
+	}
 	if content == "" || len([]rune(content)) > 500 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "report content is required and must be at most 500 characters")
 		return
@@ -77,6 +81,18 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		return
 	}
 
+	var reportCount int64
+	if err := h.db.Model(&model.TakeoverReport{}).
+		Where("takeover_id = ? AND reporter_user_id = ? AND reported_user_id = ?", takeoverID, user.ID, req.ReportedUserID).
+		Count(&reportCount).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if reportCount > 0 {
+		fail(c, http.StatusConflict, CodeParamInvalid, "report already submitted")
+		return
+	}
+
 	var imageURLPtr *string
 	if len(imageURLs) > 0 {
 		imageURLPtr = &imageURLs[0]
@@ -92,6 +108,10 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		ReportState:    model.ReportStatePending,
 	}
 	if err := h.db.Create(&report).Error; err != nil {
+		if strings.Contains(err.Error(), "Duplicate entry") {
+			fail(c, http.StatusConflict, CodeParamInvalid, "report already submitted")
+			return
+		}
 		fail(c, http.StatusInternalServerError, CodeSystemError, "report failed")
 		return
 	}
