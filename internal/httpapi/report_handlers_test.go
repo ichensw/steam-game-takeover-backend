@@ -68,3 +68,24 @@ func TestNormalizeReportImageURLsRejectsInvalidImages(t *testing.T) {
 		})
 	}
 }
+
+func TestReportImageURLsUsesJSONBeforeLegacy(t *testing.T) {
+	legacy := "https://example.com/old.png"
+	imageURLsJSON := `["https://example.com/1.png","https://example.com/2.png"]`
+
+	got := reportImageURLs(&legacy, &imageURLsJSON)
+	want := []string{"https://example.com/1.png", "https://example.com/2.png"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("reportImageURLs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestReportImageURLsFallsBackToLegacy(t *testing.T) {
+	legacy := "https://example.com/old.png"
+	badJSON := `not json`
+
+	got := reportImageURLs(&legacy, &badJSON)
+	if len(got) != 1 || got[0] != legacy {
+		t.Fatalf("reportImageURLs() = %#v, want legacy image URL", got)
+	}
+}

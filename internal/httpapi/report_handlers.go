@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -87,24 +88,10 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		ReportedUserID: req.ReportedUserID,
 		ReportContent:  content,
 		ImageURL:       imageURLPtr,
+		ImageURLs:      reportImageURLsJSON(imageURLs),
 		ReportState:    model.ReportStatePending,
 	}
-	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&report).Error; err != nil {
-			return err
-		}
-		for index, imageURL := range imageURLs {
-			image := model.TakeoverReportImage{
-				ReportID:  report.ID,
-				ImageURL:  imageURL,
-				SortOrder: uint(index),
-			}
-			if err := tx.Create(&image).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
+	if err := h.db.Create(&report).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "report failed")
 		return
 	}
@@ -131,6 +118,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		ReportedCredit   uint
 		ReportContent    string
 		ImageURL         *string
+		ImageURLs        *string
 		ReportState      uint8
 		PenaltyScore     uint
 		HandleNote       *string
@@ -154,7 +142,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 	}
 
 	var rows []reportRow
-	if err := query.Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_url, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
+	if err := query.Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_url, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
 		Order("r.gmt_create DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
@@ -163,19 +151,9 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		return
 	}
 
-	reportIDs := make([]uint64, 0, len(rows))
-	for _, row := range rows {
-		reportIDs = append(reportIDs, row.ID)
-	}
-	imagesByReportID, err := h.takeoverReportImagesByReportID(reportIDs)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
-	}
-
 	list := make([]gin.H, 0, len(rows))
 	for _, row := range rows {
-		imageURLs := reportImageURLs(row.ImageURL, imagesByReportID[row.ID])
+		imageURLs := reportImageURLs(row.ImageURL, row.ImageURLs)
 		list = append(list, gin.H{
 			"id":                   row.ID,
 			"takeoverId":           row.TakeoverID,
@@ -311,27 +289,24 @@ func normalizeReportImageURLs(imageURL string, imageURLs []string) ([]string, er
 	return result, nil
 }
 
-func (h *Handler) takeoverReportImagesByReportID(reportIDs []uint64) (map[uint64][]string, error) {
-	result := make(map[uint64][]string, len(reportIDs))
-	if len(reportIDs) == 0 {
-		return result, nil
+func reportImageURLsJSON(imageURLs []string) *string {
+	if len(imageURLs) == 0 {
+		return nil
 	}
-
-	var images []model.TakeoverReportImage
-	if err := h.db.Where("report_id IN ? AND is_deleted = ?", reportIDs, false).
-		Order("report_id ASC, sort_order ASC, id ASC").
-		Find(&images).Error; err != nil {
-		return nil, err
+	data, err := json.Marshal(imageURLs)
+	if err != nil {
+		return nil
 	}
-	for _, image := range images {
-		result[image.ReportID] = append(result[image.ReportID], image.ImageURL)
-	}
-	return result, nil
+	value := string(data)
+	return &value
 }
 
-func reportImageURLs(legacyImageURL *string, imageURLs []string) []string {
-	if len(imageURLs) > 0 {
-		return imageURLs
+func reportImageURLs(legacyImageURL *string, imageURLsJSON *string) []string {
+	if imageURLsJSON != nil && strings.TrimSpace(*imageURLsJSON) != "" {
+		var imageURLs []string
+		if err := json.Unmarshal([]byte(*imageURLsJSON), &imageURLs); err == nil && len(imageURLs) > 0 {
+			return imageURLs
+		}
 	}
 	legacy := strings.TrimSpace(stringValue(legacyImageURL))
 	if legacy == "" {
