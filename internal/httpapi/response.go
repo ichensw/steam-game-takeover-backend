@@ -7,19 +7,20 @@ import (
 )
 
 const (
-	CodeSuccess              = "SUCCESS"
-	CodeParamInvalid         = "PARAM_INVALID"
-	CodeUnauthorized         = "UNAUTHORIZED"
-	CodeProfileIncomplete    = "PROFILE_INCOMPLETE"
-	CodeUserBlocked          = "USER_BLOCKED"
-	CodeTakeoverNotFound     = "TAKEOVER_NOT_FOUND"
-	CodeTakeoverFull         = "TAKEOVER_FULL"
-	CodeAlreadyJoined        = "ALREADY_JOINED"
-	CodeReportAlreadyExists  = "REPORT_ALREADY_EXISTS"
-	CodeCannotReportSelf     = "CANNOT_REPORT_SELF"
-	CodeAdminUnauthorized    = "ADMIN_UNAUTHORIZED"
-	CodeAdminPasswordInvalid = "ADMIN_PASSWORD_INVALID"
-	CodeSystemError          = "SYSTEM_ERROR"
+	CodeSuccess                   = "SUCCESS"
+	CodeParamInvalid              = "PARAM_INVALID"
+	CodeUnauthorized              = "UNAUTHORIZED"
+	CodeProfileIncomplete         = "PROFILE_INCOMPLETE"
+	CodeUserBlocked               = "USER_BLOCKED"
+	CodeTakeoverNotFound          = "TAKEOVER_NOT_FOUND"
+	CodeTakeoverFull              = "TAKEOVER_FULL"
+	CodeAlreadyJoined             = "ALREADY_JOINED"
+	CodeReportAlreadyExists       = "REPORT_ALREADY_EXISTS"
+	CodeCannotReportSelf          = "CANNOT_REPORT_SELF"
+	CodeReportedUserNotInTakeover = "REPORTED_USER_NOT_IN_TAKEOVER"
+	CodeAdminUnauthorized         = "ADMIN_UNAUTHORIZED"
+	CodeAdminPasswordInvalid      = "ADMIN_PASSWORD_INVALID"
+	CodeSystemError               = "SYSTEM_ERROR"
 )
 
 type APIResponse struct {
@@ -51,18 +52,19 @@ func friendlyMessage(code string, message string) string {
 }
 
 var codeTranslations = map[string]string{
-	CodeParamInvalid:         "参数不正确，请检查后再试",
-	CodeUnauthorized:         "登录状态已失效，请重新进入小程序",
-	CodeProfileIncomplete:    "请先完善个人资料",
-	CodeUserBlocked:          "您已被管理员拉黑",
-	CodeTakeoverNotFound:     "接龙不存在或已被删除",
-	CodeTakeoverFull:         "接龙人数已满",
-	CodeAlreadyJoined:        "您已经加入过这个接龙",
-	CodeReportAlreadyExists:  "已举报过该用户",
-	CodeCannotReportSelf:     "不能举报自己",
-	CodeAdminUnauthorized:    "管理员登录已失效，请重新登录",
-	CodeAdminPasswordInvalid: "管理员密码不正确",
-	CodeSystemError:          "系统开小差了，请稍后再试",
+	CodeParamInvalid:              "参数不正确，请检查后再试",
+	CodeUnauthorized:              "登录状态已失效，请重新进入小程序",
+	CodeProfileIncomplete:         "请先完善个人资料",
+	CodeUserBlocked:               "您已被管理员拉黑",
+	CodeTakeoverNotFound:          "接龙不存在或已被删除",
+	CodeTakeoverFull:              "接龙人数已满",
+	CodeAlreadyJoined:             "您已经加入过这个接龙",
+	CodeReportAlreadyExists:       "已举报过该用户",
+	CodeCannotReportSelf:          "不能举报自己",
+	CodeReportedUserNotInTakeover: "被举报用户不在该接龙中",
+	CodeAdminUnauthorized:         "管理员登录已失效，请重新登录",
+	CodeAdminPasswordInvalid:      "管理员密码不正确",
+	CodeSystemError:               "系统开小差了，请稍后再试",
 }
 
 var messageTranslations = map[string]string{

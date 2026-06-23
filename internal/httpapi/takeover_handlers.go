@@ -155,6 +155,7 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 			return
 		}
 		for index := range members {
+			members[index].IsSelf = members[index].UserID == user.ID
 			members[index].HasReported = reportedUserIDs[members[index].UserID]
 		}
 	}

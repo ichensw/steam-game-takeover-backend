@@ -76,7 +76,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		return
 	}
 	if memberCount == 0 {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "reported user is not in takeover")
+		fail(c, http.StatusBadRequest, CodeReportedUserNotInTakeover, "被举报用户不在该接龙中")
 		return
 	}
 
