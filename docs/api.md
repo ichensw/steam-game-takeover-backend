@@ -181,6 +181,7 @@ Content-Type: application/json
 - 后端用 `code` 调微信 `jscode2session` 换取 `openid`。
 - 若用户不存在，自动创建。
 - 返回用户 token 和资料状态。
+- `publishTakeoverEnabled` 表示当前用户是否可看到“发布接龙”按钮：全局配置开启，或当前用户 SteamID 在发布白名单中。
 - `WX_LOGIN_MOCK=true` 时，会把 code 转为测试 openid，仅用于本地调试。
 
 响应：
@@ -200,7 +201,8 @@ Content-Type: application/json
       "avatarUrl": "",
       "profileCompleted": false,
       "blocked": false
-    }
+    },
+    "publishTakeoverEnabled": false
   }
 }
 ```
@@ -237,6 +239,7 @@ Content-Type: application/json
 - `steamId` 必填，最长 64 字符。
 - 如果只传 `steamId`，后端会按 SteamID 查询或创建一个 `web_` openid 用户。
 - 如果传完整资料，会保存昵称、性别、头像并标记资料已完善。
+- 响应中的 `publishTakeoverEnabled` 含义同微信登录。
 
 响应同微信登录：
 
@@ -305,6 +308,11 @@ Content-Type: application/json
 | `steamId` | 必填，最多 64 字符 |
 | `gender` | 只能为 `1` 或 `2` |
 | `avatarUrl` | 可为空，最多 255 字符 |
+
+说明：
+
+- `nickname` 会先走本地敏感词表，再走微信文本内容安全。
+- 检测未通过时返回 `PARAM_INVALID`，提示“内容包含不合规信息，请修改后再提交”。
 
 响应：
 
@@ -548,6 +556,9 @@ Content-Type: application/json
 - 用户必须资料完整。
 - 创建者会自动加入该接龙。
 - 被拉黑用户不能创建。
+- 只有 `publish_takeover_enabled=true`，或当前用户 SteamID 在发布白名单内，才允许创建。
+- `title` 和 `description` 会先走本地敏感词表，再走微信文本内容安全。
+- 检测未通过时返回 `PARAM_INVALID`，提示“内容包含不合规信息，请修改后再提交”。
 
 ### 加入接龙
 
@@ -629,6 +640,7 @@ Content-Type: multipart/form-data
 - 大小：1 byte 到 5 MB。
 - 类型：JPG、PNG、GIF、WebP。
 - 依赖 OSS 环境变量：`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_BASE_URL`。
+- 图片上传到 OSS 前会先走微信图片内容安全；检测未通过时返回 `PARAM_INVALID`。
 
 响应：
 
@@ -841,6 +853,78 @@ Authorization: Bearer <admin-token>
 | `ADMIN_PASSWORD_INVALID` | 管理员密码错误 |
 | `SYSTEM_ERROR` | 系统异常 |
 
+## 运营配置表
+
+### 发布接龙全局开关
+
+发布接龙全局开关仍使用 `ttw_app_config`：
+
+```sql
+UPDATE ttw_app_config
+SET config_value = 'true'
+WHERE config_key = 'publish_takeover_enabled';
+```
+
+规则：
+
+- `publish_takeover_enabled=true`：所有用户可看到发布按钮，也可创建接龙。
+- `publish_takeover_enabled=false`：只有 SteamID 在 `ttw_publish_takeover_whitelist` 且 `enabled=1` 的用户可看到发布按钮，也可创建接龙。
+
+### 发布接龙白名单
+
+白名单按 SteamID 维护：
+
+```sql
+INSERT INTO ttw_publish_takeover_whitelist (steam_id, enabled)
+VALUES ('76561198000000000', 1)
+ON DUPLICATE KEY UPDATE enabled = 1;
+
+UPDATE ttw_publish_takeover_whitelist
+SET enabled = 0
+WHERE steam_id = '76561198000000000';
+
+SELECT id, steam_id, enabled, gmt_create
+FROM ttw_publish_takeover_whitelist
+ORDER BY id DESC;
+```
+
+### 本地敏感词
+
+本地敏感词用于微信内容安全前的兜底拦截，命中后直接拒绝并写入 `ttw_content_audit`：
+
+```sql
+INSERT INTO ttw_sensitive_word (word, enabled)
+VALUES ('加我VX', 1)
+ON DUPLICATE KEY UPDATE enabled = 1;
+
+UPDATE ttw_sensitive_word
+SET enabled = 0
+WHERE word = '加我VX';
+
+SELECT id, word, enabled, gmt_create
+FROM ttw_sensitive_word
+ORDER BY id DESC;
+```
+
+### 内容安全审核记录
+
+昵称、接龙标题/介绍、图片上传会写入 `ttw_content_audit`：
+
+```sql
+SELECT id, user_id, openid, content_type, target_id, scene, status, wx_result, gmt_create
+FROM ttw_content_audit
+ORDER BY id DESC
+LIMIT 20;
+```
+
+说明：
+
+- `content_type=profile`：用户昵称。
+- `content_type=takeover`：接龙标题/介绍。
+- `content_type=image`：上传图片。
+- `status=pass/review/risky/error`。
+- 举报内容不做敏感检测。
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -855,6 +939,7 @@ Authorization: Bearer <admin-token>
 | `WX_APP_ID` | 微信小程序 AppID | 空 |
 | `WX_APP_SECRET` | 微信小程序 AppSecret | 空 |
 | `WX_LOGIN_MOCK` | 是否启用微信登录 mock | `false` |
+| `CONTENT_SECURITY_ENABLED` | 是否启用内容安全检测；`WX_LOGIN_MOCK=true` 时默认关闭 | `true` |
 | `OSS_ENDPOINT` | OSS endpoint | 空 |
 | `OSS_BUCKET` | OSS bucket | 空 |
 | `OSS_ACCESS_KEY_ID` | OSS AccessKey ID | 空 |
