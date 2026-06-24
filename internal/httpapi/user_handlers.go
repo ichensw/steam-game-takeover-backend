@@ -50,7 +50,7 @@ func (h *Handler) WXLogin(c *gin.Context) {
 	ok(c, "success", gin.H{
 		"token":                  token,
 		"user":                   toUserDTO(user),
-		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
+		"publishTakeoverEnabled": h.canPublishTakeover(user),
 	})
 }
 
@@ -328,6 +328,15 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId cannot be changed")
 		return
 	}
+	if err := h.checkTextSecurity(contentSecurityTarget{
+		User:        user,
+		ContentType: "profile",
+		TargetID:    user.ID,
+		Scene:       contentSceneProfile,
+	}, nickname); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
+		return
+	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		var linked model.User
@@ -375,7 +384,7 @@ func (h *Handler) respondWebLogin(c *gin.Context, user model.User) {
 	ok(c, "success", gin.H{
 		"token":                  token,
 		"user":                   toUserDTO(user),
-		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
+		"publishTakeoverEnabled": h.canPublishTakeover(user),
 	})
 }
 

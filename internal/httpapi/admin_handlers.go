@@ -70,6 +70,18 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		return
 	}
+	var creator model.User
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeover.CreatorUserID, false).First(&creator).Error; err == nil {
+		if err := h.checkTextSecurity(contentSecurityTarget{
+			User:        creator,
+			ContentType: "takeover",
+			TargetID:    takeoverID,
+			Scene:       contentScenePost,
+		}, takeoverSecurityText(parsed)); err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
+			return
+		}
+	}
 
 	joinedCount, err := countValidJoinedMembers(h.db, takeoverID)
 	if err != nil {

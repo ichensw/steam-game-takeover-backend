@@ -10,52 +10,56 @@ import (
 )
 
 type Config struct {
-	Addr               string
-	DBDSN              string
-	JWTSecret          string
-	UserTokenTTL       time.Duration
-	AdminPassword      string
-	AdminTokenSecret   string
-	AdminTokenTTL      time.Duration
-	WXAppID            string
-	WXAppSecret        string
-	WXLoginMock        bool
-	BotQueryEnabled    bool
-	BotQuerySteamID    string
-	BotQueryNickname   string
-	BotQueryGender     uint8
-	BotQueryAvatarURL  string
-	OSSEndpoint        string
-	OSSBucket          string
-	OSSAccessKeyID     string
-	OSSAccessKeySecret string
-	OSSBaseURL         string
+	Addr                   string
+	DBDSN                  string
+	JWTSecret              string
+	UserTokenTTL           time.Duration
+	AdminPassword          string
+	AdminTokenSecret       string
+	AdminTokenTTL          time.Duration
+	WXAppID                string
+	WXAppSecret            string
+	WXLoginMock            bool
+	ContentSecurityEnabled bool
+	BotQueryEnabled        bool
+	BotQuerySteamID        string
+	BotQueryNickname       string
+	BotQueryGender         uint8
+	BotQueryAvatarURL      string
+	OSSEndpoint            string
+	OSSBucket              string
+	OSSAccessKeyID         string
+	OSSAccessKeySecret     string
+	OSSBaseURL             string
 }
 
 func Load() Config {
 	loadEnv()
 
+	wxLoginMock := envBool("WX_LOGIN_MOCK", false)
+
 	return Config{
-		Addr:               env("APP_ADDR", ":8081"),
-		DBDSN:              env("DB_DSN", "root:password@tcp(127.0.0.1:3306)/steam_takeover?charset=utf8mb4&parseTime=True&loc=Local"),
-		JWTSecret:          env("JWT_SECRET", "change-me-user-token-secret"),
-		UserTokenTTL:       durationHours("USER_TOKEN_TTL_HOURS", 24*30),
-		AdminPassword:      env("ADMIN_PASSWORD", ""),
-		AdminTokenSecret:   env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
-		AdminTokenTTL:      durationHours("ADMIN_TOKEN_TTL_HOURS", 2),
-		WXAppID:            env("WX_APP_ID", ""),
-		WXAppSecret:        env("WX_APP_SECRET", ""),
-		WXLoginMock:        envBool("WX_LOGIN_MOCK", false),
-		BotQueryEnabled:    envBool("BOT_QUERY_ENABLED", true),
-		BotQuerySteamID:    env("BOT_QUERY_STEAM_ID", "wechat-bot-query"),
-		BotQueryNickname:   env("BOT_QUERY_NICKNAME", "WeChat Bot"),
-		BotQueryGender:     uint8Value("BOT_QUERY_GENDER", 1),
-		BotQueryAvatarURL:  env("BOT_QUERY_AVATAR_URL", ""),
-		OSSEndpoint:        env("OSS_ENDPOINT", ""),
-		OSSBucket:          env("OSS_BUCKET", ""),
-		OSSAccessKeyID:     env("OSS_ACCESS_KEY_ID", ""),
-		OSSAccessKeySecret: env("OSS_ACCESS_KEY_SECRET", ""),
-		OSSBaseURL:         env("OSS_BASE_URL", ""),
+		Addr:                   env("APP_ADDR", ":8081"),
+		DBDSN:                  env("DB_DSN", "root:password@tcp(127.0.0.1:3306)/steam_takeover?charset=utf8mb4&parseTime=True&loc=Local"),
+		JWTSecret:              env("JWT_SECRET", "change-me-user-token-secret"),
+		UserTokenTTL:           durationHours("USER_TOKEN_TTL_HOURS", 24*30),
+		AdminPassword:          env("ADMIN_PASSWORD", ""),
+		AdminTokenSecret:       env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
+		AdminTokenTTL:          durationHours("ADMIN_TOKEN_TTL_HOURS", 2),
+		WXAppID:                env("WX_APP_ID", ""),
+		WXAppSecret:            env("WX_APP_SECRET", ""),
+		WXLoginMock:            wxLoginMock,
+		ContentSecurityEnabled: envBool("CONTENT_SECURITY_ENABLED", !wxLoginMock),
+		BotQueryEnabled:        envBool("BOT_QUERY_ENABLED", true),
+		BotQuerySteamID:        env("BOT_QUERY_STEAM_ID", "wechat-bot-query"),
+		BotQueryNickname:       env("BOT_QUERY_NICKNAME", "WeChat Bot"),
+		BotQueryGender:         uint8Value("BOT_QUERY_GENDER", 1),
+		BotQueryAvatarURL:      env("BOT_QUERY_AVATAR_URL", ""),
+		OSSEndpoint:            env("OSS_ENDPOINT", ""),
+		OSSBucket:              env("OSS_BUCKET", ""),
+		OSSAccessKeyID:         env("OSS_ACCESS_KEY_ID", ""),
+		OSSAccessKeySecret:     env("OSS_ACCESS_KEY_SECRET", ""),
+		OSSBaseURL:             env("OSS_BASE_URL", ""),
 	}
 }
 

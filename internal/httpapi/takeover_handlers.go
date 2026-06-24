@@ -206,6 +206,15 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		return
 	}
+	if err := h.checkTextSecurity(contentSecurityTarget{
+		User:        user,
+		ContentType: "takeover",
+		TargetID:    takeoverID,
+		Scene:       contentScenePost,
+	}, takeoverSecurityText(parsed)); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
+		return
+	}
 
 	joinedCount, err := countValidJoinedMembers(h.db, takeoverID)
 	if err != nil {
@@ -291,7 +300,7 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 	if !ensureUserAllowed(c, user, true) {
 		return
 	}
-	if !h.publishTakeoverEnabled() {
+	if !h.canPublishTakeover(user) {
 		fail(c, http.StatusForbidden, CodeParamInvalid, "publish takeover disabled")
 		return
 	}
@@ -304,6 +313,14 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 	parsed, err := validateTakeoverInput(req, true)
 	if err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+	if err := h.checkTextSecurity(contentSecurityTarget{
+		User:        user,
+		ContentType: "takeover",
+		Scene:       contentScenePost,
+	}, takeoverSecurityText(parsed)); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
 		return
 	}
 

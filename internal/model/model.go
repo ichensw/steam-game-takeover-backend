@@ -20,6 +20,11 @@ const (
 	ReportStateIgnored   = 2
 	ReportStatePenalized = 3
 
+	ContentAuditStatusPass   = "pass"
+	ContentAuditStatusReview = "review"
+	ContentAuditStatusRisky  = "risky"
+	ContentAuditStatusError  = "error"
+
 	DefaultCreditScore   = 100
 	MinJoinCreditScore   = 70
 	MinCreateCreditScore = 51
@@ -116,6 +121,40 @@ type AdminOperateLog struct {
 }
 
 func (AdminOperateLog) TableName() string { return "ttw_admin_operate_log" }
+
+type ContentAudit struct {
+	ID          uint64    `gorm:"primaryKey;column:id"`
+	UserID      uint64    `gorm:"column:user_id;index:idx_user_id"`
+	OpenID      string    `gorm:"column:openid;size:64;index:idx_openid"`
+	ContentType string    `gorm:"column:content_type;size:32;index:idx_content"`
+	TargetID    uint64    `gorm:"column:target_id;index:idx_content"`
+	Scene       uint8     `gorm:"column:scene"`
+	Status      string    `gorm:"column:status;size:16;index:idx_status"`
+	WXResult    *string   `gorm:"column:wx_result;type:json"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
+}
+
+func (ContentAudit) TableName() string { return "ttw_content_audit" }
+
+type SensitiveWord struct {
+	ID          uint64    `gorm:"primaryKey;column:id"`
+	Word        string    `gorm:"column:word;size:128;uniqueIndex:uk_word"`
+	Enabled     bool      `gorm:"column:enabled;index:idx_enabled"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (SensitiveWord) TableName() string { return "ttw_sensitive_word" }
+
+type PublishTakeoverWhitelist struct {
+	ID          uint64    `gorm:"primaryKey;column:id"`
+	SteamID     string    `gorm:"column:steam_id;size:64;uniqueIndex:uk_steam_id"`
+	Enabled     bool      `gorm:"column:enabled;index:idx_enabled"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (PublishTakeoverWhitelist) TableName() string { return "ttw_publish_takeover_whitelist" }
 
 const AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
 

@@ -74,6 +74,7 @@ var messageTranslations = map[string]string{
 	"avatarUrl must be at most 255 characters":   "头像地址过长，请重新上传",
 	"block failed":                               "拉黑失败，请稍后再试",
 	"cannot report yourself":                     "不能举报自己",
+	"content security reject":                    "内容包含不合规信息，请修改后再提交",
 	"code is required":                           "登录凭证缺失，请重新进入小程序",
 	"create failed":                              "创建接龙失败，请稍后再试",
 	"credit restore failed":                      "信誉分恢复失败，请稍后再试",

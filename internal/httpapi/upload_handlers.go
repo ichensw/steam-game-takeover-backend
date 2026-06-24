@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -42,6 +44,19 @@ func (h *Handler) UploadImage(c *gin.Context) {
 		return
 	}
 	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "open upload failed")
+		return
+	}
+	if err := h.checkImageSecurity(contentSecurityTarget{
+		User:        user,
+		ContentType: "image",
+		Scene:       contentSceneProfile,
+	}, fileHeader.Filename, data); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
+		return
+	}
 
 	bucket, err := h.ossBucket()
 	if err != nil {
@@ -50,7 +65,7 @@ func (h *Handler) UploadImage(c *gin.Context) {
 	}
 
 	objectKey := uploadObjectKey(user.ID, ext)
-	if err := bucket.PutObject(objectKey, file, oss.ContentType(contentType)); err != nil {
+	if err := bucket.PutObject(objectKey, bytes.NewReader(data), oss.ContentType(contentType)); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "upload failed")
 		return
 	}
