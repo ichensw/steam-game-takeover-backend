@@ -23,6 +23,14 @@ func (h *Handler) uapiKey() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigUAPIKey))
 }
 
+func (h *Handler) kookBotToken() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookBotToken))
+}
+
+func (h *Handler) kookGuildID() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookGuildID))
+}
+
 func (h *Handler) appConfigValue(key string) string {
 	var config model.AppConfig
 	if err := h.db.Where("config_key = ?", key).First(&config).Error; err != nil {
@@ -57,6 +65,8 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 	ok(c, "success", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
+		"kookBotToken":           h.kookBotToken(),
+		"kookGuildId":            h.kookGuildID(),
 	})
 }
 
@@ -64,12 +74,14 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	var req struct {
 		PublishTakeoverEnabled *bool   `json:"publishTakeoverEnabled"`
 		UAPIKey                *string `json:"uapiKey"`
+		KookBotToken           *string `json:"kookBotToken"`
+		KookGuildID            *string `json:"kookGuildId"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -85,9 +97,23 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.KookBotToken != nil {
+		if err := h.saveAppConfig(model.AppConfigKookBotToken, strings.TrimSpace(*req.KookBotToken)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.KookGuildID != nil {
+		if err := h.saveAppConfig(model.AppConfigKookGuildID, strings.TrimSpace(*req.KookGuildID)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	ok(c, "saved", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
+		"kookBotToken":           h.kookBotToken(),
+		"kookGuildId":            h.kookGuildID(),
 	})
 }
 

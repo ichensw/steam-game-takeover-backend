@@ -617,6 +617,47 @@ curl -X POST "http://47.102.200.211:8081/api/uploads/image" \
   -F "file=@avatar.jpg"
 ```
 
+## KOOK 接口
+
+### 查询频道列表
+
+```http
+GET /api/kook/channels
+Authorization: Bearer <user-token>
+```
+
+说明：
+
+- 后端使用 `ttw_app_config.kook_bot_token` 和 `ttw_app_config.kook_guild_id` 调用 KOOK。
+- 当前只返回文字频道，默认最多 50 个。
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "id": "1895580130534522",
+        "name": "新人指导处",
+        "topic": "欢迎新人",
+        "parentId": "",
+        "level": 2
+      }
+    ],
+    "meta": {
+      "page": 1,
+      "pageTotal": 1,
+      "pageSize": 50,
+      "total": 30
+    }
+  }
+}
+```
+
 ## 管理员接口
 
 除登录外，后台接口统一使用后台 token：
@@ -743,7 +784,9 @@ Authorization: Bearer <admin-token>
   "message": "success",
   "data": {
     "publishTakeoverEnabled": false,
-    "uapiKey": "uapi-xxx"
+    "uapiKey": "uapi-xxx",
+    "kookBotToken": "1/xxx",
+    "kookGuildId": "3623183187289015"
   }
 }
 ```
@@ -761,16 +804,20 @@ Content-Type: application/json
 ```json
 {
   "publishTakeoverEnabled": true,
-  "uapiKey": "uapi-xxx"
+  "uapiKey": "uapi-xxx",
+  "kookBotToken": "1/xxx",
+  "kookGuildId": "3623183187289015"
 }
 ```
 
 说明：
 
-- 当前支持 `publishTakeoverEnabled` 和 `uapiKey`。
+- 当前支持 `publishTakeoverEnabled`、`uapiKey`、`kookBotToken`、`kookGuildId`。
 - 可只传需要更新的字段。
 - `publishTakeoverEnabled` 对应 `ttw_app_config.config_key = publish_takeover_enabled`。
 - `uapiKey` 对应 `ttw_app_config.config_key = uapi_key`，用于校验 Steam 好友码。
+- `kookBotToken` 对应 `ttw_app_config.config_key = kook_bot_token`。
+- `kookGuildId` 对应 `ttw_app_config.config_key = kook_guild_id`。
 
 ### 管理员查询接龙列表
 

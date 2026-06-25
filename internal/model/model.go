@@ -173,6 +173,8 @@ func (PublishTakeoverWhitelist) TableName() string { return "ttw_publish_takeove
 const (
 	AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
 	AppConfigUAPIKey                = "uapi_key"
+	AppConfigKookBotToken           = "kook_bot_token"
+	AppConfigKookGuildID            = "kook_guild_id"
 )
 
 type AppConfig struct {

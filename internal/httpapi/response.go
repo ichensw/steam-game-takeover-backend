@@ -91,6 +91,7 @@ var messageTranslations = map[string]string{
 	"invalid takeover id":                        "接龙信息不正确，请刷新后再试",
 	"invalid user id":                            "用户信息不正确，请刷新后再试",
 	"join failed":                                "加入接龙失败，请稍后再试",
+	"kook channel query failed":                  "获取 KOOK 频道失败，请稍后再试",
 	"leave failed":                               "退出接龙失败，请稍后再试",
 	"login failed":                               "登录失败，请稍后再试",
 	"nickname is required and must be at most 32 characters": "请输入 32 个字以内的昵称",
