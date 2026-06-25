@@ -394,8 +394,10 @@ func (h *Handler) AdminListTakeovers(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
+	query = applySort(query, c.Query("sortField"), c.Query("sortOrder"), takeoverSortFields, "gmt_create")
+
 	var takeovers []model.Takeover
-	if err := query.Order("gmt_create DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&takeovers).Error; err != nil {
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&takeovers).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
@@ -416,6 +418,18 @@ func (h *Handler) AdminListTakeovers(c *gin.Context) {
 		list = append(list, dto)
 	}
 	ok(c, "success", gin.H{"page": page, "pageSize": pageSize, "total": total, "list": list})
+}
+
+var takeoverSortFields = map[string]string{
+	"id":               "id",
+	"title":            "title",
+	"participantLimit": "participant_limit",
+	"scheduleType":     "schedule_type",
+	"startDate":        "start_date",
+	"endDate":          "end_date",
+	"playTime":         "play_time",
+	"status":           "takeover_state",
+	"createdAt":        "gmt_create",
 }
 
 func (h *Handler) AdminBatchPublishWhitelist(c *gin.Context) {

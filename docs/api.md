@@ -729,7 +729,7 @@ Authorization: Bearer <admin-token>
 ### 管理员查询接龙列表
 
 ```http
-GET /api/admin/takeovers?page=1&pageSize=20&keyword=&status=
+GET /api/admin/takeovers?page=1&pageSize=20&keyword=&status=&sortField=&sortOrder=
 Authorization: Bearer <admin-token>
 ```
 
@@ -739,6 +739,8 @@ Authorization: Bearer <admin-token>
 | --- | --- | --- |
 | `keyword` | string | 按标题、介绍搜索 |
 | `status` | string | `normal` 或 `closed` |
+| `sortField` | string | 排序字段：`id`、`title`、`participantLimit`、`scheduleType`、`startDate`、`endDate`、`playTime`、`status`、`createdAt`，默认 `createdAt` |
+| `sortOrder` | string | `asc` 或 `desc`，默认 `desc` |
 | `page` | number | 页码，默认 `1` |
 | `pageSize` | number | 每页数量，默认 `20`，最大 `50` |
 
