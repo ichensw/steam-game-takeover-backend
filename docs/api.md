@@ -629,7 +629,15 @@ Authorization: Bearer <user-token>
 说明：
 
 - 后端使用 `ttw_app_config.kook_bot_token` 和 `ttw_app_config.kook_guild_id` 调用 KOOK。
-- 当前只返回文字频道，默认最多 50 个。
+- 后端不传 `type`，按 KOOK `meta.page_total` 拉取全部频道。
+- 当前只返回 `type=0` 分组和 `type=2` 语音频道。
+
+curl 示例：
+
+```bash
+curl -X GET "https://rabbits.ink/miniprogram-api/api/kook/channels" \
+  -H "Authorization: Bearer user-token"
+```
 
 响应：
 
@@ -642,8 +650,9 @@ Authorization: Bearer <user-token>
     "list": [
       {
         "id": "1895580130534522",
-        "name": "新人指导处",
-        "topic": "欢迎新人",
+        "name": "聊天娱乐室",
+        "topic": "",
+        "type": 2,
         "parentId": "",
         "level": 2
       }
@@ -668,8 +677,16 @@ Authorization: Bearer <user-token>
 说明：
 
 - 数据来源同频道列表接口。
-- 后端按 `parentId` 组装树，找不到父级的频道会保留在顶层。
+- 后端按 `parentId` 组装树，找不到父级的语音频道会保留在顶层。
+- 空分组会被移除。
 - 小程序页面展示频道层级时优先使用这个接口。
+
+curl 示例：
+
+```bash
+curl -X GET "https://rabbits.ink/miniprogram-api/api/kook/channel-tree" \
+  -H "Authorization: Bearer user-token"
+```
 
 响应：
 
@@ -684,13 +701,15 @@ Authorization: Bearer <user-token>
         "id": "7838521948344271",
         "name": "游戏区",
         "topic": "",
+        "type": 0,
         "parentId": "",
         "level": 1,
         "children": [
           {
             "id": "2649897629762755",
-            "name": "游戏发车处",
-            "topic": "游戏发车",
+            "name": "聊天娱乐室",
+            "topic": "",
+            "type": 2,
             "parentId": "7838521948344271",
             "level": 2,
             "children": []

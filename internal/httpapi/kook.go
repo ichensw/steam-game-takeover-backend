@@ -12,6 +12,7 @@ type kookChannelDTO struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Topic    string `json:"topic"`
+	Type     int    `json:"type"`
 	ParentID string `json:"parentId"`
 	Level    int    `json:"level"`
 }
@@ -20,6 +21,7 @@ type kookChannelTreeDTO struct {
 	ID       string               `json:"id"`
 	Name     string               `json:"name"`
 	Topic    string               `json:"topic"`
+	Type     int                  `json:"type"`
 	ParentID string               `json:"parentId"`
 	Level    int                  `json:"level"`
 	Children []kookChannelTreeDTO `json:"children"`
@@ -33,6 +35,7 @@ type kookChannelListResponse struct {
 			ID       string `json:"id"`
 			Name     string `json:"name"`
 			Topic    string `json:"topic"`
+			Type     int    `json:"type"`
 			ParentID string `json:"parent_id"`
 			Level    int    `json:"level"`
 		} `json:"items"`
@@ -51,7 +54,7 @@ func (h *Handler) ListKookChannels(c *gin.Context) {
 		fail(c, http.StatusBadGateway, CodeSystemError, "kook channel query failed")
 		return
 	}
-	ok(c, "success", gin.H{"list": channels, "meta": meta})
+	ok(c, "success", gin.H{"list": filterKookVoiceChannels(channels), "meta": meta})
 }
 
 func (h *Handler) ListKookChannelTree(c *gin.Context) {
@@ -70,26 +73,44 @@ func (h *Handler) fetchKookChannels() ([]kookChannelDTO, gin.H, error) {
 		return nil, nil, fmt.Errorf("kook not configured")
 	}
 
+	client := resty.New()
+	var all []kookChannelDTO
+	var meta gin.H
+	for page := 1; ; page++ {
+		result, err := fetchKookChannelPage(client, token, guildID, page)
+		if err != nil {
+			return nil, nil, err
+		}
+		list, pageMeta := toKookChannelList(result)
+		all = append(all, list...)
+		meta = pageMeta
+		if result.Data.Meta.Page >= result.Data.Meta.PageTotal {
+			break
+		}
+	}
+
+	return all, meta, nil
+}
+
+func fetchKookChannelPage(client *resty.Client, token, guildID string, page int) (kookChannelListResponse, error) {
 	var result kookChannelListResponse
-	resp, err := resty.New().R().
+	resp, err := client.R().
 		SetHeader("Authorization", "Bot "+token).
 		SetHeader("Content-Type", "application/json").
 		SetQueryParams(map[string]string{
 			"guild_id":  guildID,
-			"type":      "1",
+			"page":      fmt.Sprintf("%d", page),
 			"page_size": "50",
 		}).
 		SetResult(&result).
 		Get("https://www.kookapp.cn/api/v3/channel/list")
 	if err != nil {
-		return nil, nil, err
+		return result, err
 	}
 	if resp.StatusCode() != http.StatusOK || result.Code != 0 {
-		return nil, nil, fmt.Errorf("kook channel list failed: http=%d code=%d", resp.StatusCode(), result.Code)
+		return result, fmt.Errorf("kook channel list failed: http=%d code=%d", resp.StatusCode(), result.Code)
 	}
-
-	list, meta := toKookChannelList(result)
-	return list, meta, nil
+	return result, nil
 }
 
 func toKookChannelList(result kookChannelListResponse) ([]kookChannelDTO, gin.H) {
@@ -99,6 +120,7 @@ func toKookChannelList(result kookChannelListResponse) ([]kookChannelDTO, gin.H)
 			ID:       item.ID,
 			Name:     item.Name,
 			Topic:    item.Topic,
+			Type:     item.Type,
 			ParentID: item.ParentID,
 			Level:    item.Level,
 		})
@@ -111,14 +133,28 @@ func toKookChannelList(result kookChannelListResponse) ([]kookChannelDTO, gin.H)
 	}
 }
 
+func filterKookVoiceChannels(channels []kookChannelDTO) []kookChannelDTO {
+	list := make([]kookChannelDTO, 0, len(channels))
+	for _, channel := range channels {
+		if channel.Type == 0 || channel.Type == 2 {
+			list = append(list, channel)
+		}
+	}
+	return list
+}
+
 func toKookChannelTree(channels []kookChannelDTO) []kookChannelTreeDTO {
 	nodes := make(map[string]*kookChannelTreeDTO, len(channels))
 	order := make([]string, 0, len(channels))
 	for _, channel := range channels {
+		if channel.Type != 0 {
+			continue
+		}
 		node := kookChannelTreeDTO{
 			ID:       channel.ID,
 			Name:     channel.Name,
 			Topic:    channel.Topic,
+			Type:     channel.Type,
 			ParentID: channel.ParentID,
 			Level:    channel.Level,
 			Children: []kookChannelTreeDTO{},
@@ -128,18 +164,30 @@ func toKookChannelTree(channels []kookChannelDTO) []kookChannelTreeDTO {
 	}
 
 	tree := make([]kookChannelTreeDTO, 0, len(channels))
-	for _, id := range order {
-		node := nodes[id]
-		if parent := nodes[node.ParentID]; parent != nil {
-			parent.Children = append(parent.Children, *node)
+	for _, channel := range channels {
+		if channel.Type != 2 {
+			continue
 		}
+		node := kookChannelTreeDTO{
+			ID:       channel.ID,
+			Name:     channel.Name,
+			Topic:    channel.Topic,
+			Type:     channel.Type,
+			ParentID: channel.ParentID,
+			Level:    channel.Level,
+			Children: []kookChannelTreeDTO{},
+		}
+		if parent := nodes[channel.ParentID]; parent != nil {
+			parent.Children = append(parent.Children, node)
+			continue
+		}
+		tree = append(tree, node)
 	}
 	for _, id := range order {
 		node := nodes[id]
-		if nodes[node.ParentID] != nil {
-			continue
+		if len(node.Children) > 0 {
+			tree = append(tree, *node)
 		}
-		tree = append(tree, *node)
 	}
 	return tree
 }
