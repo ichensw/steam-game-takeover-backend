@@ -16,6 +16,15 @@ type kookChannelDTO struct {
 	Level    int    `json:"level"`
 }
 
+type kookChannelTreeDTO struct {
+	ID       string               `json:"id"`
+	Name     string               `json:"name"`
+	Topic    string               `json:"topic"`
+	ParentID string               `json:"parentId"`
+	Level    int                  `json:"level"`
+	Children []kookChannelTreeDTO `json:"children"`
+}
+
 type kookChannelListResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -43,6 +52,15 @@ func (h *Handler) ListKookChannels(c *gin.Context) {
 		return
 	}
 	ok(c, "success", gin.H{"list": channels, "meta": meta})
+}
+
+func (h *Handler) ListKookChannelTree(c *gin.Context) {
+	channels, meta, err := h.fetchKookChannels()
+	if err != nil {
+		fail(c, http.StatusBadGateway, CodeSystemError, "kook channel query failed")
+		return
+	}
+	ok(c, "success", gin.H{"list": toKookChannelTree(channels), "meta": meta})
 }
 
 func (h *Handler) fetchKookChannels() ([]kookChannelDTO, gin.H, error) {
@@ -91,4 +109,37 @@ func toKookChannelList(result kookChannelListResponse) ([]kookChannelDTO, gin.H)
 		"pageSize":  result.Data.Meta.PageSize,
 		"total":     result.Data.Meta.Total,
 	}
+}
+
+func toKookChannelTree(channels []kookChannelDTO) []kookChannelTreeDTO {
+	nodes := make(map[string]*kookChannelTreeDTO, len(channels))
+	order := make([]string, 0, len(channels))
+	for _, channel := range channels {
+		node := kookChannelTreeDTO{
+			ID:       channel.ID,
+			Name:     channel.Name,
+			Topic:    channel.Topic,
+			ParentID: channel.ParentID,
+			Level:    channel.Level,
+			Children: []kookChannelTreeDTO{},
+		}
+		nodes[channel.ID] = &node
+		order = append(order, channel.ID)
+	}
+
+	tree := make([]kookChannelTreeDTO, 0, len(channels))
+	for _, id := range order {
+		node := nodes[id]
+		if parent := nodes[node.ParentID]; parent != nil {
+			parent.Children = append(parent.Children, *node)
+		}
+	}
+	for _, id := range order {
+		node := nodes[id]
+		if nodes[node.ParentID] != nil {
+			continue
+		}
+		tree = append(tree, *node)
+	}
+	return tree
 }

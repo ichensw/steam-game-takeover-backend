@@ -658,6 +658,56 @@ Authorization: Bearer <user-token>
 }
 ```
 
+### 查询频道树
+
+```http
+GET /api/kook/channel-tree
+Authorization: Bearer <user-token>
+```
+
+说明：
+
+- 数据来源同频道列表接口。
+- 后端按 `parentId` 组装树，找不到父级的频道会保留在顶层。
+- 小程序页面展示频道层级时优先使用这个接口。
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "id": "7838521948344271",
+        "name": "游戏区",
+        "topic": "",
+        "parentId": "",
+        "level": 1,
+        "children": [
+          {
+            "id": "2649897629762755",
+            "name": "游戏发车处",
+            "topic": "游戏发车",
+            "parentId": "7838521948344271",
+            "level": 2,
+            "children": []
+          }
+        ]
+      }
+    ],
+    "meta": {
+      "page": 1,
+      "pageTotal": 1,
+      "pageSize": 50,
+      "total": 30
+    }
+  }
+}
+```
+
 ## 管理员接口
 
 除登录外，后台接口统一使用后台 token：

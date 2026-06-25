@@ -30,3 +30,23 @@ func TestToKookChannelList(t *testing.T) {
 		t.Fatalf("unexpected meta: %#v", meta)
 	}
 }
+
+func TestToKookChannelTree(t *testing.T) {
+	channels := []kookChannelDTO{
+		{ID: "1", Name: "游戏区"},
+		{ID: "2", Name: "游戏发车处", ParentID: "1"},
+		{ID: "3", Name: "聊天娱乐厅", ParentID: "1"},
+		{ID: "4", Name: "孤儿频道", ParentID: "missing"},
+	}
+
+	tree := toKookChannelTree(channels)
+	if len(tree) != 2 {
+		t.Fatalf("len(tree) = %d, want 2", len(tree))
+	}
+	if len(tree[0].Children) != 2 || tree[0].Children[0].ID != "2" {
+		t.Fatalf("unexpected children: %#v", tree[0].Children)
+	}
+	if tree[1].ID != "4" {
+		t.Fatalf("orphan channel should stay top-level: %#v", tree[1])
+	}
+}
