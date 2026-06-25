@@ -170,7 +170,10 @@ type PublishTakeoverWhitelist struct {
 
 func (PublishTakeoverWhitelist) TableName() string { return "ttw_publish_takeover_whitelist" }
 
-const AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
+const (
+	AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
+	AppConfigUAPIKey                = "uapi_key"
+)
 
 type AppConfig struct {
 	ConfigKey   string    `gorm:"primaryKey;column:config_key;size:64"`

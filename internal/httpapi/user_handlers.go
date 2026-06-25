@@ -206,12 +206,16 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 	nickname := strings.TrimSpace(req.Nickname)
 	steamID := strings.TrimSpace(req.SteamID)
 	avatarURL := strings.TrimSpace(req.AvatarURL)
-	if nickname == "" || len([]rune(nickname)) > 32 {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "nickname is required and must be at most 32 characters")
+	if nicknameLen := len([]rune(nickname)); nicknameLen < 2 || nicknameLen > 12 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "nickname must be between 2 and 12 characters")
 		return
 	}
 	if steamID == "" || len([]rune(steamID)) > 64 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId is required and must be at most 64 characters")
+		return
+	}
+	if !isDigits(steamID) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId must contain digits only")
 		return
 	}
 	if req.Gender != model.GenderMale && req.Gender != model.GenderFemale {
@@ -226,6 +230,16 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 	if user.SteamID != nil && *user.SteamID != "" && *user.SteamID != steamID {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId cannot be changed")
 		return
+	}
+	if user.SteamID == nil || strings.TrimSpace(*user.SteamID) != steamID {
+		if err := h.validateSteamFriendCode(steamID); err != nil {
+			if errors.Is(err, errSteamFriendCodeInvalid) {
+				fail(c, http.StatusBadRequest, CodeParamInvalid, "steam friend code invalid")
+				return
+			}
+			fail(c, http.StatusBadGateway, CodeSystemError, "steam friend code check failed")
+			return
+		}
 	}
 	if err := h.checkTextSecurity(contentSecurityTarget{
 		User:        user,
@@ -275,6 +289,15 @@ func (h *Handler) isSteamIDTaken(tx *gorm.DB, steamID string, currentUserID uint
 		Where("steam_id = ? AND id <> ? AND is_deleted = ?", steamID, currentUserID, false).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func isDigits(value string) bool {
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func (h *Handler) upsertActiveWXUser(openID string, unionID *string, now time.Time) (model.User, error) {

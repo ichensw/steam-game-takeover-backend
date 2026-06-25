@@ -11,17 +11,24 @@ import (
 )
 
 func (h *Handler) publishTakeoverEnabled() bool {
-	var config model.AppConfig
-	if err := h.db.Where("config_key = ?", model.AppConfigPublishTakeoverEnabled).First(&config).Error; err != nil {
-		return false
-	}
-
-	switch strings.ToLower(strings.TrimSpace(config.ConfigValue)) {
+	switch strings.ToLower(strings.TrimSpace(h.appConfigValue(model.AppConfigPublishTakeoverEnabled))) {
 	case "1", "true", "yes", "on":
 		return true
 	default:
 		return false
 	}
+}
+
+func (h *Handler) uapiKey() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigUAPIKey))
+}
+
+func (h *Handler) appConfigValue(key string) string {
+	var config model.AppConfig
+	if err := h.db.Where("config_key = ?", key).First(&config).Error; err != nil {
+		return ""
+	}
+	return config.ConfigValue
 }
 
 func (h *Handler) canPublishTakeover(user model.User) bool {
@@ -47,26 +54,41 @@ func publishTakeoverAllowed(globalEnabled bool, steamID string, whitelisted bool
 }
 
 func (h *Handler) AdminGetSettings(c *gin.Context) {
-	ok(c, "success", gin.H{"publishTakeoverEnabled": h.publishTakeoverEnabled()})
+	ok(c, "success", gin.H{
+		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
+		"uapiKey":                h.uapiKey(),
+	})
 }
 
 func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	var req struct {
-		PublishTakeoverEnabled *bool `json:"publishTakeoverEnabled"`
+		PublishTakeoverEnabled *bool   `json:"publishTakeoverEnabled"`
+		UAPIKey                *string `json:"uapiKey"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "publishTakeoverEnabled is required")
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
-	if err := h.saveAppConfig(model.AppConfigPublishTakeoverEnabled, boolString(*req.PublishTakeoverEnabled)); err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
-		return
+	if req.PublishTakeoverEnabled != nil {
+		if err := h.saveAppConfig(model.AppConfigPublishTakeoverEnabled, boolString(*req.PublishTakeoverEnabled)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
 	}
-	ok(c, "saved", gin.H{"publishTakeoverEnabled": *req.PublishTakeoverEnabled})
+	if req.UAPIKey != nil {
+		if err := h.saveAppConfig(model.AppConfigUAPIKey, strings.TrimSpace(*req.UAPIKey)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	ok(c, "saved", gin.H{
+		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
+		"uapiKey":                h.uapiKey(),
+	})
 }
 
 func (h *Handler) saveAppConfig(key string, value string) error {

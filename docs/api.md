@@ -261,14 +261,15 @@ Content-Type: application/json
 
 | 字段 | 要求 |
 | --- | --- |
-| `nickname` | 必填，最多 32 字 |
-| `steamId` | 必填，最多 64 字符 |
+| `nickname` | 必填，2 到 12 字 |
+| `steamId` | 必填，仅允许数字，最多 64 字符；会调用 Steam 信息接口校验好友码是否存在 |
 | `gender` | 只能为 `1` 或 `2` |
 | `avatarUrl` | 可为空，最多 255 字符 |
 
 说明：
 
 - `nickname` 会先走本地敏感词表，再走微信文本内容安全。
+- Steam 好友码不存在时返回 `PARAM_INVALID`，提示“Steam好友码错误，请填写正确的好友码。”
 - 检测未通过时返回 `PARAM_INVALID`，提示“内容包含不合规信息，请修改后再提交”。
 
 响应：
@@ -741,7 +742,8 @@ Authorization: Bearer <admin-token>
   "code": "SUCCESS",
   "message": "success",
   "data": {
-    "publishTakeoverEnabled": false
+    "publishTakeoverEnabled": false,
+    "uapiKey": "uapi-xxx"
   }
 }
 ```
@@ -758,14 +760,17 @@ Content-Type: application/json
 
 ```json
 {
-  "publishTakeoverEnabled": true
+  "publishTakeoverEnabled": true,
+  "uapiKey": "uapi-xxx"
 }
 ```
 
 说明：
 
-- 当前只支持 `publishTakeoverEnabled`。
-- 对应数据库配置项 `ttw_app_config.config_key = publish_takeover_enabled`。
+- 当前支持 `publishTakeoverEnabled` 和 `uapiKey`。
+- 可只传需要更新的字段。
+- `publishTakeoverEnabled` 对应 `ttw_app_config.config_key = publish_takeover_enabled`。
+- `uapiKey` 对应 `ttw_app_config.config_key = uapi_key`，用于校验 Steam 好友码。
 
 ### 管理员查询接龙列表
 
