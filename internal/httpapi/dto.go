@@ -11,18 +11,19 @@ import (
 )
 
 type userDTO struct {
-	ID               uint64 `json:"id"`
-	Nickname         string `json:"nickname"`
-	SteamID          string `json:"steamId"`
-	Gender           *uint8 `json:"gender"`
-	AvatarURL        string `json:"avatarUrl"`
-	ProfileCompleted bool   `json:"profileCompleted"`
-	IsAdmin          bool   `json:"isAdmin"`
-	IsBanned         bool   `json:"isBanned"`
-	BanReason        string `json:"banReason,omitempty"`
-	BannedAt         string `json:"bannedAt,omitempty"`
-	CreditScore      uint   `json:"creditScore"`
-	CreditStatus     string `json:"creditStatus"`
+	ID                 uint64 `json:"id"`
+	Nickname           string `json:"nickname"`
+	SteamID            string `json:"steamId"`
+	Gender             *uint8 `json:"gender"`
+	AvatarURL          string `json:"avatarUrl"`
+	ProfileCompleted   bool   `json:"profileCompleted"`
+	IsAdmin            bool   `json:"isAdmin"`
+	IsBanned           bool   `json:"isBanned"`
+	BanReason          string `json:"banReason,omitempty"`
+	BannedAt           string `json:"bannedAt,omitempty"`
+	PublishWhitelisted bool   `json:"publishWhitelisted"`
+	CreditScore        uint   `json:"creditScore"`
+	CreditStatus       string `json:"creditStatus"`
 }
 
 type adminUserDTO struct {
@@ -83,19 +84,25 @@ type memberRow struct {
 }
 
 func toUserDTO(user model.User) userDTO {
+	return toUserDTOWithPublishWhitelist(user, nil)
+}
+
+func toUserDTOWithPublishWhitelist(user model.User, whitelist map[string]bool) userDTO {
+	steamID := stringValue(user.SteamID)
 	return userDTO{
-		ID:               user.ID,
-		Nickname:         stringValue(user.Nickname),
-		SteamID:          stringValue(user.SteamID),
-		Gender:           user.Gender,
-		AvatarURL:        normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
-		ProfileCompleted: isUserProfileCompleted(user),
-		IsAdmin:          user.IsAdmin,
-		IsBanned:         user.IsBanned,
-		BanReason:        stringValue(user.BanReason),
-		BannedAt:         timeString(user.BannedAt),
-		CreditScore:      user.CreditScore,
-		CreditStatus:     creditStatus(user.CreditScore),
+		ID:                 user.ID,
+		Nickname:           stringValue(user.Nickname),
+		SteamID:            steamID,
+		Gender:             user.Gender,
+		AvatarURL:          normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
+		ProfileCompleted:   isUserProfileCompleted(user),
+		IsAdmin:            user.IsAdmin,
+		IsBanned:           user.IsBanned,
+		BanReason:          stringValue(user.BanReason),
+		BannedAt:           timeString(user.BannedAt),
+		PublishWhitelisted: steamID != "" && whitelist[steamID],
+		CreditScore:        user.CreditScore,
+		CreditStatus:       creditStatus(user.CreditScore),
 	}
 }
 

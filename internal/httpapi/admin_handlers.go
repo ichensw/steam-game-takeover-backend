@@ -103,10 +103,6 @@ func (h *Handler) AdminDeleteTakeover(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	if isTakeoverExpired(takeover) {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be deleted")
-		return
-	}
 	result := h.db.Model(&model.Takeover{}).
 		Where("id = ? AND is_deleted = ?", takeoverID, false).
 		Update("is_deleted", true)
@@ -183,7 +179,7 @@ func (h *Handler) AdminDashboardSummary(c *gin.Context) {
 		return
 	}
 	var pendingReportTotal int64
-	if err := h.db.Model(&model.TakeoverReport{}).Where("report_state = ?", model.ReportStatePending).Count(&pendingReportTotal).Error; err != nil {
+	if err := h.adminReportBaseQuery("pending").Count(&pendingReportTotal).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
@@ -191,6 +187,31 @@ func (h *Handler) AdminDashboardSummary(c *gin.Context) {
 		"takeoverTotal":      takeoverTotal,
 		"userTotal":          userTotal,
 		"pendingReportTotal": pendingReportTotal,
+	})
+}
+
+// AdminUserSummary returns user totals for the admin dashboard.
+func (h *Handler) AdminUserSummary(c *gin.Context) {
+	var wxUserTotal int64
+	if err := h.db.Model(&model.User{}).Where("is_deleted = ? AND is_banned = ?", false, false).Count(&wxUserTotal).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	var adminUserTotal int64
+	if err := h.db.Model(&model.AdminUser{}).Where("enabled = ?", true).Count(&adminUserTotal).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	var bannedUserTotal int64
+	if err := h.db.Model(&model.User{}).Where("is_deleted = ? AND is_banned = ?", false, true).Count(&bannedUserTotal).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	ok(c, "success", gin.H{
+		"wxUserTotal":     wxUserTotal,
+		"adminUserTotal":  adminUserTotal,
+		"bannedUserTotal": bannedUserTotal,
+		"totalUserTotal":  wxUserTotal + adminUserTotal + bannedUserTotal,
 	})
 }
 
@@ -220,9 +241,10 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 		return
 	}
 
+	query = applySort(query, c.Query("sortField"), c.Query("sortOrder"), wxUserSortFields, "gmt_create")
+
 	var users []model.User
 	if err := query.
-		Order("gmt_create DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&users).Error; err != nil {
@@ -230,9 +252,28 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 		return
 	}
 
+	steamIDs := make([]string, 0, len(users))
+	for _, user := range users {
+		steamID := strings.TrimSpace(stringValue(user.SteamID))
+		if steamID != "" {
+			steamIDs = append(steamIDs, steamID)
+		}
+	}
+	whitelist := make(map[string]bool, len(steamIDs))
+	if len(steamIDs) > 0 {
+		var rows []model.PublishTakeoverWhitelist
+		if err := h.db.Where("steam_id IN ? AND enabled = ?", steamIDs, true).Find(&rows).Error; err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		for _, row := range rows {
+			whitelist[row.SteamID] = true
+		}
+	}
+
 	list := make([]userDTO, 0, len(users))
 	for _, user := range users {
-		list = append(list, toUserDTO(user))
+		list = append(list, toUserDTOWithPublishWhitelist(user, whitelist))
 	}
 	ok(c, "success", gin.H{
 		"page":     page,
@@ -240,6 +281,16 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 		"total":    total,
 		"list":     list,
 	})
+}
+
+var wxUserSortFields = map[string]string{
+	"id":            "id",
+	"nickname":      "nickname",
+	"steamId":       "steam_id",
+	"isBanned":      "is_banned",
+	"creditScore":   "credit_score",
+	"lastLoginTime": "last_login_time",
+	"createdAt":     "gmt_create",
 }
 
 func (h *Handler) AdminGetUser(c *gin.Context) {

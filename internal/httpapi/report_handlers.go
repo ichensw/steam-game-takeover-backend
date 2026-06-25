@@ -138,19 +138,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		GmtCreate        time.Time
 	}
 
-	query := h.db.Table("ttw_takeover_report AS r").
-		Joins("JOIN ttw_takeover AS t ON t.id = r.takeover_id").
-		Joins("JOIN ttw_user AS reporter ON reporter.id = r.reporter_user_id").
-		Joins("JOIN ttw_user AS reported ON reported.id = r.reported_user_id")
-	state := strings.TrimSpace(c.Query("state"))
-	switch state {
-	case "", "pending":
-		query = query.Where("r.report_state = ?", model.ReportStatePending)
-	case "approved":
-		query = query.Where("r.report_state = ?", model.ReportStatePenalized)
-	case "rejected":
-		query = query.Where("r.report_state = ?", model.ReportStateIgnored)
-	}
+	query := h.adminReportBaseQuery(c.Query("state"))
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	if keyword != "" {
 		query = query.Where("r.report_content LIKE ?", "%"+keyword+"%")
@@ -217,6 +205,30 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 	}
 
 	ok(c, "success", gin.H{"page": page, "pageSize": pageSize, "total": total, "list": list})
+}
+
+func (h *Handler) adminReportBaseQuery(state string) *gorm.DB {
+	query := h.db.Table("ttw_takeover_report AS r").
+		Joins("JOIN ttw_takeover AS t ON t.id = r.takeover_id").
+		Joins("JOIN ttw_user AS reporter ON reporter.id = r.reporter_user_id").
+		Joins("JOIN ttw_user AS reported ON reported.id = r.reported_user_id")
+	if reportState, ok := reportStateFilter(state); ok {
+		query = query.Where("r.report_state = ?", reportState)
+	}
+	return query
+}
+
+func reportStateFilter(state string) (uint8, bool) {
+	switch strings.TrimSpace(state) {
+	case "", "pending":
+		return model.ReportStatePending, true
+	case "approved":
+		return model.ReportStatePenalized, true
+	case "rejected":
+		return model.ReportStateIgnored, true
+	default:
+		return 0, false
+	}
 }
 
 func (h *Handler) AdminGetReport(c *gin.Context) {

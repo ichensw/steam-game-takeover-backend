@@ -3,6 +3,8 @@ package httpapi
 import (
 	"strings"
 	"testing"
+
+	"steam-game-takeover-backend/internal/model"
 )
 
 func TestNormalizeReportImageURLsUsesImageURLsFirst(t *testing.T) {
@@ -74,5 +76,27 @@ func TestReportImageURLsReturnsEmptyForBadJSON(t *testing.T) {
 	got := reportImageURLs(&badJSON)
 	if len(got) != 0 {
 		t.Fatalf("reportImageURLs() = %#v, want empty", got)
+	}
+}
+
+func TestReportStateFilter(t *testing.T) {
+	tests := []struct {
+		state string
+		want  uint8
+		ok    bool
+	}{
+		{"", model.ReportStatePending, true},
+		{"pending", model.ReportStatePending, true},
+		{"approved", model.ReportStatePenalized, true},
+		{"rejected", model.ReportStateIgnored, true},
+		{"unknown", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			got, ok := reportStateFilter(tt.state)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("reportStateFilter() = (%d, %v), want (%d, %v)", got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }

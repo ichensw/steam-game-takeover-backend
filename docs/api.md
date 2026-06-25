@@ -690,9 +690,19 @@ Content-Type: application/json
 ### 管理员列表
 
 ```http
-GET /api/admin/admin-users?page=1&pageSize=20&keyword=
+GET /api/admin/admin-users?page=1&pageSize=20&keyword=&sortField=&sortOrder=
 Authorization: Bearer <admin-token>
 ```
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `keyword` | string | 按用户名或昵称模糊搜索 |
+| `sortField` | string | 排序字段：`id`、`username`、`nickname`、`enabled`、`lastLoginTime`、`createdAt`，默认 `createdAt` |
+| `sortOrder` | string | `asc` 或 `desc`，默认 `desc` |
+| `page` | number | 页码，默认 `1` |
+| `pageSize` | number | 每页数量，默认 `20`，最大 `50` |
 
 ### 首页统计
 
@@ -731,6 +741,36 @@ Authorization: Bearer <admin-token>
 | `status` | string | `normal` 或 `closed` |
 | `page` | number | 页码，默认 `1` |
 | `pageSize` | number | 每页数量，默认 `20`，最大 `50` |
+
+### 用户数量统计
+
+```http
+GET /api/admin/users/summary
+Authorization: Bearer <admin-token>
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "wxUserTotal": 42,
+    "adminUserTotal": 2,
+    "bannedUserTotal": 3,
+    "totalUserTotal": 47
+  }
+}
+```
+
+字段说明：
+
+- `wxUserTotal`：微信用户数量，不包含封禁用户。
+- `adminUserTotal`：启用中的后台用户数量。
+- `bannedUserTotal`：封禁用户数量。
+- `totalUserTotal = wxUserTotal + adminUserTotal + bannedUserTotal`。
 
 ### 管理员查询接龙详情
 
@@ -800,6 +840,8 @@ Authorization: Bearer <admin-token>
 | --- | --- | --- |
 | `keyword` | string | 按昵称、SteamID 或 openid 模糊搜索 |
 | `status` | string | `normal` 或 `banned` |
+| `sortField` | string | 排序字段：`id`、`nickname`、`steamId`、`isBanned`、`creditScore`、`lastLoginTime`、`createdAt`，默认 `createdAt` |
+| `sortOrder` | string | `asc` 或 `desc`，默认 `desc` |
 | `page` | number | 页码，默认 `1` |
 | `pageSize` | number | 每页数量，默认 `20`，最大 `50` |
 
@@ -823,6 +865,7 @@ Authorization: Bearer <admin-token>
         "avatarUrl": "https://example.com/avatar.jpg",
         "profileCompleted": true,
         "isAdmin": false,
+        "publishWhitelisted": true,
         "creditScore": 100,
         "creditStatus": "normal"
       }

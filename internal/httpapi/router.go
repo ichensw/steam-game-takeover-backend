@@ -51,6 +51,7 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	adminAuthed.PUT("/takeovers/:takeoverId", h.AdminUpdateTakeover)
 	adminAuthed.DELETE("/takeovers/:takeoverId", h.AdminDeleteTakeover)
 	adminAuthed.GET("/users", h.AdminListUsers)
+	adminAuthed.GET("/users/summary", h.AdminUserSummary)
 	adminAuthed.GET("/users/:userId", h.AdminGetUser)
 	adminAuthed.POST("/users/:userId/ban", h.AdminBanUser)
 	adminAuthed.POST("/users/:userId/unban", h.AdminUnbanUser)

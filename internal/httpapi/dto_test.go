@@ -164,3 +164,18 @@ func TestIsUserProfileCompletedUsesStoredFields(t *testing.T) {
 		t.Fatal("expected incomplete when required profile fields are missing")
 	}
 }
+
+func TestToUserDTOWithPublishWhitelist(t *testing.T) {
+	steamID := "7656119"
+	user := model.User{SteamID: &steamID}
+
+	if !toUserDTOWithPublishWhitelist(user, map[string]bool{steamID: true}).PublishWhitelisted {
+		t.Fatal("expected user marked publish whitelisted")
+	}
+
+	emptySteamID := ""
+	user.SteamID = &emptySteamID
+	if toUserDTOWithPublishWhitelist(user, map[string]bool{"": true}).PublishWhitelisted {
+		t.Fatal("expected empty steam id not marked publish whitelisted")
+	}
+}

@@ -183,8 +183,10 @@ func (h *Handler) AdminListAdminUsers(c *gin.Context) {
 		return
 	}
 
+	query = applySort(query, c.Query("sortField"), c.Query("sortOrder"), adminUserSortFields, "gmt_create")
+
 	var admins []model.AdminUser
-	if err := query.Order("gmt_create DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&admins).Error; err != nil {
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&admins).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
@@ -194,6 +196,15 @@ func (h *Handler) AdminListAdminUsers(c *gin.Context) {
 		list = append(list, toAdminUserDTO(admin))
 	}
 	ok(c, "success", gin.H{"page": page, "pageSize": pageSize, "total": total, "list": list})
+}
+
+var adminUserSortFields = map[string]string{
+	"id":            "id",
+	"username":      "username",
+	"nickname":      "nickname",
+	"enabled":       "enabled",
+	"lastLoginTime": "last_login_time",
+	"createdAt":     "gmt_create",
 }
 
 func randomTokenID() (string, error) {
