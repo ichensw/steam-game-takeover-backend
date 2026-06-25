@@ -470,7 +470,7 @@ func (h *Handler) AdminBatchPublishWhitelist(c *gin.Context) {
 	count := 0
 	err := h.db.Transaction(func(tx *gorm.DB) error {
 		for _, value := range req.SteamIDs {
-			steamID := strings.TrimSpace(value)
+			steamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(value))
 			if steamID == "" || len([]rune(steamID)) > 64 {
 				continue
 			}

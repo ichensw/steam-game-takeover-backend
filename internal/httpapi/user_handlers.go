@@ -227,12 +227,14 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "avatarUrl must be at most 255 characters")
 		return
 	}
-	if user.SteamID != nil && *user.SteamID != "" && *user.SteamID != steamID {
+	currentSteamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(stringValue(user.SteamID)))
+	if currentSteamID != "" && currentSteamID != normalizeSteamID64ToFriendCode(steamID) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId cannot be changed")
 		return
 	}
-	if user.SteamID == nil || strings.TrimSpace(*user.SteamID) != steamID {
-		if err := h.validateSteamFriendCode(steamID); err != nil {
+	if currentSteamID != steamID {
+		normalizedSteamID, err := h.validateSteamFriendCode(steamID)
+		if err != nil {
 			if errors.Is(err, errSteamFriendCodeInvalid) {
 				fail(c, http.StatusBadRequest, CodeParamInvalid, "steam friend code invalid")
 				return
@@ -240,6 +242,7 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 			fail(c, http.StatusBadGateway, CodeSystemError, "steam friend code check failed")
 			return
 		}
+		steamID = normalizedSteamID
 	}
 	if err := h.checkTextSecurity(contentSecurityTarget{
 		User:        user,
