@@ -74,6 +74,8 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 			"end_date":          parsed.EndDate,
 			"play_time":         parsed.PlayTime,
 			"description":       parsed.Description,
+			"kook_channel_id":   parsed.KookChannelID,
+			"kook_channel_name": parsed.KookChannelName,
 		})
 	if result.Error != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")

@@ -19,6 +19,8 @@ type takeoverInput struct {
 	EndDate          *string `json:"endDate"`
 	PlayTime         string  `json:"playTime"`
 	Description      string  `json:"description"`
+	KookChannelID    string  `json:"kookChannelId"`
+	KookChannelName  string  `json:"kookChannelName"`
 }
 
 type parsedTakeoverInput struct {
@@ -29,11 +31,15 @@ type parsedTakeoverInput struct {
 	EndDate          *time.Time
 	PlayTime         string
 	Description      *string
+	KookChannelID    *string
+	KookChannelName  *string
 }
 
 func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverInput, error) {
 	title := strings.TrimSpace(input.Title)
 	description := strings.TrimSpace(input.Description)
+	kookChannelID := strings.TrimSpace(input.KookChannelID)
+	kookChannelName := strings.TrimSpace(input.KookChannelName)
 	playTime := strings.TrimSpace(input.PlayTime)
 
 	if title == "" || len([]rune(title)) > 30 {
@@ -54,6 +60,9 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 	}
 	if len([]rune(description)) > 500 {
 		return parsedTakeoverInput{}, errors.New("介绍不能超过 500 个字")
+	}
+	if len([]rune(kookChannelID)) > 64 || len([]rune(kookChannelName)) > 128 {
+		return parsedTakeoverInput{}, errors.New("KOOK频道信息不正确")
 	}
 
 	startDate, err := parseOptionalDate(input.StartDate)
@@ -103,7 +112,16 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 		EndDate:          endDate,
 		PlayTime:         playTime + ":00",
 		Description:      stringPtr(description),
+		KookChannelID:    optionalStringPtr(kookChannelID),
+		KookChannelName:  optionalStringPtr(kookChannelName),
 	}, nil
+}
+
+func optionalStringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func parseOptionalDate(value *string) (*time.Time, error) {

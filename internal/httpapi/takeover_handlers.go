@@ -230,6 +230,8 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 			"end_date":          parsed.EndDate,
 			"play_time":         parsed.PlayTime,
 			"description":       parsed.Description,
+			"kook_channel_id":   parsed.KookChannelID,
+			"kook_channel_name": parsed.KookChannelName,
 		})
 	if result.Error != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
@@ -346,6 +348,8 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 			EndDate:          parsed.EndDate,
 			PlayTime:         parsed.PlayTime,
 			Description:      parsed.Description,
+			KookChannelID:    parsed.KookChannelID,
+			KookChannelName:  parsed.KookChannelName,
 			TakeoverState:    model.TakeoverStateNormal,
 		}
 		if err := tx.Create(&takeover).Error; err != nil {

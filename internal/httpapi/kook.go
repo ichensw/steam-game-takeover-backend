@@ -3,6 +3,7 @@ package httpapi
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,12 @@ type kookChannelTreeDTO struct {
 	Level    int                  `json:"level"`
 	KookSort int                  `json:"kookSort"`
 	Children []kookChannelTreeDTO `json:"children"`
+}
+
+type kookChannelSimpleDTO struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type int    `json:"type"`
 }
 
 type kookChannelListResponse struct {
@@ -66,6 +73,26 @@ func (h *Handler) ListKookChannelTree(c *gin.Context) {
 		return
 	}
 	ok(c, "success", gin.H{"list": toKookChannelTree(channels), "meta": meta})
+}
+
+func (h *Handler) ListAllKookChannels(c *gin.Context) {
+	channels, _, err := h.fetchKookChannels()
+	if err != nil {
+		fail(c, http.StatusBadGateway, CodeSystemError, "kook channel query failed")
+		return
+	}
+
+	typeFilter := c.Query("type")
+	if typeFilter != "" {
+		channelType, err := strconv.Atoi(typeFilter)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "type must be a number")
+			return
+		}
+		channels = filterKookChannelsByType(channels, channelType)
+	}
+
+	ok(c, "success", gin.H{"list": toKookSimpleChannels(channels)})
 }
 
 func (h *Handler) fetchKookChannels() ([]kookChannelDTO, gin.H, error) {
@@ -173,6 +200,28 @@ func filterKookVoiceChannels(channels []kookChannelDTO) []kookChannelDTO {
 		if channel.Type == 0 || channel.Type == 2 {
 			list = append(list, channel)
 		}
+	}
+	return list
+}
+
+func filterKookChannelsByType(channels []kookChannelDTO, channelType int) []kookChannelDTO {
+	list := make([]kookChannelDTO, 0, len(channels))
+	for _, channel := range channels {
+		if channel.Type == channelType {
+			list = append(list, channel)
+		}
+	}
+	return list
+}
+
+func toKookSimpleChannels(channels []kookChannelDTO) []kookChannelSimpleDTO {
+	list := make([]kookChannelSimpleDTO, 0, len(channels))
+	for _, channel := range channels {
+		list = append(list, kookChannelSimpleDTO{
+			ID:   channel.ID,
+			Name: channel.Name,
+			Type: channel.Type,
+		})
 	}
 	return list
 }

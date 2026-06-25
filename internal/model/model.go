@@ -88,6 +88,8 @@ type Takeover struct {
 	EndDate          *time.Time `gorm:"column:end_date;type:date;index:idx_schedule"`
 	PlayTime         string     `gorm:"column:play_time;type:time;index:idx_schedule"`
 	Description      *string    `gorm:"column:description;size:500"`
+	KookChannelID    *string    `gorm:"column:kook_channel_id;size:64"`
+	KookChannelName  *string    `gorm:"column:kook_channel_name;size:128"`
 	TakeoverState    uint8      `gorm:"column:takeover_state"`
 	IsDeleted        bool       `gorm:"column:is_deleted"`
 	GmtCreate        time.Time  `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`

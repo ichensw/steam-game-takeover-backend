@@ -50,6 +50,18 @@ func TestFilterKookVoiceChannels(t *testing.T) {
 	}
 }
 
+func TestSimpleKookChannels(t *testing.T) {
+	channels := []kookChannelDTO{
+		{ID: "1", Name: "分组", Type: 0},
+		{ID: "2", Name: "语音", Type: 2},
+	}
+	filtered := filterKookChannelsByType(channels, 2)
+	list := toKookSimpleChannels(filtered)
+	if len(list) != 1 || list[0].ID != "2" || list[0].Name != "语音" || list[0].Type != 2 {
+		t.Fatalf("unexpected simple channels: %#v", list)
+	}
+}
+
 func TestCloneKookChannels(t *testing.T) {
 	channels := []kookChannelDTO{{ID: "1"}}
 	cloned := cloneKookChannels(channels)
