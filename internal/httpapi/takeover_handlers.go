@@ -19,9 +19,6 @@ const duplicateCreateWindow = 10 * time.Second
 
 func (h *Handler) ListTakeovers(c *gin.Context) {
 	user, _ := currentUser(c)
-	if !ensureUserAllowed(c, user, false) {
-		return
-	}
 
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 10)
@@ -111,9 +108,6 @@ func takeoverListStatusRank(statusLabel string) int {
 
 func (h *Handler) GetTakeover(c *gin.Context) {
 	user, _ := currentUser(c)
-	if !ensureUserAllowed(c, user, false) {
-		return
-	}
 	h.getTakeoverDetail(c, false, user)
 }
 
@@ -369,10 +363,6 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 			fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
 			return
 		}
-		if errors.Is(err, errUserBlocked) {
-			fail(c, http.StatusForbidden, CodeUserBlocked, "您已被管理员拉黑")
-			return
-		}
 		if errors.Is(err, errCreditTooLowForCreate) {
 			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for create")
 			return
@@ -460,6 +450,13 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		if err != nil && !isNotFound(err) {
 			return err
 		}
+		conflict, err := h.hasActiveScheduleConflict(tx, freshUser.ID, takeover)
+		if err != nil {
+			return err
+		}
+		if conflict {
+			return errTakeoverTimeConflict
+		}
 
 		count, err := countValidJoinedMembers(tx, takeoverID)
 		if err != nil {
@@ -489,12 +486,12 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		case errors.Is(err, errAlreadyJoined):
 			fail(c, http.StatusConflict, CodeAlreadyJoined, "already joined")
+		case errors.Is(err, errTakeoverTimeConflict):
+			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
 		case errors.Is(err, errTakeoverFull):
 			fail(c, http.StatusConflict, CodeTakeoverFull, "takeover full")
 		case errors.Is(err, errProfileRequired):
 			fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
-		case errors.Is(err, errUserBlocked):
-			fail(c, http.StatusForbidden, CodeUserBlocked, "您已被管理员拉黑")
 		case errors.Is(err, errCreditTooLowForJoin):
 			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for join")
 		default:
@@ -566,14 +563,76 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 
 var (
 	errAlreadyJoined         = errors.New("already joined")
+	errTakeoverTimeConflict  = errors.New("takeover time conflict")
 	errTakeoverFull          = errors.New("takeover full")
 	errNotJoined             = errors.New("not joined")
 	errProfileRequired       = errors.New("profile required")
-	errUserBlocked           = errors.New("user blocked")
 	errCreditTooLowForCreate = errors.New("credit too low for create")
 	errCreditTooLowForJoin   = errors.New("credit too low for join")
 	errCreatorCannotLeave    = errors.New("creator cannot leave takeover")
 )
+
+func (h *Handler) hasActiveScheduleConflict(tx *gorm.DB, userID uint64, target model.Takeover) (bool, error) {
+	var takeovers []model.Takeover
+	if err := tx.Table("ttw_takeover AS t").
+		Select("t.*").
+		Joins("JOIN ttw_takeover_member AS m ON m.takeover_id = t.id").
+		Where("m.user_id = ? AND m.member_state = ? AND t.id <> ? AND t.is_deleted = ? AND t.takeover_state = ? AND t.play_time = ?",
+			userID,
+			model.MemberStateJoined,
+			target.ID,
+			false,
+			model.TakeoverStateNormal,
+			target.PlayTime,
+		).
+		Find(&takeovers).Error; err != nil {
+		return false, err
+	}
+
+	for _, takeover := range takeovers {
+		if isTakeoverExpired(takeover) {
+			continue
+		}
+		if schedulesConflict(target, takeover) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func schedulesConflict(a, b model.Takeover) bool {
+	if shortTime(a.PlayTime) != shortTime(b.PlayTime) {
+		return false
+	}
+	if a.ScheduleType == model.ScheduleDaily || b.ScheduleType == model.ScheduleDaily {
+		return true
+	}
+
+	aStart, aEnd, okA := takeoverDateRange(a)
+	bStart, bEnd, okB := takeoverDateRange(b)
+	if !okA || !okB {
+		return false
+	}
+	return !aEnd.Before(bStart) && !bEnd.Before(aStart)
+}
+
+func takeoverDateRange(t model.Takeover) (time.Time, time.Time, bool) {
+	switch t.ScheduleType {
+	case model.ScheduleSpecifiedDate:
+		if t.StartDate == nil {
+			return time.Time{}, time.Time{}, false
+		}
+		day := truncateDate(*t.StartDate)
+		return day, day, true
+	case model.ScheduleDateRange:
+		if t.StartDate == nil || t.EndDate == nil {
+			return time.Time{}, time.Time{}, false
+		}
+		return truncateDate(*t.StartDate), truncateDate(*t.EndDate), true
+	default:
+		return time.Time{}, time.Time{}, false
+	}
+}
 
 func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error) {
 	var user model.User
@@ -583,9 +642,6 @@ func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error
 		}
 		return model.User{}, err
 	}
-	if user.IsBlocked {
-		return model.User{}, errUserBlocked
-	}
 	if !hasUserProfileFields(user) {
 		return model.User{}, errProfileRequired
 	}
@@ -593,10 +649,6 @@ func (h *Handler) lockProfileUser(tx *gorm.DB, userID uint64) (model.User, error
 }
 
 func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) bool {
-	if user.IsBlocked {
-		fail(c, http.StatusForbidden, CodeUserBlocked, "您已被管理员拉黑")
-		return false
-	}
 	if user.IsDeleted {
 		fail(c, http.StatusBadRequest, CodeProfileIncomplete, "请先补充资料")
 		return false
@@ -627,7 +679,7 @@ func (h *Handler) takeoverStats(takeoverID uint64, userID uint64) (int64, bool, 
 	var hasJoinedCount int64
 	if err := h.db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, userID, model.MemberStateJoined, false, false).
+		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, userID, model.MemberStateJoined, false).
 		Count(&hasJoinedCount).Error; err != nil {
 		return 0, false, err
 	}
@@ -638,7 +690,7 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 	var joinedCount int64
 	err := db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false, false).
+		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false).
 		Count(&joinedCount).Error
 	return joinedCount, err
 }
@@ -648,7 +700,7 @@ func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit i
 	query := h.db.Table("ttw_takeover_member AS m").
 		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, u.credit_score, m.gmt_create AS joined_at").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false, false).
+		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false).
 		Order("m.gmt_create ASC")
 	if limit > 0 {
 		query = query.Limit(limit)

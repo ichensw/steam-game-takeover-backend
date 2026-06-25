@@ -17,10 +17,21 @@ type userDTO struct {
 	Gender           *uint8 `json:"gender"`
 	AvatarURL        string `json:"avatarUrl"`
 	ProfileCompleted bool   `json:"profileCompleted"`
-	Blocked          bool   `json:"blocked"`
 	IsAdmin          bool   `json:"isAdmin"`
+	IsBanned         bool   `json:"isBanned"`
+	BanReason        string `json:"banReason,omitempty"`
+	BannedAt         string `json:"bannedAt,omitempty"`
 	CreditScore      uint   `json:"creditScore"`
 	CreditStatus     string `json:"creditStatus"`
+}
+
+type adminUserDTO struct {
+	ID            uint64 `json:"id"`
+	Username      string `json:"username"`
+	Nickname      string `json:"nickname"`
+	Enabled       bool   `json:"enabled"`
+	LastLoginTime string `json:"lastLoginTime"`
+	CreatedAt     string `json:"createdAt"`
 }
 
 type memberDTO struct {
@@ -79,10 +90,23 @@ func toUserDTO(user model.User) userDTO {
 		Gender:           user.Gender,
 		AvatarURL:        normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
 		ProfileCompleted: isUserProfileCompleted(user),
-		Blocked:          user.IsBlocked,
 		IsAdmin:          user.IsAdmin,
+		IsBanned:         user.IsBanned,
+		BanReason:        stringValue(user.BanReason),
+		BannedAt:         timeString(user.BannedAt),
 		CreditScore:      user.CreditScore,
 		CreditStatus:     creditStatus(user.CreditScore),
+	}
+}
+
+func toAdminUserDTO(admin model.AdminUser) adminUserDTO {
+	return adminUserDTO{
+		ID:            admin.ID,
+		Username:      admin.Username,
+		Nickname:      stringValue(admin.Nickname),
+		Enabled:       admin.Enabled,
+		LastLoginTime: timeString(admin.LastLoginTime),
+		CreatedAt:     admin.GmtCreate.Format("2006-01-02 15:04:05"),
 	}
 }
 
@@ -248,7 +272,7 @@ func hasUserProfileFields(user model.User) bool {
 }
 
 func isUserProfileCompleted(user model.User) bool {
-	return !user.IsDeleted && !user.IsBlocked && hasUserProfileFields(user)
+	return !user.IsDeleted && hasUserProfileFields(user)
 }
 
 func creditStatus(score uint) string {

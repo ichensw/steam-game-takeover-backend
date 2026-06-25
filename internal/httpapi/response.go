@@ -11,15 +11,16 @@ const (
 	CodeParamInvalid              = "PARAM_INVALID"
 	CodeUnauthorized              = "UNAUTHORIZED"
 	CodeProfileIncomplete         = "PROFILE_INCOMPLETE"
-	CodeUserBlocked               = "USER_BLOCKED"
+	CodeUserBanned                = "USER_BANNED"
 	CodeTakeoverNotFound          = "TAKEOVER_NOT_FOUND"
 	CodeTakeoverFull              = "TAKEOVER_FULL"
 	CodeAlreadyJoined             = "ALREADY_JOINED"
+	CodeTakeoverTimeConflict      = "TAKEOVER_TIME_CONFLICT"
 	CodeReportAlreadyExists       = "REPORT_ALREADY_EXISTS"
 	CodeCannotReportSelf          = "CANNOT_REPORT_SELF"
 	CodeReportedUserNotInTakeover = "REPORTED_USER_NOT_IN_TAKEOVER"
+	CodeSteamIDTaken              = "STEAM_ID_TAKEN"
 	CodeAdminUnauthorized         = "ADMIN_UNAUTHORIZED"
-	CodeAdminPasswordInvalid      = "ADMIN_PASSWORD_INVALID"
 	CodeSystemError               = "SYSTEM_ERROR"
 )
 
@@ -55,24 +56,23 @@ var codeTranslations = map[string]string{
 	CodeParamInvalid:              "参数不正确，请检查后再试",
 	CodeUnauthorized:              "登录状态已失效，请重新进入小程序",
 	CodeProfileIncomplete:         "请先完善个人资料",
-	CodeUserBlocked:               "您已被管理员拉黑",
+	CodeUserBanned:                "账号已被封禁，如有疑问请联系管理员",
 	CodeTakeoverNotFound:          "接龙不存在或已被删除",
 	CodeTakeoverFull:              "接龙人数已满",
 	CodeAlreadyJoined:             "您已经加入过这个接龙",
+	CodeTakeoverTimeConflict:      "同一时间你已经加入了其他接龙",
 	CodeReportAlreadyExists:       "已举报过该用户",
 	CodeCannotReportSelf:          "不能举报自己",
 	CodeReportedUserNotInTakeover: "被举报用户不在该接龙中",
-	CodeAdminUnauthorized:         "管理员登录已失效，请重新登录",
-	CodeAdminPasswordInvalid:      "管理员密码不正确",
+	CodeSteamIDTaken:              "SteamID 已被其他玩家绑定，请确认后再填写。",
+	CodeAdminUnauthorized:         "当前账号暂无管理员权限",
 	CodeSystemError:               "系统开小差了，请稍后再试",
 }
 
 var messageTranslations = map[string]string{
-	"admin password is not configured":           "管理员密码尚未配置",
 	"admin unauthorized":                         "当前账号暂无管理员权限",
 	"already joined":                             "您已经加入过这个接龙",
 	"avatarUrl must be at most 255 characters":   "头像地址过长，请重新上传",
-	"block failed":                               "拉黑失败，请稍后再试",
 	"cannot report yourself":                     "不能举报自己",
 	"content security reject":                    "内容包含不合规信息，请修改后再提交",
 	"code is required":                           "登录凭证缺失，请重新进入小程序",
@@ -86,9 +86,8 @@ var messageTranslations = map[string]string{
 	"gender must be 1 or 2":                      "请选择性别",
 	"handle note must be at most 500 characters": "处理说明不能超过 500 个字",
 	"image must be between 1 byte and 5 MB":      "图片大小不能超过 5MB",
-	"invalid admin password":                     "管理员密码不正确",
-	"invalid admin token":                        "管理员登录已失效，请重新登录",
 	"invalid request":                            "请求内容不正确，请检查后再试",
+	"invalid username or password":               "用户名或密码不正确",
 	"invalid takeover id":                        "接龙信息不正确，请刷新后再试",
 	"invalid user id":                            "用户信息不正确，请刷新后再试",
 	"join failed":                                "加入接龙失败，请稍后再试",
@@ -105,7 +104,6 @@ var messageTranslations = map[string]string{
 	"profile incomplete":                                            "请先完善个人资料",
 	"publish takeover disabled":                                     "暂未开放发起接龙",
 	"query failed":                                                  "获取数据失败，请稍后再试",
-	"reason must be at most 255 characters":                         "拉黑原因不能超过 255 个字",
 	"ended takeover cannot be deleted":                              "已结束的接龙不可删除",
 	"ended takeover cannot be modified":                             "已结束的接龙不可编辑",
 	"report content is required and must be at most 500 characters": "请填写 500 个字以内的举报内容",
@@ -121,14 +119,15 @@ var messageTranslations = map[string]string{
 	"reported user is not in takeover":                              "只能举报当前接龙内的队友",
 	"save failed":                                                   "保存失败，请稍后再试",
 	"steamId cannot be changed":                                     "SteamID 只能填写一次，填错了请联系管理员",
+	"steamId already taken":                                         "SteamID 已被其他玩家绑定，请确认后再填写。",
 	"steamId is required and must be at most 64 characters":         "请输入 64 个字符以内的 SteamID",
 	"takeover full":                                                 "接龙人数已满",
+	"takeover time conflict":                                        "同一时间你已经加入了其他接龙",
 	"takeover not found":                                            "接龙不存在或已被删除",
 	"token sign failed":                                             "登录状态生成失败，请稍后再试",
 	"unauthorized":                                                  "登录状态已失效，请重新进入小程序",
-	"unblock failed":                                                "解除拉黑失败，请稍后再试",
 	"upload failed":                                                 "图片上传失败，请稍后再试",
-	"user blocked":                                                  "您已被管理员拉黑",
+	"user banned":                                                   "账号已被封禁，如有疑问请联系管理员",
 	"user not found":                                                "用户不存在",
 	"wechat login failed":                                           "微信登录失败，请稍后再试",
 }

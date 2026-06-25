@@ -70,7 +70,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	var memberCount int64
 	if err := h.db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_blocked = ? AND u.is_deleted = ?", takeoverID, req.ReportedUserID, model.MemberStateJoined, false, false).
+		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, req.ReportedUserID, model.MemberStateJoined, false).
 		Count(&memberCount).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
@@ -143,8 +143,37 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		Joins("JOIN ttw_user AS reporter ON reporter.id = r.reporter_user_id").
 		Joins("JOIN ttw_user AS reported ON reported.id = r.reported_user_id")
 	state := strings.TrimSpace(c.Query("state"))
-	if state == "" || state == "pending" {
+	switch state {
+	case "", "pending":
 		query = query.Where("r.report_state = ?", model.ReportStatePending)
+	case "approved":
+		query = query.Where("r.report_state = ?", model.ReportStatePenalized)
+	case "rejected":
+		query = query.Where("r.report_state = ?", model.ReportStateIgnored)
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword != "" {
+		query = query.Where("r.report_content LIKE ?", "%"+keyword+"%")
+	}
+	startDate, err := parseOptionalDate(stringPtr(c.Query("startDate")))
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+	if startDate != nil {
+		query = query.Where("r.gmt_create >= ?", truncateDate(*startDate))
+	}
+	endDate, err := parseOptionalDate(stringPtr(c.Query("endDate")))
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+	if endDate != nil {
+		if startDate != nil && endDate.Before(*startDate) {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "结束日期不能早于开始日期")
+			return
+		}
+		query = query.Where("r.gmt_create < ?", truncateDate(*endDate).AddDate(0, 0, 1))
 	}
 
 	var total int64
@@ -190,6 +219,125 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 	ok(c, "success", gin.H{"page": page, "pageSize": pageSize, "total": total, "list": list})
 }
 
+func (h *Handler) AdminGetReport(c *gin.Context) {
+	reportID, okID := pathUint64(c, "reportId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid report id")
+		return
+	}
+
+	type reportDetailRow struct {
+		ID               uint64
+		TakeoverID       uint64
+		TakeoverTitle    string
+		ReporterUserID   uint64
+		ReporterNickname *string
+		ReporterSteamID  *string
+		ReportedUserID   uint64
+		ReportedNickname *string
+		ReportedSteamID  *string
+		ReportedCredit   uint
+		ReportContent    string
+		ImageURLs        *string
+		ReportState      uint8
+		PenaltyScore     uint
+		HandleNote       *string
+		HandledAt        *time.Time
+		GmtCreate        time.Time
+	}
+
+	var row reportDetailRow
+	if err := h.db.Table("ttw_takeover_report AS r").
+		Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, reporter.steam_id AS reporter_steam_id, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
+		Joins("JOIN ttw_takeover AS t ON t.id = r.takeover_id").
+		Joins("JOIN ttw_user AS reporter ON reporter.id = r.reporter_user_id").
+		Joins("JOIN ttw_user AS reported ON reported.id = r.reported_user_id").
+		Where("r.id = ?", reportID).
+		Scan(&row).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if row.ID == 0 {
+		fail(c, http.StatusNotFound, CodeParamInvalid, "report not found")
+		return
+	}
+	ok(c, "success", gin.H{
+		"id":                   row.ID,
+		"takeoverId":           row.TakeoverID,
+		"takeoverTitle":        row.TakeoverTitle,
+		"reporterUserId":       row.ReporterUserID,
+		"reporterNickname":     stringValue(row.ReporterNickname),
+		"reporterSteamId":      stringValue(row.ReporterSteamID),
+		"reportedUserId":       row.ReportedUserID,
+		"reportedNickname":     stringValue(row.ReportedNickname),
+		"reportedSteamId":      stringValue(row.ReportedSteamID),
+		"reportedCreditScore":  row.ReportedCredit,
+		"reportedCreditStatus": creditStatus(row.ReportedCredit),
+		"content":              row.ReportContent,
+		"imageUrls":            reportImageURLs(row.ImageURLs),
+		"state":                row.ReportState,
+		"penaltyScore":         row.PenaltyScore,
+		"handleNote":           stringValue(row.HandleNote),
+		"handledAt":            timeString(row.HandledAt),
+		"createdAt":            row.GmtCreate.Format("2006-01-02 15:04:05"),
+	})
+}
+
+func (h *Handler) AdminApproveReport(c *gin.Context) {
+	reportID, okID := pathUint64(c, "reportId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid report id")
+		return
+	}
+	var req struct {
+		Content      string `json:"content"`
+		PenaltyScore uint   `json:"penaltyScore"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	note := strings.TrimSpace(req.Content)
+	if len([]rune(note)) > 500 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "handle note must be at most 500 characters")
+		return
+	}
+	if req.PenaltyScore == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "penalty score is required")
+		return
+	}
+	if err := h.handleReport(c, reportID, model.ReportStatePenalized, req.PenaltyScore, note); err != nil {
+		h.failReportHandle(c, err)
+		return
+	}
+	ok(c, "approved", nil)
+}
+
+func (h *Handler) AdminRejectReport(c *gin.Context) {
+	reportID, okID := pathUint64(c, "reportId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid report id")
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if len([]rune(reason)) > 500 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "handle note must be at most 500 characters")
+		return
+	}
+	if err := h.handleReport(c, reportID, model.ReportStateIgnored, 0, reason); err != nil {
+		h.failReportHandle(c, err)
+		return
+	}
+	ok(c, "rejected", nil)
+}
+
 func (h *Handler) AdminHandleReport(c *gin.Context) {
 	reportID, okID := pathUint64(c, "reportId")
 	if !okID {
@@ -215,9 +363,33 @@ func (h *Handler) AdminHandleReport(c *gin.Context) {
 		return
 	}
 
-	admin, _ := currentUser(c)
+	newState := uint8(model.ReportStateIgnored)
+	if req.PenaltyScore > 0 {
+		newState = model.ReportStatePenalized
+	}
+	if err := h.handleReport(c, reportID, newState, req.PenaltyScore, note); err != nil {
+		h.failReportHandle(c, err)
+		return
+	}
+
+	ok(c, "handled", nil)
+}
+
+func (h *Handler) failReportHandle(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, errReportHandled):
+		fail(c, http.StatusConflict, CodeParamInvalid, "report already handled")
+	case isNotFound(err):
+		fail(c, http.StatusNotFound, CodeParamInvalid, "report not found")
+	default:
+		fail(c, http.StatusInternalServerError, CodeSystemError, "report handle failed")
+	}
+}
+
+func (h *Handler) handleReport(c *gin.Context, reportID uint64, state uint8, penaltyScore uint, note string) error {
+	admin, _ := currentAdmin(c)
 	now := time.Now()
-	err := h.db.Transaction(func(tx *gorm.DB) error {
+	return h.db.Transaction(func(tx *gorm.DB) error {
 		var report model.TakeoverReport
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", reportID).First(&report).Error; err != nil {
 			return err
@@ -226,17 +398,14 @@ func (h *Handler) AdminHandleReport(c *gin.Context) {
 			return errReportHandled
 		}
 
-		newState := model.ReportStateIgnored
-		if req.PenaltyScore > 0 {
-			newState = model.ReportStatePenalized
-
+		if state == model.ReportStatePenalized {
 			var user model.User
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", report.ReportedUserID, false).First(&user).Error; err != nil {
 				return err
 			}
 			score := uint(0)
-			if user.CreditScore > req.PenaltyScore {
-				score = user.CreditScore - req.PenaltyScore
+			if user.CreditScore > penaltyScore {
+				score = user.CreditScore - penaltyScore
 			}
 			if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("credit_score", score).Error; err != nil {
 				return err
@@ -244,8 +413,8 @@ func (h *Handler) AdminHandleReport(c *gin.Context) {
 		}
 
 		updates := map[string]interface{}{
-			"report_state":        newState,
-			"penalty_score":       req.PenaltyScore,
+			"report_state":        state,
+			"penalty_score":       penaltyScore,
 			"handle_note":         nullableString(note),
 			"handled_by_admin_id": nullableUint64(admin.ID),
 			"handled_at":          now,
@@ -260,19 +429,6 @@ func (h *Handler) AdminHandleReport(c *gin.Context) {
 			OperateContent: stringPtr(note),
 		}).Error
 	})
-	if err != nil {
-		switch {
-		case errors.Is(err, errReportHandled):
-			fail(c, http.StatusConflict, CodeParamInvalid, "report already handled")
-		case isNotFound(err):
-			fail(c, http.StatusNotFound, CodeParamInvalid, "report not found")
-		default:
-			fail(c, http.StatusInternalServerError, CodeSystemError, "report handle failed")
-		}
-		return
-	}
-
-	ok(c, "handled", nil)
 }
 
 var errReportHandled = errors.New("report already handled")

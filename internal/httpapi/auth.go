@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	contextUserKey = "current_user"
-	tokenTypeUser  = "user"
-	tokenTypeAdmin = "admin"
+	contextUserKey  = "current_user"
+	contextAdminKey = "current_admin"
+	tokenTypeUser   = "user"
+	tokenTypeAdmin  = "admin"
 )
 
 var errTokenUserMissing = errors.New("token user missing")
@@ -24,6 +25,7 @@ var errTokenUserMissing = errors.New("token user missing")
 type tokenClaims struct {
 	TokenType string `json:"typ"`
 	UserID    uint64 `json:"uid,omitempty"`
+	AdminID   uint64 `json:"aid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -40,18 +42,6 @@ func (h *Handler) signUserToken(userID uint64) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(h.cfg.JWTSecret))
 }
 
-func (h *Handler) signAdminToken() (string, error) {
-	now := time.Now()
-	claims := tokenClaims{
-		TokenType: tokenTypeAdmin,
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(h.cfg.AdminTokenTTL)),
-		},
-	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(h.cfg.AdminTokenSecret))
-}
-
 func (h *Handler) UserAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, authErr := h.currentUserFromRequest(c)
@@ -65,36 +55,39 @@ func (h *Handler) UserAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if user.IsBanned {
+			fail(c, http.StatusForbidden, CodeUserBanned, "user banned")
+			c.Abort()
+			return
+		}
 		c.Set(contextUserKey, user)
+		c.Next()
+	}
+}
+
+func (h *Handler) OptionalUserAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if bearerToken(c) == "" {
+			c.Next()
+			return
+		}
+		user, err := h.currentUserFromRequest(c)
+		if err == nil {
+			c.Set(contextUserKey, user)
+		}
 		c.Next()
 	}
 }
 
 func (h *Handler) AdminAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if user, err := h.currentUserFromRequest(c); err == nil {
-			if user.IsAdmin {
-				c.Set(contextUserKey, user)
-				c.Next()
-				return
-			}
-			fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
+		admin, err := h.currentAdminFromRequest(c)
+		if err != nil {
+			fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
 			c.Abort()
 			return
 		}
-
-		tokenValue := bearerToken(c)
-		if tokenValue == "" {
-			fail(c, http.StatusUnauthorized, CodeAdminUnauthorized, "admin unauthorized")
-			c.Abort()
-			return
-		}
-		claims, err := parseToken(tokenValue, h.cfg.AdminTokenSecret)
-		if err != nil || claims.TokenType != tokenTypeAdmin {
-			fail(c, http.StatusUnauthorized, CodeAdminUnauthorized, "invalid admin token")
-			c.Abort()
-			return
-		}
+		c.Set(contextAdminKey, admin)
 		c.Next()
 	}
 }
@@ -124,6 +117,15 @@ func currentUser(c *gin.Context) (model.User, bool) {
 		return model.User{}, false
 	}
 	typed, okAuth := user.(model.User)
+	return typed, okAuth
+}
+
+func currentAdmin(c *gin.Context) (model.AdminUser, bool) {
+	admin, okAuth := c.Get(contextAdminKey)
+	if !okAuth {
+		return model.AdminUser{}, false
+	}
+	typed, okAuth := admin.(model.AdminUser)
 	return typed, okAuth
 }
 

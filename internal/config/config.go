@@ -14,7 +14,6 @@ type Config struct {
 	DBDSN                  string
 	JWTSecret              string
 	UserTokenTTL           time.Duration
-	AdminPassword          string
 	AdminTokenSecret       string
 	AdminTokenTTL          time.Duration
 	WXAppID                string
@@ -43,7 +42,6 @@ func Load() Config {
 		DBDSN:                  env("DB_DSN", "root:password@tcp(127.0.0.1:3306)/steam_takeover?charset=utf8mb4&parseTime=True&loc=Local"),
 		JWTSecret:              env("JWT_SECRET", "change-me-user-token-secret"),
 		UserTokenTTL:           durationHours("USER_TOKEN_TTL_HOURS", 24*30),
-		AdminPassword:          env("ADMIN_PASSWORD", ""),
 		AdminTokenSecret:       env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
 		AdminTokenTTL:          durationHours("ADMIN_TOKEN_TTL_HOURS", 2),
 		WXAppID:                env("WX_APP_ID", ""),

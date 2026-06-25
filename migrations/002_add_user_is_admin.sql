@@ -1,7 +1,7 @@
 SET @add_is_admin_sql := (
   SELECT IF(
     COUNT(*) = 0,
-    'ALTER TABLE `ttw_user` ADD COLUMN `is_admin` tinyint unsigned NOT NULL DEFAULT ''0'' COMMENT ''是否管理员：0否，1是'' AFTER `is_blocked`',
+    'ALTER TABLE `ttw_user` ADD COLUMN `is_admin` tinyint unsigned NOT NULL DEFAULT ''0'' COMMENT ''是否管理员：0否，1是''',
     'SELECT 1'
   )
   FROM INFORMATION_SCHEMA.COLUMNS

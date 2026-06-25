@@ -12,35 +12,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (h *Handler) AdminLogin(c *gin.Context) {
-	var req struct {
-		Password string `json:"password"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.Password == "" {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "password is required")
-		return
-	}
-	if h.cfg.AdminPassword == "" {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "admin password is not configured")
-		return
-	}
-	if req.Password != h.cfg.AdminPassword {
-		fail(c, http.StatusUnauthorized, CodeAdminPasswordInvalid, "invalid admin password")
-		return
-	}
-
-	token, err := h.signAdminToken()
-	if err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "token sign failed")
-		return
-	}
-	_ = h.writeAdminLog("ADMIN_LOGIN", "admin", 0, nil)
-	ok(c, "logged in", gin.H{
-		"adminToken": token,
-		"expiresIn":  int(h.cfg.AdminTokenTTL.Seconds()),
-	})
-}
-
 func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 	takeoverID, okID := pathUint64(c, "takeoverId")
 	if !okID {
@@ -151,115 +122,6 @@ func (h *Handler) AdminDeleteTakeover(c *gin.Context) {
 	ok(c, "deleted", nil)
 }
 
-func (h *Handler) AdminBlockUser(c *gin.Context) {
-	userID, okID := pathUint64(c, "userId")
-	if !okID {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
-		return
-	}
-	var req struct {
-		Reason string `json:"reason"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
-		return
-	}
-	reason := strings.TrimSpace(req.Reason)
-	if len([]rune(reason)) > 255 {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "reason must be at most 255 characters")
-		return
-	}
-
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		var user model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
-			return err
-		}
-		block := model.BlockUser{
-			UserID:       user.ID,
-			OpenID:       user.OpenID,
-			NicknameSnap: user.Nickname,
-			SteamIDSnap:  user.SteamID,
-			BlockReason:  stringPtr(reason),
-			IsDeleted:    false,
-		}
-		now := time.Now()
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "user_id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"openid":            user.OpenID,
-				"nickname_snapshot": user.Nickname,
-				"steam_id_snapshot": user.SteamID,
-				"block_reason":      stringPtr(reason),
-				"is_deleted":        false,
-				"gmt_modified":      now,
-			}),
-		}).Create(&block).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("is_blocked", true).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.TakeoverMember{}).
-			Where("user_id = ? AND member_state = ?", user.ID, model.MemberStateJoined).
-			Update("member_state", model.MemberStateExited).Error; err != nil {
-			return err
-		}
-		return tx.Create(&model.AdminOperateLog{
-			OperateType:    "USER_BLOCK",
-			TargetType:     "user",
-			TargetID:       user.ID,
-			OperateContent: stringPtr(reason),
-		}).Error
-	})
-	if err != nil {
-		if isNotFound(err) {
-			fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
-			return
-		}
-		fail(c, http.StatusInternalServerError, CodeSystemError, "block failed")
-		return
-	}
-	ok(c, "blocked", nil)
-}
-
-func (h *Handler) AdminUnblockUser(c *gin.Context) {
-	userID, okID := pathUint64(c, "userId")
-	if !okID {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
-		return
-	}
-
-	err := h.db.Transaction(func(tx *gorm.DB) error {
-		var user model.User
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.BlockUser{}).Where("user_id = ?", userID).Updates(map[string]interface{}{
-			"is_deleted": true,
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.User{}).Where("id = ?", userID).Update("is_blocked", false).Error; err != nil {
-			return err
-		}
-		return tx.Create(&model.AdminOperateLog{
-			OperateType: "USER_UNBLOCK",
-			TargetType:  "user",
-			TargetID:    user.ID,
-		}).Error
-	})
-	if err != nil {
-		if isNotFound(err) {
-			fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
-			return
-		}
-		fail(c, http.StatusInternalServerError, CodeSystemError, "unblock failed")
-		return
-	}
-	ok(c, "unblocked", nil)
-}
-
 func (h *Handler) AdminRestoreUserCredit(c *gin.Context) {
 	userID, okID := pathUint64(c, "userId")
 	if !okID {
@@ -309,49 +171,232 @@ func (h *Handler) AdminRestoreUserCredit(c *gin.Context) {
 	ok(c, "restored", nil)
 }
 
-func (h *Handler) AdminBlockedUsers(c *gin.Context) {
-	type blockedUserDTO struct {
-		UserID    uint64 `json:"userId"`
-		OpenID    string `json:"openid"`
-		Nickname  string `json:"nickname"`
-		SteamID   string `json:"steamId"`
-		Reason    string `json:"reason"`
-		BlockedAt string `json:"blockedAt"`
-	}
-	type blockedUserRow struct {
-		UserID    uint64
-		OpenID    string
-		Nickname  *string
-		SteamID   *string
-		Reason    *string
-		BlockedAt time.Time
-	}
-
-	var rows []blockedUserRow
-	query := h.db.Table("ttw_block_user AS b").
-		Select("b.user_id, b.openid, b.nickname_snapshot AS nickname, b.steam_id_snapshot AS steam_id, b.block_reason AS reason, b.gmt_create AS blocked_at").
-		Where("b.is_deleted = ?", false)
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	if keyword != "" {
-		like := "%" + keyword + "%"
-		query = query.Where("b.nickname_snapshot LIKE ? OR b.steam_id_snapshot LIKE ?", like, like)
-	}
-	if err := query.Order("b.gmt_create DESC").Scan(&rows).Error; err != nil {
+func (h *Handler) AdminDashboardSummary(c *gin.Context) {
+	var takeoverTotal int64
+	if err := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false).Count(&takeoverTotal).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	list := make([]blockedUserDTO, 0, len(rows))
-	for _, row := range rows {
-		list = append(list, blockedUserDTO{
-			UserID:    row.UserID,
-			OpenID:    row.OpenID,
-			Nickname:  stringValue(row.Nickname),
-			SteamID:   stringValue(row.SteamID),
-			Reason:    stringValue(row.Reason),
-			BlockedAt: row.BlockedAt.Format("2006-01-02 15:04:05"),
-		})
+	var userTotal int64
+	if err := h.db.Model(&model.User{}).Where("is_deleted = ?", false).Count(&userTotal).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
 	}
-	ok(c, "success", gin.H{"list": list})
+	var pendingReportTotal int64
+	if err := h.db.Model(&model.TakeoverReport{}).Where("report_state = ?", model.ReportStatePending).Count(&pendingReportTotal).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	ok(c, "success", gin.H{
+		"takeoverTotal":      takeoverTotal,
+		"userTotal":          userTotal,
+		"pendingReportTotal": pendingReportTotal,
+	})
+}
+
+func (h *Handler) AdminListUsers(c *gin.Context) {
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(c.Query("pageSize"), 20)
+	if pageSize > 50 {
+		pageSize = 50
+	}
+
+	query := h.db.Model(&model.User{}).Where("is_deleted = ?", false)
+	switch strings.TrimSpace(c.Query("status")) {
+	case "banned":
+		query = query.Where("is_banned = ?", true)
+	case "normal":
+		query = query.Where("is_banned = ?", false)
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("nickname LIKE ? OR steam_id LIKE ? OR openid LIKE ?", like, like, like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var users []model.User
+	if err := query.
+		Order("gmt_create DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&users).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	list := make([]userDTO, 0, len(users))
+	for _, user := range users {
+		list = append(list, toUserDTO(user))
+	}
+	ok(c, "success", gin.H{
+		"page":     page,
+		"pageSize": pageSize,
+		"total":    total,
+		"list":     list,
+	})
+}
+
+func (h *Handler) AdminGetUser(c *gin.Context) {
+	userID, okID := pathUint64(c, "userId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
+		return
+	}
+	var user model.User
+	if err := h.db.Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	ok(c, "success", toUserDTO(user))
+}
+
+func (h *Handler) AdminBanUser(c *gin.Context) {
+	userID, okID := pathUint64(c, "userId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if len([]rune(reason)) > 255 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "ban reason must be at most 255 characters")
+		return
+	}
+	admin, _ := currentAdmin(c)
+	now := time.Now()
+	result := h.db.Model(&model.User{}).Where("id = ? AND is_deleted = ?", userID, false).Updates(map[string]interface{}{
+		"is_banned":          true,
+		"ban_reason":         nullableString(reason),
+		"banned_at":          now,
+		"banned_by_admin_id": admin.ID,
+	})
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "ban failed")
+		return
+	}
+	if result.RowsAffected == 0 {
+		fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
+		return
+	}
+	ok(c, "banned", nil)
+}
+
+func (h *Handler) AdminUnbanUser(c *gin.Context) {
+	userID, okID := pathUint64(c, "userId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
+		return
+	}
+	result := h.db.Model(&model.User{}).Where("id = ? AND is_deleted = ?", userID, false).Updates(map[string]interface{}{
+		"is_banned":          false,
+		"ban_reason":         nil,
+		"banned_at":          nil,
+		"banned_by_admin_id": nil,
+	})
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "unban failed")
+		return
+	}
+	if result.RowsAffected == 0 {
+		fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
+		return
+	}
+	ok(c, "unbanned", nil)
+}
+
+func (h *Handler) AdminListTakeovers(c *gin.Context) {
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(c.Query("pageSize"), 20)
+	if pageSize > 50 {
+		pageSize = 50
+	}
+
+	query := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false)
+	query = applyKeywordFilter(query, c.Query("keyword"))
+	if state := strings.TrimSpace(c.Query("status")); state != "" {
+		switch state {
+		case "normal":
+			query = query.Where("takeover_state = ?", model.TakeoverStateNormal)
+		case "closed":
+			query = query.Where("takeover_state = ?", model.TakeoverStateClosed)
+		}
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	var takeovers []model.Takeover
+	if err := query.Order("gmt_create DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&takeovers).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	list := make([]takeoverDTO, 0, len(takeovers))
+	for _, takeover := range takeovers {
+		joined, _, err := h.takeoverStats(takeover.ID, 0)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		dto := toTakeoverDTOWithCreator(h.db, takeover, joined, false)
+		members, err := h.takeoverMembers(takeover.ID, true, 5)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		dto.PreviewMembers = members
+		list = append(list, dto)
+	}
+	ok(c, "success", gin.H{"page": page, "pageSize": pageSize, "total": total, "list": list})
+}
+
+func (h *Handler) AdminBatchPublishWhitelist(c *gin.Context) {
+	var req struct {
+		SteamIDs []string `json:"steamIds"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	count := 0
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		for _, value := range req.SteamIDs {
+			steamID := strings.TrimSpace(value)
+			if steamID == "" || len([]rune(steamID)) > 64 {
+				continue
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "steam_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{"enabled": true}),
+			}).Create(&model.PublishTakeoverWhitelist{SteamID: steamID, Enabled: true}).Error; err != nil {
+				return err
+			}
+			count++
+		}
+		return nil
+	})
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	ok(c, "saved", gin.H{"count": count})
 }
 
 func (h *Handler) writeAdminLog(operateType, targetType string, targetID uint64, content *string) error {

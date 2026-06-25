@@ -56,10 +56,10 @@ location /miniprogram-api/ {
 Authorization: Bearer <user-token>
 ```
 
-管理员接口：
+管理员接口使用普通用户 token，且用户 `is_admin = 1`：
 
 ```http
-Authorization: Bearer <admin-token>
+Authorization: Bearer <user-token>
 ```
 
 ### 常用枚举
@@ -97,8 +97,7 @@ playTime: HH:mm
   "steamId": "364262801",
   "gender": 1,
   "avatarUrl": "https://example.com/avatar.jpg",
-  "profileCompleted": true,
-  "blocked": false
+  "profileCompleted": true
 }
 ```
 
@@ -199,8 +198,7 @@ Content-Type: application/json
       "steamId": "",
       "gender": null,
       "avatarUrl": "",
-      "profileCompleted": false,
-      "blocked": false
+      "profileCompleted": false
     },
     "publishTakeoverEnabled": false
   }
@@ -214,46 +212,6 @@ Content-Type: application/json
 | `400` | `PARAM_INVALID` | code 为空 |
 | `502` | `SYSTEM_ERROR` | 微信登录失败 |
 | `500` | `SYSTEM_ERROR` | 创建用户或签发 token 失败 |
-
-### Web 调试登录
-
-```http
-POST /api/auth/web-login
-Content-Type: application/json
-```
-
-请求：
-
-```json
-{
-  "nickname": "Zzzz",
-  "steamId": "364262801",
-  "gender": 1,
-  "avatarUrl": "https://example.com/avatar.jpg"
-}
-```
-
-说明：
-
-- 主要用于 Web/调试场景。
-- `steamId` 必填，最长 64 字符。
-- 如果只传 `steamId`，后端会按 SteamID 查询或创建一个 `web_` openid 用户。
-- 如果传完整资料，会保存昵称、性别、头像并标记资料已完善。
-- 响应中的 `publishTakeoverEnabled` 含义同微信登录。
-
-响应同微信登录：
-
-```json
-{
-  "success": true,
-  "code": "SUCCESS",
-  "message": "success",
-  "data": {
-    "token": "user-token",
-    "user": {}
-  }
-}
-```
 
 ### 查询当前用户资料
 
@@ -275,8 +233,7 @@ Authorization: Bearer <user-token>
     "steamId": "364262801",
     "gender": 1,
     "avatarUrl": "https://example.com/avatar.jpg",
-    "profileCompleted": true,
-    "blocked": false
+    "profileCompleted": true
   }
 }
 ```
@@ -327,8 +284,7 @@ Content-Type: application/json
     "steamId": "364262801",
     "gender": 1,
     "avatarUrl": "https://example.com/avatar.jpg",
-    "profileCompleted": true,
-    "blocked": false
+    "profileCompleted": true
   }
 }
 ```
@@ -365,8 +321,7 @@ Content-Type: application/json
       "steamId": "wechat-bot-query",
       "gender": 1,
       "avatarUrl": "",
-      "profileCompleted": false,
-      "blocked": false
+      "profileCompleted": false
     }
   }
 }
@@ -449,7 +404,7 @@ Authorization: Bearer <user-token>
 
 说明：
 
-- 被拉黑用户返回 `USER_BLOCKED`。
+- 需要传用户 token；返回当前用户的 `hasJoined`、`isCreator`、`canManage` 状态。
 - 列表只返回前 5 个 `previewMembers`。
 - `custom_range` 只填开始或结束日期会返回 `PARAM_INVALID`；前端应等两个日期都填写后再请求。
 
@@ -499,7 +454,6 @@ Authorization: Bearer <user-token>
 | --- | --- | --- |
 | `400` | `PARAM_INVALID` | takeoverId 非法 |
 | `404` | `TAKEOVER_NOT_FOUND` | 接龙不存在或已删除 |
-| `403` | `USER_BLOCKED` | 当前用户被拉黑 |
 
 ### 创建接龙
 
@@ -527,7 +481,7 @@ Content-Type: application/json
 
 | 字段 | 要求 |
 | --- | --- |
-| `title` | 必填，最多 50 字 |
+| `title` | 必填，最多 30 字 |
 | `participantLimit` | `2` 到 `99` |
 | `scheduleType` | `1`、`2`、`3` |
 | `playTime` | 必填，格式 `HH:mm` |
@@ -555,7 +509,6 @@ Content-Type: application/json
 
 - 用户必须资料完整。
 - 创建者会自动加入该接龙。
-- 被拉黑用户不能创建。
 - 只有 `publish_takeover_enabled=true`，或当前用户 SteamID 在发布白名单内，才允许创建。
 - `title` 和 `description` 会先走本地敏感词表，再走微信文本内容安全。
 - 检测未通过时返回 `PARAM_INVALID`，提示“内容包含不合规信息，请修改后再提交”。
@@ -586,7 +539,6 @@ Authorization: Bearer <user-token>
 | HTTP | code | 说明 |
 | --- | --- | --- |
 | `403` | `PROFILE_INCOMPLETE` | 用户资料未完善 |
-| `403` | `USER_BLOCKED` | 用户被拉黑 |
 | `404` | `TAKEOVER_NOT_FOUND` | 接龙不存在 |
 | `409` | `ALREADY_JOINED` | 已加入 |
 | `409` | `TAKEOVER_FULL` | 人数已满 |
@@ -666,10 +618,16 @@ curl -X POST "http://47.102.200.211:8081/api/uploads/image" \
 
 ## 管理员接口
 
+除登录外，后台接口统一使用后台 token：
+
+```http
+Authorization: Bearer <admin-token>
+```
+
 ### 管理员登录
 
 ```http
-POST /api/admin/login
+POST /api/admin/auth/login
 Content-Type: application/json
 ```
 
@@ -677,7 +635,8 @@ Content-Type: application/json
 
 ```json
 {
-  "password": "管理员密码"
+  "username": "admin",
+  "password": "admin123"
 }
 ```
 
@@ -689,11 +648,89 @@ Content-Type: application/json
   "code": "SUCCESS",
   "message": "logged in",
   "data": {
-    "adminToken": "admin-token",
-    "expiresIn": 7200
+    "token": "admin-token",
+    "expiresIn": 7200,
+    "admin": {
+      "id": 1,
+      "username": "admin",
+      "nickname": "超级管理员",
+      "enabled": true
+    }
   }
 }
 ```
+
+### 管理员退出登录
+
+```http
+POST /api/admin/auth/logout
+Authorization: Bearer <admin-token>
+```
+
+说明：后端会撤销当前后台 token。
+
+### 添加管理员
+
+```http
+POST /api/admin/admin-users
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "username": "csw",
+  "password": "123456",
+  "nickname": "管理员"
+}
+```
+
+### 管理员列表
+
+```http
+GET /api/admin/admin-users?page=1&pageSize=20&keyword=
+Authorization: Bearer <admin-token>
+```
+
+### 首页统计
+
+```http
+GET /api/admin/dashboard/summary
+Authorization: Bearer <admin-token>
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "takeoverTotal": 100,
+    "userTotal": 50,
+    "pendingReportTotal": 3
+  }
+}
+```
+
+### 管理员查询接龙列表
+
+```http
+GET /api/admin/takeovers?page=1&pageSize=20&keyword=&status=
+Authorization: Bearer <admin-token>
+```
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `keyword` | string | 按标题、介绍搜索 |
+| `status` | string | `normal` 或 `closed` |
+| `page` | number | 页码，默认 `1` |
+| `pageSize` | number | 每页数量，默认 `20`，最大 `50` |
 
 ### 管理员查询接龙详情
 
@@ -750,62 +787,10 @@ Authorization: Bearer <admin-token>
 }
 ```
 
-### 管理员拉黑用户
+### 管理员查询用户
 
 ```http
-POST /api/admin/users/{userId}/block
-Authorization: Bearer <admin-token>
-Content-Type: application/json
-```
-
-请求：
-
-```json
-{
-  "reason": "恶意占位"
-}
-```
-
-说明：
-
-- `reason` 可为空，最多 255 字。
-- 会写入或更新 `ttw_block_user`。
-- 会设置用户 `is_blocked = true`。
-- 会把该用户所有已加入成员状态改为已退出。
-
-响应：
-
-```json
-{
-  "success": true,
-  "code": "SUCCESS",
-  "message": "blocked",
-  "data": null
-}
-```
-
-### 管理员解除拉黑
-
-```http
-POST /api/admin/users/{userId}/unblock
-Authorization: Bearer <admin-token>
-```
-
-响应：
-
-```json
-{
-  "success": true,
-  "code": "SUCCESS",
-  "message": "unblocked",
-  "data": null
-}
-```
-
-### 管理员查询拉黑列表
-
-```http
-GET /api/admin/blocked-users
+GET /api/admin/users
 Authorization: Bearer <admin-token>
 ```
 
@@ -813,7 +798,10 @@ Authorization: Bearer <admin-token>
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `keyword` | string | 按昵称快照或 SteamID 快照模糊搜索 |
+| `keyword` | string | 按昵称、SteamID 或 openid 模糊搜索 |
+| `status` | string | `normal` 或 `banned` |
+| `page` | number | 页码，默认 `1` |
+| `pageSize` | number | 每页数量，默认 `20`，最大 `50` |
 
 响应：
 
@@ -823,17 +811,146 @@ Authorization: Bearer <admin-token>
   "code": "SUCCESS",
   "message": "success",
   "data": {
+    "page": 1,
+    "pageSize": 20,
+    "total": 1,
     "list": [
       {
-        "userId": 1,
-        "openid": "o_xxx",
+        "id": 1,
         "nickname": "Zzzz",
         "steamId": "364262801",
-        "reason": "恶意占位",
-        "blockedAt": "2026-06-21 21:42:00"
+        "gender": 1,
+        "avatarUrl": "https://example.com/avatar.jpg",
+        "profileCompleted": true,
+        "isAdmin": false,
+        "creditScore": 100,
+        "creditStatus": "normal"
       }
     ]
   }
+}
+```
+
+### 管理员查询用户详情
+
+```http
+GET /api/admin/users/{userId}
+Authorization: Bearer <admin-token>
+```
+
+### 封禁用户
+
+```http
+POST /api/admin/users/{userId}/ban
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "reason": "违规行为"
+}
+```
+
+说明：不踢出已加入接龙，只禁止后续访问 C 端接口。
+
+### 解封用户
+
+```http
+POST /api/admin/users/{userId}/unban
+Authorization: Bearer <admin-token>
+```
+
+### 恢复用户信誉分
+
+```http
+POST /api/admin/users/{userId}/credit
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "delta": 10,
+  "toScore": 100
+}
+```
+
+### 审核列表
+
+```http
+GET /api/admin/reports?page=1&pageSize=20&state=&keyword=&startDate=&endDate=
+Authorization: Bearer <admin-token>
+```
+
+查询参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `state` | 可选：`pending`、`approved`、`rejected`，默认 `pending` |
+| `keyword` | 举报内容模糊查询 |
+| `startDate` | 举报开始日期，格式 `YYYY-MM-DD` |
+| `endDate` | 举报结束日期，格式 `YYYY-MM-DD`，不能早于 `startDate` |
+
+### 审核详情
+
+```http
+GET /api/admin/reports/{reportId}
+Authorization: Bearer <admin-token>
+```
+
+### 审核同意
+
+```http
+POST /api/admin/reports/{reportId}/approve
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "content": "情况属实",
+  "penaltyScore": 10
+}
+```
+
+说明：`content` 非必填，`penaltyScore` 必填，会扣除被举报用户信誉分。
+
+### 审核驳回
+
+```http
+POST /api/admin/reports/{reportId}/reject
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "reason": "证据不足"
+}
+```
+
+### 批量添加发布白名单
+
+```http
+POST /api/admin/publish-whitelist/batch
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "steamIds": ["123", "456", "789"]
 }
 ```
 
@@ -845,12 +962,10 @@ Authorization: Bearer <admin-token>
 | `PARAM_INVALID` | 参数不正确 |
 | `UNAUTHORIZED` | 用户登录状态无效 |
 | `PROFILE_INCOMPLETE` | 用户资料未完善 |
-| `USER_BLOCKED` | 用户被拉黑 |
 | `TAKEOVER_NOT_FOUND` | 接龙不存在或已删除 |
 | `TAKEOVER_FULL` | 接龙人数已满 |
 | `ALREADY_JOINED` | 用户已经加入 |
-| `ADMIN_UNAUTHORIZED` | 管理员登录状态无效 |
-| `ADMIN_PASSWORD_INVALID` | 管理员密码错误 |
+| `ADMIN_UNAUTHORIZED` | 当前账号暂无管理员权限 |
 | `SYSTEM_ERROR` | 系统异常 |
 
 ## 运营配置表
@@ -933,9 +1048,6 @@ LIMIT 20;
 | `DB_DSN` | MySQL DSN | 本地示例 DSN |
 | `JWT_SECRET` | 用户 token 签名密钥 | `change-me-user-token-secret` |
 | `USER_TOKEN_TTL_HOURS` | 用户 token 有效期小时 | `720` |
-| `ADMIN_PASSWORD` | 管理员密码 | 空 |
-| `ADMIN_TOKEN_SECRET` | 管理员 token 签名密钥 | `change-me-admin-token-secret` |
-| `ADMIN_TOKEN_TTL_HOURS` | 管理员 token 有效期小时 | `2` |
 | `WX_APP_ID` | 微信小程序 AppID | 空 |
 | `WX_APP_SECRET` | 微信小程序 AppSecret | 空 |
 | `WX_LOGIN_MOCK` | 是否启用微信登录 mock | `false` |

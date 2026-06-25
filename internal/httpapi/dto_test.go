@@ -93,6 +93,56 @@ func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
 	}
 }
 
+func TestSchedulesConflict(t *testing.T) {
+	day1 := truncateDate(time.Now().AddDate(0, 0, 1))
+	day2 := day1.AddDate(0, 0, 1)
+	day3 := day1.AddDate(0, 0, 2)
+
+	cases := []struct {
+		name string
+		a    model.Takeover
+		b    model.Takeover
+		want bool
+	}{
+		{
+			name: "same specified date and time",
+			a:    model.Takeover{ScheduleType: model.ScheduleSpecifiedDate, StartDate: &day1, PlayTime: "20:00:00"},
+			b:    model.Takeover{ScheduleType: model.ScheduleSpecifiedDate, StartDate: &day1, PlayTime: "20:00:00"},
+			want: true,
+		},
+		{
+			name: "different time",
+			a:    model.Takeover{ScheduleType: model.ScheduleSpecifiedDate, StartDate: &day1, PlayTime: "20:00:00"},
+			b:    model.Takeover{ScheduleType: model.ScheduleSpecifiedDate, StartDate: &day1, PlayTime: "21:00:00"},
+		},
+		{
+			name: "range overlaps specified date",
+			a:    model.Takeover{ScheduleType: model.ScheduleDateRange, StartDate: &day1, EndDate: &day3, PlayTime: "20:00:00"},
+			b:    model.Takeover{ScheduleType: model.ScheduleSpecifiedDate, StartDate: &day2, PlayTime: "20:00:00"},
+			want: true,
+		},
+		{
+			name: "daily conflicts with same time",
+			a:    model.Takeover{ScheduleType: model.ScheduleDaily, PlayTime: "20:00:00"},
+			b:    model.Takeover{ScheduleType: model.ScheduleSpecifiedDate, StartDate: &day2, PlayTime: "20:00:00"},
+			want: true,
+		},
+		{
+			name: "date ranges do not overlap",
+			a:    model.Takeover{ScheduleType: model.ScheduleDateRange, StartDate: &day1, EndDate: &day1, PlayTime: "20:00:00"},
+			b:    model.Takeover{ScheduleType: model.ScheduleDateRange, StartDate: &day2, EndDate: &day3, PlayTime: "20:00:00"},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := schedulesConflict(tt.a, tt.b); got != tt.want {
+				t.Fatalf("schedulesConflict() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsUserProfileCompletedUsesStoredFields(t *testing.T) {
 	gender := uint8(model.GenderFemale)
 	nickname := "兔兔"

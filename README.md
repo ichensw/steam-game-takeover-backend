@@ -5,7 +5,6 @@
 ## 已实现接口
 
 - `POST /api/auth/wx-login`
-- `POST /api/auth/web-login`
 - `GET /api/me/profile`
 - `PUT /api/me/profile`
 - `POST /api/uploads/image`
@@ -14,13 +13,10 @@
 - `POST /api/takeovers`
 - `POST /api/takeovers/:takeoverId/join`
 - `POST /api/takeovers/:takeoverId/leave`
-- `POST /api/admin/login`
 - `GET /api/admin/takeovers/:takeoverId`
 - `PUT /api/admin/takeovers/:takeoverId`
 - `DELETE /api/admin/takeovers/:takeoverId`
-- `POST /api/admin/users/:userId/block`
-- `POST /api/admin/users/:userId/unblock`
-- `GET /api/admin/blocked-users`
+- `GET /api/admin/users`
 - `GET /api/health`
 
 详细字段、参数、响应示例和错误码见 [`docs/api.md`](docs/api.md)。
@@ -71,14 +67,10 @@ WX_LOGIN_MOCK=true
 Authorization: Bearer user-token
 ```
 
-管理员接口使用：
+管理员接口使用普通用户 token，且用户 `is_admin = 1`：
 
 ```http
-Authorization: Bearer admin-token
+Authorization: Bearer user-token
 ```
 
-普通用户 token 和管理员 token 分别使用 `JWT_SECRET`、`ADMIN_TOKEN_SECRET` 签名。
-
-## 黑名单规则
-
-小程序启动后应先调用 `POST /api/auth/wx-login`。如果返回的用户字段 `blocked = true`，前端不展示接龙列表。后端仍会在列表、详情、创建、加入等用户接口中再次校验 `is_blocked`。
+普通用户 token 使用 `JWT_SECRET` 签名。

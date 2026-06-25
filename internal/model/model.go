@@ -39,8 +39,11 @@ type User struct {
 	Gender             *uint8     `gorm:"column:gender"`
 	AvatarURL          *string    `gorm:"column:avatar_url;size:255"`
 	IsProfileCompleted bool       `gorm:"column:is_profile_completed"`
-	IsBlocked          bool       `gorm:"column:is_blocked"`
 	IsAdmin            bool       `gorm:"column:is_admin"`
+	IsBanned           bool       `gorm:"column:is_banned"`
+	BanReason          *string    `gorm:"column:ban_reason;size:255"`
+	BannedAt           *time.Time `gorm:"column:banned_at"`
+	BannedByAdminID    *uint64    `gorm:"column:banned_by_admin_id"`
 	IsDeleted          bool       `gorm:"column:is_deleted"`
 	CreditScore        uint       `gorm:"column:credit_score;default:100"`
 	LastLoginTime      *time.Time `gorm:"column:last_login_time"`
@@ -49,6 +52,31 @@ type User struct {
 }
 
 func (User) TableName() string { return "ttw_user" }
+
+type AdminUser struct {
+	ID            uint64     `gorm:"primaryKey;column:id"`
+	Username      string     `gorm:"column:username;size:64;uniqueIndex:uk_username"`
+	PasswordHash  string     `gorm:"column:password_hash;size:255"`
+	Nickname      *string    `gorm:"column:nickname;size:64"`
+	Enabled       bool       `gorm:"column:enabled"`
+	LastLoginTime *time.Time `gorm:"column:last_login_time"`
+	GmtCreate     time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified   time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (AdminUser) TableName() string { return "ttw_admin_user" }
+
+type AdminToken struct {
+	ID          uint64    `gorm:"primaryKey;column:id"`
+	AdminUserID uint64    `gorm:"column:admin_user_id;index:idx_admin_user_id"`
+	TokenID     string    `gorm:"column:token_id;size:64;uniqueIndex:uk_token_id"`
+	ExpiresAt   time.Time `gorm:"column:expires_at;index:idx_expires_at"`
+	IsRevoked   bool      `gorm:"column:is_revoked;index:idx_is_revoked"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (AdminToken) TableName() string { return "ttw_admin_token" }
 
 type Takeover struct {
 	ID               uint64     `gorm:"primaryKey;column:id"`
@@ -96,20 +124,6 @@ type TakeoverReport struct {
 }
 
 func (TakeoverReport) TableName() string { return "ttw_takeover_report" }
-
-type BlockUser struct {
-	ID           uint64    `gorm:"primaryKey;column:id"`
-	UserID       uint64    `gorm:"column:user_id;uniqueIndex:uk_user_id"`
-	OpenID       string    `gorm:"column:openid;size:64;index:idx_openid"`
-	NicknameSnap *string   `gorm:"column:nickname_snapshot;size:32"`
-	SteamIDSnap  *string   `gorm:"column:steam_id_snapshot;size:64"`
-	BlockReason  *string   `gorm:"column:block_reason;size:255"`
-	IsDeleted    bool      `gorm:"column:is_deleted"`
-	GmtCreate    time.Time `gorm:"column:gmt_create;autoCreateTime"`
-	GmtModified  time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
-}
-
-func (BlockUser) TableName() string { return "ttw_block_user" }
 
 type AdminOperateLog struct {
 	ID             uint64    `gorm:"primaryKey;column:id"`

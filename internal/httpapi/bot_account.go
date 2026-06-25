@@ -70,7 +70,6 @@ func ensureBotQueryUser(db *gorm.DB, cfg config.Config) (model.User, error) {
 			Gender:             &gender,
 			AvatarURL:          stringPtr(avatarURL),
 			IsProfileCompleted: false,
-			IsBlocked:          false,
 			IsDeleted:          false,
 			LastLoginTime:      &now,
 		}
@@ -85,7 +84,6 @@ func ensureBotQueryUser(db *gorm.DB, cfg config.Config) (model.User, error) {
 		"gender":               gender,
 		"avatar_url":           stringPtr(avatarURL),
 		"is_profile_completed": false,
-		"is_blocked":           false,
 		"is_deleted":           false,
 		"last_login_time":      now,
 		"gmt_modified":         now,

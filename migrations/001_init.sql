@@ -7,8 +7,11 @@ CREATE TABLE IF NOT EXISTS `ttw_user` (
   `gender` tinyint unsigned DEFAULT NULL COMMENT '性别：1男，2女',
   `avatar_url` varchar(255) DEFAULT NULL COMMENT '用户头像地址',
   `is_profile_completed` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '资料是否完善：0否，1是',
-  `is_blocked` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否被拉黑：0否，1是',
   `is_admin` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否管理员：0否，1是',
+  `is_banned` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否封禁：0否，1是',
+  `ban_reason` varchar(255) DEFAULT NULL COMMENT '封禁原因',
+  `banned_at` datetime DEFAULT NULL COMMENT '封禁时间',
+  `banned_by_admin_id` bigint unsigned DEFAULT NULL COMMENT '封禁管理员ID',
   `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否删除：0否，1是',
   `credit_score` int unsigned NOT NULL DEFAULT '100' COMMENT '信誉分',
   `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
@@ -18,6 +21,38 @@ CREATE TABLE IF NOT EXISTS `ttw_user` (
   KEY `idx_openid` (`openid`),
   KEY `idx_steam_id` (`steam_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+CREATE TABLE IF NOT EXISTS `ttw_admin_user` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `username` varchar(64) NOT NULL COMMENT '管理员用户名',
+  `password_hash` varchar(255) NOT NULL COMMENT '密码哈希',
+  `nickname` varchar(64) DEFAULT NULL COMMENT '管理员昵称',
+  `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '是否启用：0否，1是',
+  `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_username` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台管理员表';
+
+INSERT INTO `ttw_admin_user` (`username`, `password_hash`, `nickname`, `enabled`)
+VALUES ('admin', '$2a$10$W3ZjxXFR./UByWLjZvs5z.OIrZcd30i9C2droloE7aTlPENPBRm7u', '超级管理员', 1)
+ON DUPLICATE KEY UPDATE `username` = `username`;
+
+CREATE TABLE IF NOT EXISTS `ttw_admin_token` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `admin_user_id` bigint unsigned NOT NULL COMMENT '管理员ID',
+  `token_id` varchar(64) NOT NULL COMMENT 'token唯一ID',
+  `expires_at` datetime NOT NULL COMMENT '过期时间',
+  `is_revoked` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否撤销：0否，1是',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_token_id` (`token_id`),
+  KEY `idx_admin_user_id` (`admin_user_id`),
+  KEY `idx_expires_at` (`expires_at`),
+  KEY `idx_is_revoked` (`is_revoked`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台登录token表';
 
 CREATE TABLE IF NOT EXISTS `ttw_takeover` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -73,21 +108,6 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover_report` (
   UNIQUE KEY `uk_takeover_report_pair` (`takeover_id`, `reporter_user_id`, `reported_user_id`),
   KEY `idx_gmt_create` (`gmt_create`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接龙举报表';
-
-CREATE TABLE IF NOT EXISTS `ttw_block_user` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `user_id` bigint unsigned NOT NULL COMMENT '被拉黑用户ID',
-  `openid` varchar(64) NOT NULL COMMENT '被拉黑用户openid',
-  `nickname_snapshot` varchar(32) DEFAULT NULL COMMENT '拉黑时昵称快照',
-  `steam_id_snapshot` varchar(64) DEFAULT NULL COMMENT '拉黑时Steam ID快照',
-  `block_reason` varchar(255) DEFAULT NULL COMMENT '拉黑原因',
-  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '是否解除拉黑：0否，1是',
-  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_user_id` (`user_id`),
-  KEY `idx_openid` (`openid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户拉黑表';
 
 CREATE TABLE IF NOT EXISTS `ttw_admin_operate_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',

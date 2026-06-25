@@ -36,8 +36,8 @@ func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverI
 	description := strings.TrimSpace(input.Description)
 	playTime := strings.TrimSpace(input.PlayTime)
 
-	if title == "" || len([]rune(title)) > 50 {
-		return parsedTakeoverInput{}, errors.New("请输入 50 个字以内的标题")
+	if title == "" || len([]rune(title)) > 30 {
+		return parsedTakeoverInput{}, errors.New("请输入 30 个字以内的标题")
 	}
 	if input.ParticipantLimit < 2 || input.ParticipantLimit > 99 {
 		return parsedTakeoverInput{}, errors.New("人数上限必须在 2-99 之间")
