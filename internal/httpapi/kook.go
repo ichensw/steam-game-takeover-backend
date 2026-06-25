@@ -57,6 +57,14 @@ type kookChannelListResponse struct {
 	} `json:"data"`
 }
 
+type kookInviteCreateResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		URL string `json:"url"`
+	} `json:"data"`
+}
+
 func (h *Handler) ListKookChannels(c *gin.Context) {
 	channels, meta, err := h.fetchKookChannels()
 	if err != nil {
@@ -172,6 +180,31 @@ func fetchKookChannelPage(client *resty.Client, token, guildID string, page int)
 		return result, fmt.Errorf("kook channel list failed: http=%d code=%d", resp.StatusCode(), result.Code)
 	}
 	return result, nil
+}
+
+func (h *Handler) createKookInviteURL(channelID string) (string, error) {
+	token := h.kookBotToken()
+	if token == "" {
+		return "", fmt.Errorf("kook not configured")
+	}
+	var result kookInviteCreateResponse
+	resp, err := resty.New().R().
+		SetHeader("Authorization", "Bot "+token).
+		SetHeader("Content-Type", "application/json").
+		SetBody(gin.H{
+			"channel_id":    channelID,
+			"duration":      0,
+			"setting_times": -1,
+		}).
+		SetResult(&result).
+		Post("https://www.kookapp.cn/api/v3/invite/create")
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode() != http.StatusOK || result.Code != 0 || result.Data.URL == "" {
+		return "", fmt.Errorf("kook invite create failed: http=%d code=%d", resp.StatusCode(), result.Code)
+	}
+	return result.Data.URL, nil
 }
 
 func toKookChannelList(result kookChannelListResponse) ([]kookChannelDTO, gin.H) {

@@ -93,6 +93,14 @@ func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
 	}
 }
 
+func TestTakeoverDTOIncludesKookInviteURL(t *testing.T) {
+	url := "https://kook.top/abc"
+	dto := toTakeoverDTO(model.Takeover{KookInviteURL: &url}, 0, false)
+	if dto.KookInviteURL != url {
+		t.Fatalf("KookInviteURL = %q, want %q", dto.KookInviteURL, url)
+	}
+}
+
 func TestSchedulesConflict(t *testing.T) {
 	day1 := truncateDate(time.Now().AddDate(0, 0, 1))
 	day2 := day1.AddDate(0, 0, 1)

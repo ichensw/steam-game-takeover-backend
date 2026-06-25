@@ -219,6 +219,10 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "participantLimit cannot be lower than joinedCount")
 		return
 	}
+	if err := h.fillKookInviteURL(&parsed); err != nil {
+		fail(c, http.StatusBadGateway, CodeSystemError, "kook invite create failed")
+		return
+	}
 
 	result := h.db.Model(&model.Takeover{}).
 		Where("id = ? AND is_deleted = ?", takeoverID, false).
@@ -232,6 +236,7 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 			"description":       parsed.Description,
 			"kook_channel_id":   parsed.KookChannelID,
 			"kook_channel_name": parsed.KookChannelName,
+			"kook_invite_url":   parsed.KookInviteURL,
 		})
 	if result.Error != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
@@ -319,6 +324,10 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
 		return
 	}
+	if err := h.fillKookInviteURL(&parsed); err != nil {
+		fail(c, http.StatusBadGateway, CodeSystemError, "kook invite create failed")
+		return
+	}
 
 	var takeover model.Takeover
 	deduplicated := false
@@ -350,6 +359,7 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 			Description:      parsed.Description,
 			KookChannelID:    parsed.KookChannelID,
 			KookChannelName:  parsed.KookChannelName,
+			KookInviteURL:    parsed.KookInviteURL,
 			TakeoverState:    model.TakeoverStateNormal,
 		}
 		if err := tx.Create(&takeover).Error; err != nil {
@@ -375,6 +385,19 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		return
 	}
 	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": true, "joinedCount": 1, "deduplicated": deduplicated})
+}
+
+func (h *Handler) fillKookInviteURL(parsed *parsedTakeoverInput) error {
+	if parsed.KookChannelID == nil {
+		parsed.KookInviteURL = nil
+		return nil
+	}
+	inviteURL, err := h.createKookInviteURL(*parsed.KookChannelID)
+	if err != nil {
+		return err
+	}
+	parsed.KookInviteURL = optionalStringPtr(inviteURL)
+	return nil
 }
 
 func (h *Handler) findRecentDuplicateTakeover(tx *gorm.DB, creatorUserID uint64, parsed parsedTakeoverInput) (model.Takeover, error) {

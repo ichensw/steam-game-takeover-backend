@@ -33,6 +33,7 @@ type parsedTakeoverInput struct {
 	Description      *string
 	KookChannelID    *string
 	KookChannelName  *string
+	KookInviteURL    *string
 }
 
 func validateTakeoverInput(input takeoverInput, checkPast bool) (parsedTakeoverInput, error) {

@@ -63,6 +63,10 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "participantLimit cannot be lower than joinedCount")
 		return
 	}
+	if err := h.fillKookInviteURL(&parsed); err != nil {
+		fail(c, http.StatusBadGateway, CodeSystemError, "kook invite create failed")
+		return
+	}
 
 	result := h.db.Model(&model.Takeover{}).
 		Where("id = ? AND is_deleted = ?", takeoverID, false).
@@ -76,6 +80,7 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 			"description":       parsed.Description,
 			"kook_channel_id":   parsed.KookChannelID,
 			"kook_channel_name": parsed.KookChannelName,
+			"kook_invite_url":   parsed.KookInviteURL,
 		})
 	if result.Error != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
