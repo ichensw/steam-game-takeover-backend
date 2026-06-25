@@ -12,35 +12,43 @@ import (
 var errSteamFriendCodeInvalid = errors.New("steam friend code invalid")
 
 type steamSummaryResponse struct {
-	SteamID3 string `json:"steamid3"`
+	Response struct {
+		Players []struct {
+			SteamID string `json:"steamid"`
+		} `json:"players"`
+	} `json:"response"`
 }
 
 func (h *Handler) validateSteamFriendCode(steamID string) (string, error) {
 	var result steamSummaryResponse
-	req := resty.New().R().SetQueryParam("steamid", steamID).SetResult(&result)
+	steamID64 := friendCodeToSteamID64(steamID)
+	req := resty.New().R().SetQueryParam("steamids", steamID64).SetResult(&result)
 	if key := h.uapiKey(); key != "" {
-		req.SetAuthToken(key)
+		req.SetQueryParam("key", key)
 	}
-	resp, err := req.Get("https://uapis.cn/api/v1/game/steam/summary")
+	resp, err := req.Get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/")
 	if err != nil {
 		return "", err
 	}
-	switch resp.StatusCode() {
-	case 200:
-		return friendCodeFromSteamID3(result.SteamID3, steamID), nil
-	case 404:
-		return "", errSteamFriendCodeInvalid
-	default:
+	if resp.StatusCode() != 200 {
 		return "", fmt.Errorf("steam summary http status %d", resp.StatusCode())
 	}
+	if len(result.Response.Players) == 0 {
+		return "", errSteamFriendCodeInvalid
+	}
+	return normalizeSteamID64ToFriendCode(result.Response.Players[0].SteamID), nil
 }
 
-func friendCodeFromSteamID3(steamID3, fallback string) string {
-	steamID3 = strings.TrimSpace(steamID3)
-	if strings.HasPrefix(steamID3, "[U:1:") && strings.HasSuffix(steamID3, "]") {
-		return strings.TrimSuffix(strings.TrimPrefix(steamID3, "[U:1:"), "]")
+func friendCodeToSteamID64(steamID string) string {
+	steamID = strings.TrimSpace(steamID)
+	if len(steamID) >= 17 {
+		return steamID
 	}
-	return normalizeSteamID64ToFriendCode(fallback)
+	value, ok := new(big.Int).SetString(steamID, 10)
+	if !ok {
+		return steamID
+	}
+	return value.Add(value, big.NewInt(76561197960265728)).String()
 }
 
 func normalizeSteamID64ToFriendCode(steamID string) string {

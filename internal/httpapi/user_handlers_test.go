@@ -13,9 +13,12 @@ func TestIsDigits(t *testing.T) {
 	}
 }
 
-func TestFriendCodeFromSteamID3(t *testing.T) {
-	if got := friendCodeFromSteamID3("[U:1:1738029940]", "76561199698295668"); got != "1738029940" {
-		t.Fatalf("friendCodeFromSteamID3() = %q, want 1738029940", got)
+func TestFriendCodeToSteamID64(t *testing.T) {
+	if got := friendCodeToSteamID64("1738029940"); got != "76561199698295668" {
+		t.Fatalf("friendCodeToSteamID64() = %q, want 76561199698295668", got)
+	}
+	if got := friendCodeToSteamID64("76561199698295668"); got != "76561199698295668" {
+		t.Fatalf("friendCodeToSteamID64(steamID64) = %q, want 76561199698295668", got)
 	}
 }
 
