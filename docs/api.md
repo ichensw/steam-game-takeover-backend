@@ -262,7 +262,7 @@ Content-Type: application/json
 | 字段 | 要求 |
 | --- | --- |
 | `nickname` | 必填，2 到 12 字 |
-| `steamId` | 必填，仅允许数字，最多 64 字符；会调用 Steam 信息接口校验好友码是否存在 |
+| `steamId` | 选填，仅允许数字，最多 64 字符；填写时会调用 Steam 官方接口校验好友码是否存在 |
 | `gender` | 只能为 `1` 或 `2` |
 | `avatarUrl` | 可为空，最多 255 字符 |
 
@@ -886,7 +886,7 @@ Content-Type: application/json
 - 当前支持 `publishTakeoverEnabled`、`uapiKey`、`kookBotToken`、`kookGuildId`。
 - 可只传需要更新的字段。
 - `publishTakeoverEnabled` 对应 `ttw_app_config.config_key = publish_takeover_enabled`。
-- `uapiKey` 对应 `ttw_app_config.config_key = uapi_key`，用于校验 Steam 好友码。
+- `uapiKey` 对应 `ttw_app_config.config_key = uapi_key`，当前作为 Steam Web API Key 用于校验 Steam 好友码；旧配置项保留。
 - `kookBotToken` 对应 `ttw_app_config.config_key = kook_bot_token`。
 - `kookGuildId` 对应 `ttw_app_config.config_key = kook_guild_id`。
 
