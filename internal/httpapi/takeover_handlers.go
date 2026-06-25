@@ -248,7 +248,17 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 	}
 	content := "update takeover: " + parsed.Title
 	_ = h.writeAdminLog("TAKEOVER_UPDATE", "takeover", takeoverID, &content)
-	ok(c, "saved", nil)
+	takeover.Title = parsed.Title
+	takeover.ParticipantLimit = parsed.ParticipantLimit
+	takeover.ScheduleType = parsed.ScheduleType
+	takeover.StartDate = parsed.StartDate
+	takeover.EndDate = parsed.EndDate
+	takeover.PlayTime = parsed.PlayTime
+	takeover.Description = parsed.Description
+	takeover.KookChannelID = parsed.KookChannelID
+	takeover.KookChannelName = parsed.KookChannelName
+	takeover.KookInviteURL = parsed.KookInviteURL
+	ok(c, "saved", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, true))
 }
 
 func (h *Handler) DeleteTakeover(c *gin.Context) {
