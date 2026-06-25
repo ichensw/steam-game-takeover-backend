@@ -228,10 +228,6 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		return
 	}
 	currentSteamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(stringValue(user.SteamID)))
-	if steamID != "" && currentSteamID != "" && currentSteamID != normalizeSteamID64ToFriendCode(steamID) {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId cannot be changed")
-		return
-	}
 	if steamID != "" && currentSteamID != steamID {
 		normalizedSteamID, err := h.validateSteamFriendCode(steamID)
 		if err != nil {

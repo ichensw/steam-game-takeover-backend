@@ -121,7 +121,6 @@ var messageTranslations = map[string]string{
 	"report not found":                                              "举报记录不存在",
 	"reported user is not in takeover":                              "只能举报当前接龙内的队友",
 	"save failed":                                                   "保存失败，请稍后再试",
-	"steamId cannot be changed":                                     "SteamID 只能填写一次，填错了请联系管理员",
 	"steamId already taken":                                         "SteamID 已被其他玩家绑定，请确认后再填写。",
 	"steamId must be at most 64 characters":                         "SteamID 不能超过 64 个字符",
 	"steamId must contain digits only":                              "SteamID 只能填写数字",
