@@ -24,3 +24,9 @@ func TestPublishTakeoverAllowed(t *testing.T) {
 		})
 	}
 }
+
+func TestBoolString(t *testing.T) {
+	if boolString(true) != "true" || boolString(false) != "false" {
+		t.Fatal("boolString() returned unexpected value")
+	}
+}

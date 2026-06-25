@@ -371,6 +371,33 @@ func (h *Handler) AdminUnbanUser(c *gin.Context) {
 	ok(c, "unbanned", nil)
 }
 
+func (h *Handler) AdminBatchSetUserAdmin(c *gin.Context) {
+	var req struct {
+		UserIDs []uint64 `json:"userIds"`
+		IsAdmin *bool    `json:"isAdmin"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	if len(req.UserIDs) == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "userIds is required")
+		return
+	}
+	if req.IsAdmin == nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "isAdmin is required")
+		return
+	}
+	result := h.db.Model(&model.User{}).
+		Where("id IN ? AND is_deleted = ?", req.UserIDs, false).
+		Update("is_admin", *req.IsAdmin)
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	ok(c, "saved", gin.H{"count": result.RowsAffected})
+}
+
 func (h *Handler) AdminListTakeovers(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)

@@ -726,6 +726,47 @@ Authorization: Bearer <admin-token>
 }
 ```
 
+### 系统设置查询
+
+```http
+GET /api/admin/settings
+Authorization: Bearer <admin-token>
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "publishTakeoverEnabled": false
+  }
+}
+```
+
+### 系统设置更新
+
+```http
+PUT /api/admin/settings
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "publishTakeoverEnabled": true
+}
+```
+
+说明：
+
+- 当前只支持 `publishTakeoverEnabled`。
+- 对应数据库配置项 `ttw_app_config.config_key = publish_takeover_enabled`。
+
 ### 管理员查询接龙列表
 
 ```http
@@ -881,6 +922,42 @@ Authorization: Bearer <admin-token>
 ```http
 GET /api/admin/users/{userId}
 Authorization: Bearer <admin-token>
+```
+
+### 批量设置用户超管
+
+```http
+POST /api/admin/users/admin/batch
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "userIds": [1, 2, 3],
+  "isAdmin": true
+}
+```
+
+说明：
+
+- 批量更新 `ttw_user.is_admin`。
+- `isAdmin=true` 设置为超管，`false` 取消超管。
+- 已删除用户不会被更新。
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "saved",
+  "data": {
+    "count": 3
+  }
+}
 ```
 
 ### 封禁用户
