@@ -176,6 +176,7 @@ func (PublishTakeoverWhitelist) TableName() string { return "ttw_publish_takeove
 const (
 	AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
 	AppConfigUAPIKey                = "uapi_key"
+	AppConfigSteamWebAPIKey         = "steam_web_api_key"
 	AppConfigKookBotToken           = "kook_bot_token"
 	AppConfigKookGuildID            = "kook_guild_id"
 )

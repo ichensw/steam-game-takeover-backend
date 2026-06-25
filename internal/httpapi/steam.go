@@ -23,7 +23,7 @@ func (h *Handler) validateSteamFriendCode(steamID string) (string, error) {
 	var result steamSummaryResponse
 	steamID64 := friendCodeToSteamID64(steamID)
 	req := resty.New().R().SetQueryParam("steamids", steamID64).SetResult(&result)
-	if key := h.uapiKey(); key != "" {
+	if key := h.steamWebAPIKey(); key != "" {
 		req.SetQueryParam("key", key)
 	}
 	resp, err := req.Get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/")

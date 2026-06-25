@@ -856,6 +856,7 @@ Authorization: Bearer <admin-token>
   "data": {
     "publishTakeoverEnabled": false,
     "uapiKey": "uapi-xxx",
+    "steamWebApiKey": "steam-xxx",
     "kookBotToken": "1/xxx",
     "kookGuildId": "3623183187289015"
   }
@@ -876,6 +877,7 @@ Content-Type: application/json
 {
   "publishTakeoverEnabled": true,
   "uapiKey": "uapi-xxx",
+  "steamWebApiKey": "steam-xxx",
   "kookBotToken": "1/xxx",
   "kookGuildId": "3623183187289015"
 }
@@ -883,10 +885,11 @@ Content-Type: application/json
 
 说明：
 
-- 当前支持 `publishTakeoverEnabled`、`uapiKey`、`kookBotToken`、`kookGuildId`。
+- 当前支持 `publishTakeoverEnabled`、`uapiKey`、`steamWebApiKey`、`kookBotToken`、`kookGuildId`。
 - 可只传需要更新的字段。
 - `publishTakeoverEnabled` 对应 `ttw_app_config.config_key = publish_takeover_enabled`。
-- `uapiKey` 对应 `ttw_app_config.config_key = uapi_key`，当前作为 Steam Web API Key 用于校验 Steam 好友码；旧配置项保留。
+- `uapiKey` 对应 `ttw_app_config.config_key = uapi_key`，旧配置项保留。
+- `steamWebApiKey` 对应 `ttw_app_config.config_key = steam_web_api_key`，用于调用 Steam 官方接口校验 Steam 好友码。
 - `kookBotToken` 对应 `ttw_app_config.config_key = kook_bot_token`。
 - `kookGuildId` 对应 `ttw_app_config.config_key = kook_guild_id`。
 

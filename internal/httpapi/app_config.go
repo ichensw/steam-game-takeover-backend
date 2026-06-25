@@ -23,6 +23,10 @@ func (h *Handler) uapiKey() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigUAPIKey))
 }
 
+func (h *Handler) steamWebAPIKey() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigSteamWebAPIKey))
+}
+
 func (h *Handler) kookBotToken() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookBotToken))
 }
@@ -65,6 +69,7 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 	ok(c, "success", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
+		"steamWebApiKey":         h.steamWebAPIKey(),
 		"kookBotToken":           h.kookBotToken(),
 		"kookGuildId":            h.kookGuildID(),
 	})
@@ -74,6 +79,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	var req struct {
 		PublishTakeoverEnabled *bool   `json:"publishTakeoverEnabled"`
 		UAPIKey                *string `json:"uapiKey"`
+		SteamWebAPIKey         *string `json:"steamWebApiKey"`
 		KookBotToken           *string `json:"kookBotToken"`
 		KookGuildID            *string `json:"kookGuildId"`
 	}
@@ -81,7 +87,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -93,6 +99,12 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	}
 	if req.UAPIKey != nil {
 		if err := h.saveAppConfig(model.AppConfigUAPIKey, strings.TrimSpace(*req.UAPIKey)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.SteamWebAPIKey != nil {
+		if err := h.saveAppConfig(model.AppConfigSteamWebAPIKey, strings.TrimSpace(*req.SteamWebAPIKey)); err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 			return
 		}
@@ -112,6 +124,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	ok(c, "saved", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
+		"steamWebApiKey":         h.steamWebAPIKey(),
 		"kookBotToken":           h.kookBotToken(),
 		"kookGuildId":            h.kookGuildID(),
 	})
