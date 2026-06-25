@@ -168,8 +168,8 @@ func TestIsUserProfileCompletedUsesStoredFields(t *testing.T) {
 
 	user.SteamID = nil
 	user.IsProfileCompleted = true
-	if isUserProfileCompleted(user) {
-		t.Fatal("expected incomplete when required profile fields are missing")
+	if !isUserProfileCompleted(user) {
+		t.Fatal("expected profile completed without steam id")
 	}
 }
 

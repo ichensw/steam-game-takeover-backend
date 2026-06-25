@@ -275,9 +275,6 @@ func hasUserProfileFields(user model.User) bool {
 	if strings.TrimSpace(stringValue(user.Nickname)) == "" {
 		return false
 	}
-	if strings.TrimSpace(stringValue(user.SteamID)) == "" {
-		return false
-	}
 	if user.Gender == nil {
 		return false
 	}

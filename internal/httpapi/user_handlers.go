@@ -210,11 +210,11 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "nickname must be between 2 and 12 characters")
 		return
 	}
-	if steamID == "" || len([]rune(steamID)) > 64 {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId is required and must be at most 64 characters")
+	if len([]rune(steamID)) > 64 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId must be at most 64 characters")
 		return
 	}
-	if !isDigits(steamID) {
+	if steamID != "" && !isDigits(steamID) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId must contain digits only")
 		return
 	}
@@ -228,11 +228,11 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		return
 	}
 	currentSteamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(stringValue(user.SteamID)))
-	if currentSteamID != "" && currentSteamID != normalizeSteamID64ToFriendCode(steamID) {
+	if steamID != "" && currentSteamID != "" && currentSteamID != normalizeSteamID64ToFriendCode(steamID) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId cannot be changed")
 		return
 	}
-	if currentSteamID != steamID {
+	if steamID != "" && currentSteamID != steamID {
 		normalizedSteamID, err := h.validateSteamFriendCode(steamID)
 		if err != nil {
 			if errors.Is(err, errSteamFriendCodeInvalid) {
@@ -255,17 +255,19 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		taken, err := h.isSteamIDTaken(tx, steamID, user.ID)
-		if err != nil {
-			return err
-		}
-		if taken {
-			return errSteamIDTaken
+		if steamID != "" {
+			taken, err := h.isSteamIDTaken(tx, steamID, user.ID)
+			if err != nil {
+				return err
+			}
+			if taken {
+				return errSteamIDTaken
+			}
 		}
 
 		return tx.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
 			"nickname":             nickname,
-			"steam_id":             steamID,
+			"steam_id":             optionalStringPtr(steamID),
 			"gender":               req.Gender,
 			"avatar_url":           stringPtr(avatarURL),
 			"is_profile_completed": true,
