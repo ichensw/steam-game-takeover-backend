@@ -554,10 +554,6 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 			First(&takeover).Error; err != nil {
 			return err
 		}
-		if takeover.CreatorUserID == user.ID {
-			return errCreatorCannotLeave
-		}
-
 		result := tx.Model(&model.TakeoverMember{}).
 			Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, user.ID, model.MemberStateJoined).
 			Update("member_state", model.MemberStateExited)
@@ -581,8 +577,6 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		case errors.Is(err, errNotJoined):
 			fail(c, http.StatusConflict, CodeParamInvalid, "not joined")
-		case errors.Is(err, errCreatorCannotLeave):
-			fail(c, http.StatusBadRequest, CodeParamInvalid, "creator cannot leave takeover")
 		default:
 			fail(c, http.StatusInternalServerError, CodeSystemError, "leave failed")
 		}
@@ -600,7 +594,6 @@ var (
 	errProfileRequired       = errors.New("profile required")
 	errCreditTooLowForCreate = errors.New("credit too low for create")
 	errCreditTooLowForJoin   = errors.New("credit too low for join")
-	errCreatorCannotLeave    = errors.New("creator cannot leave takeover")
 )
 
 func (h *Handler) hasActiveScheduleConflict(tx *gorm.DB, userID uint64, target model.Takeover) (bool, error) {
