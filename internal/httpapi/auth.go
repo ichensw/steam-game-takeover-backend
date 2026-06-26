@@ -45,11 +45,6 @@ func (h *Handler) signUserToken(userID uint64) (string, error) {
 func (h *Handler) UserAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, authErr := h.currentUserFromRequest(c)
-		if errors.Is(authErr, errTokenUserMissing) {
-			fail(c, http.StatusForbidden, CodeProfileIncomplete, "profile incomplete")
-			c.Abort()
-			return
-		}
 		if authErr != nil {
 			fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
 			c.Abort()
