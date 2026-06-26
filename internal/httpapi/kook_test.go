@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 func TestToKookChannelList(t *testing.T) {
@@ -59,24 +57,6 @@ func TestSimpleKookChannels(t *testing.T) {
 	list := toKookSimpleChannels(filtered)
 	if len(list) != 1 || list[0].ID != "2" || list[0].Name != "语音" || list[0].Type != 2 {
 		t.Fatalf("unexpected simple channels: %#v", list)
-	}
-}
-
-func TestCloneKookChannels(t *testing.T) {
-	channels := []kookChannelDTO{{ID: "1"}}
-	cloned := cloneKookChannels(channels)
-	cloned[0].ID = "2"
-	if channels[0].ID != "1" {
-		t.Fatalf("clone changed source: %#v", channels)
-	}
-}
-
-func TestCloneGinH(t *testing.T) {
-	meta := gin.H{"total": 1}
-	cloned := cloneGinH(meta)
-	cloned["total"] = 2
-	if meta["total"] != 1 {
-		t.Fatalf("clone changed source: %#v", meta)
 	}
 }
 

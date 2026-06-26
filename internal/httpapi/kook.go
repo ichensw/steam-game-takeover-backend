@@ -4,13 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 )
-
-const kookChannelCacheTTL = 24 * time.Hour
 
 type kookChannelDTO struct {
 	ID       string `json:"id"`
@@ -104,15 +101,6 @@ func (h *Handler) ListAllKookChannels(c *gin.Context) {
 }
 
 func (h *Handler) fetchKookChannels() ([]kookChannelDTO, gin.H, error) {
-	h.kookMu.Lock()
-	if time.Now().Before(h.kookUntil) && h.kookChannels != nil {
-		channels := cloneKookChannels(h.kookChannels)
-		meta := cloneGinH(h.kookMeta)
-		h.kookMu.Unlock()
-		return channels, meta, nil
-	}
-	h.kookMu.Unlock()
-
 	token := h.kookBotToken()
 	guildID := h.kookGuildID()
 	if token == "" || guildID == "" {
@@ -135,30 +123,7 @@ func (h *Handler) fetchKookChannels() ([]kookChannelDTO, gin.H, error) {
 		}
 	}
 
-	h.kookMu.Lock()
-	h.kookChannels = cloneKookChannels(all)
-	h.kookMeta = cloneGinH(meta)
-	h.kookUntil = time.Now().Add(kookChannelCacheTTL)
-	h.kookMu.Unlock()
 	return all, meta, nil
-}
-
-func cloneKookChannels(channels []kookChannelDTO) []kookChannelDTO {
-	if channels == nil {
-		return nil
-	}
-	return append([]kookChannelDTO(nil), channels...)
-}
-
-func cloneGinH(value gin.H) gin.H {
-	if value == nil {
-		return nil
-	}
-	cloned := make(gin.H, len(value))
-	for key, item := range value {
-		cloned[key] = item
-	}
-	return cloned
 }
 
 func fetchKookChannelPage(client *resty.Client, token, guildID string, page int) (kookChannelListResponse, error) {
