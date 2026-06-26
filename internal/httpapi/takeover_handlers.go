@@ -340,6 +340,8 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 	}
 
 	var takeover model.Takeover
+	var joinedCount int64
+	hasJoined := false
 	deduplicated := false
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		freshUser, err := h.lockProfileUser(tx, user.ID)
@@ -355,6 +357,10 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		}
 		if existing.ID != 0 {
 			takeover = existing
+			joinedCount, hasJoined, err = h.takeoverStats(takeover.ID, freshUser.ID)
+			if err != nil {
+				return err
+			}
 			deduplicated = true
 			return nil
 		}
@@ -375,6 +381,12 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		if err := tx.Create(&takeover).Error; err != nil {
 			return err
 		}
+		member := model.TakeoverMember{TakeoverID: takeover.ID, UserID: freshUser.ID, MemberState: model.MemberStateJoined}
+		if err := tx.Create(&member).Error; err != nil {
+			return err
+		}
+		joinedCount = 1
+		hasJoined = true
 		return nil
 	}); err != nil {
 		if errors.Is(err, errProfileRequired) {
@@ -388,7 +400,7 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
 		return
 	}
-	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": false, "joinedCount": 0, "deduplicated": deduplicated})
+	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": hasJoined, "joinedCount": joinedCount, "deduplicated": deduplicated})
 }
 
 func (h *Handler) fillKookInviteURL(parsed *parsedTakeoverInput) error {
