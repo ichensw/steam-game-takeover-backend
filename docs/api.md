@@ -180,7 +180,7 @@ Content-Type: application/json
 - 后端用 `code` 调微信 `jscode2session` 换取 `openid`。
 - 若用户不存在，自动创建。
 - 返回用户 token 和资料状态。
-- `publishTakeoverEnabled` 表示当前用户是否可看到“发布接龙”按钮：全局配置开启，或当前用户 SteamID 在发布白名单中。
+- `publishTakeoverEnabled` 表示当前用户是否可看到“发布接龙”按钮：全局配置开启，或当前用户 openid 在发布白名单中。
 - `WX_LOGIN_MOCK=true` 时，会把 code 转为测试 openid，仅用于本地调试。
 
 响应：
@@ -510,7 +510,7 @@ Content-Type: application/json
 
 - 用户必须资料完整。
 - 创建者会自动加入该接龙。
-- 只有 `publish_takeover_enabled=true`，或当前用户 SteamID 在发布白名单内，才允许创建。
+- 只有 `publish_takeover_enabled=true`，或当前用户 openid 在发布白名单内，才允许创建。
 - `title` 和 `description` 会先走本地敏感词表，再走微信文本内容安全。
 - 检测未通过时返回 `PARAM_INVALID`，提示“内容包含不合规信息，请修改后再提交”。
 
@@ -1028,6 +1028,7 @@ Authorization: Bearer <admin-token>
     "list": [
       {
         "id": 1,
+        "openid": "o_xxx",
         "nickname": "Zzzz",
         "steamId": "364262801",
         "gender": 1,
@@ -1198,7 +1199,7 @@ Content-Type: application/json
 
 ```json
 {
-  "steamIds": ["123", "456", "789"]
+  "openids": ["o_xxx", "o_yyy"]
 }
 ```
 
@@ -1231,22 +1232,22 @@ WHERE config_key = 'publish_takeover_enabled';
 规则：
 
 - `publish_takeover_enabled=true`：所有用户可看到发布按钮，也可创建接龙。
-- `publish_takeover_enabled=false`：只有 SteamID 在 `ttw_publish_takeover_whitelist` 且 `enabled=1` 的用户可看到发布按钮，也可创建接龙。
+- `publish_takeover_enabled=false`：只有 openid 在 `ttw_publish_takeover_whitelist` 且 `enabled=1` 的用户可看到发布按钮，也可创建接龙。旧 SteamID 白名单仍兼容。
 
 ### 发布接龙白名单
 
-白名单按 SteamID 维护：
+白名单按 openid 维护：
 
 ```sql
-INSERT INTO ttw_publish_takeover_whitelist (steam_id, enabled)
-VALUES ('76561198000000000', 1)
+INSERT INTO ttw_publish_takeover_whitelist (openid, enabled)
+VALUES ('o_xxx', 1)
 ON DUPLICATE KEY UPDATE enabled = 1;
 
 UPDATE ttw_publish_takeover_whitelist
 SET enabled = 0
-WHERE steam_id = '76561198000000000';
+WHERE openid = 'o_xxx';
 
-SELECT id, steam_id, enabled, gmt_create
+SELECT id, openid, steam_id, enabled, gmt_create
 FROM ttw_publish_takeover_whitelist
 ORDER BY id DESC;
 ```

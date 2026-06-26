@@ -26,6 +26,11 @@ type userDTO struct {
 	CreditStatus       string `json:"creditStatus"`
 }
 
+type adminWXUserDTO struct {
+	userDTO
+	OpenID string `json:"openid"`
+}
+
 type adminUserDTO struct {
 	ID            uint64 `json:"id"`
 	Username      string `json:"username"`
@@ -90,8 +95,20 @@ func toUserDTO(user model.User) userDTO {
 	return toUserDTOWithPublishWhitelist(user, nil)
 }
 
+func toAdminWXUserDTO(user model.User) adminWXUserDTO {
+	return toAdminWXUserDTOWithPublishWhitelist(user, nil)
+}
+
+func toAdminWXUserDTOWithPublishWhitelist(user model.User, whitelist map[string]bool) adminWXUserDTO {
+	return adminWXUserDTO{
+		userDTO: toUserDTOWithPublishWhitelist(user, whitelist),
+		OpenID:  user.OpenID,
+	}
+}
+
 func toUserDTOWithPublishWhitelist(user model.User, whitelist map[string]bool) userDTO {
 	steamID := stringValue(user.SteamID)
+	openID := strings.TrimSpace(user.OpenID)
 	return userDTO{
 		ID:                 user.ID,
 		Nickname:           stringValue(user.Nickname),
@@ -103,7 +120,7 @@ func toUserDTOWithPublishWhitelist(user model.User, whitelist map[string]bool) u
 		IsBanned:           user.IsBanned,
 		BanReason:          stringValue(user.BanReason),
 		BannedAt:           timeString(user.BannedAt),
-		PublishWhitelisted: steamID != "" && whitelist[steamID],
+		PublishWhitelisted: (openID != "" && whitelist[openID]) || (steamID != "" && whitelist[steamID]),
 		CreditScore:        user.CreditScore,
 		CreditStatus:       creditStatus(user.CreditScore),
 	}

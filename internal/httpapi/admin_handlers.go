@@ -269,28 +269,47 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 		return
 	}
 
+	openIDs := make([]string, 0, len(users))
 	steamIDs := make([]string, 0, len(users))
 	for _, user := range users {
+		if user.OpenID != "" {
+			openIDs = append(openIDs, user.OpenID)
+		}
 		steamID := strings.TrimSpace(stringValue(user.SteamID))
 		if steamID != "" {
 			steamIDs = append(steamIDs, steamID)
 		}
 	}
-	whitelist := make(map[string]bool, len(steamIDs))
-	if len(steamIDs) > 0 {
+	whitelist := make(map[string]bool, len(openIDs)+len(steamIDs))
+	if len(openIDs) > 0 || len(steamIDs) > 0 {
 		var rows []model.PublishTakeoverWhitelist
-		if err := h.db.Where("steam_id IN ? AND enabled = ?", steamIDs, true).Find(&rows).Error; err != nil {
+		query := h.db.Where("enabled = ?", true)
+		if len(openIDs) > 0 && len(steamIDs) > 0 {
+			query = query.Where("openid IN ? OR steam_id IN ?", openIDs, steamIDs)
+		} else if len(openIDs) > 0 {
+			query = query.Where("openid IN ?", openIDs)
+		} else {
+			query = query.Where("steam_id IN ?", steamIDs)
+		}
+		if err := query.Find(&rows).Error; err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 			return
 		}
 		for _, row := range rows {
-			whitelist[row.SteamID] = true
+			openID := strings.TrimSpace(stringValue(row.OpenID))
+			if openID != "" {
+				whitelist[openID] = true
+			}
+			steamID := strings.TrimSpace(stringValue(row.SteamID))
+			if steamID != "" {
+				whitelist[steamID] = true
+			}
 		}
 	}
 
-	list := make([]userDTO, 0, len(users))
+	list := make([]adminWXUserDTO, 0, len(users))
 	for _, user := range users {
-		list = append(list, toUserDTOWithPublishWhitelist(user, whitelist))
+		list = append(list, toAdminWXUserDTOWithPublishWhitelist(user, whitelist))
 	}
 	ok(c, "success", gin.H{
 		"page":     page,
@@ -325,7 +344,7 @@ func (h *Handler) AdminGetUser(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	ok(c, "success", toUserDTO(user))
+	ok(c, "success", toAdminWXUserDTO(user))
 }
 
 func (h *Handler) AdminBanUser(c *gin.Context) {
@@ -478,24 +497,62 @@ var takeoverSortFields = map[string]string{
 
 func (h *Handler) AdminBatchPublishWhitelist(c *gin.Context) {
 	var req struct {
-		SteamIDs []string `json:"steamIds"`
+		OpenIDs []string `json:"openids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
+	seen := make(map[string]bool, len(req.OpenIDs))
+	openIDs := make([]string, 0, len(req.OpenIDs))
+	for _, value := range req.OpenIDs {
+		openID := strings.TrimSpace(value)
+		if openID == "" || len([]rune(openID)) > 64 || seen[openID] {
+			continue
+		}
+		seen[openID] = true
+		openIDs = append(openIDs, openID)
+	}
+	if len(openIDs) == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "openids are required")
+		return
+	}
+
+	var users []model.User
+	if err := h.db.Where("openid IN ? AND is_deleted = ?", openIDs, false).Find(&users).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
 	count := 0
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		for _, value := range req.SteamIDs {
-			steamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(value))
-			if steamID == "" || len([]rune(steamID)) > 64 {
-				continue
+		for _, user := range users {
+			steamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(stringValue(user.SteamID)))
+			var row model.PublishTakeoverWhitelist
+			query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("openid = ?", user.OpenID)
+			if steamID != "" {
+				query = query.Or("steam_id = ?", steamID)
 			}
-			if err := tx.Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "steam_id"}},
-				DoUpdates: clause.Assignments(map[string]interface{}{"enabled": true}),
-			}).Create(&model.PublishTakeoverWhitelist{SteamID: steamID, Enabled: true}).Error; err != nil {
-				return err
+			err := query.First(&row).Error
+			updates := map[string]interface{}{
+				"openid":   stringPtr(user.OpenID),
+				"steam_id": optionalStringPtr(steamID),
+				"enabled":  true,
+			}
+			if err == nil {
+				if err := tx.Model(&model.PublishTakeoverWhitelist{}).Where("id = ?", row.ID).Updates(updates).Error; err != nil {
+					return err
+				}
+			} else {
+				if !isNotFound(err) {
+					return err
+				}
+				if err := tx.Create(&model.PublishTakeoverWhitelist{
+					OpenID:  stringPtr(user.OpenID),
+					SteamID: optionalStringPtr(steamID),
+					Enabled: true,
+				}).Error; err != nil {
+					return err
+				}
 			}
 			count++
 		}
@@ -503,6 +560,10 @@ func (h *Handler) AdminBatchPublishWhitelist(c *gin.Context) {
 	})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	if count == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "no valid users for publish whitelist")
 		return
 	}
 	ok(c, "saved", gin.H{"count": count})

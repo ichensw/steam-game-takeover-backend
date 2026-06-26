@@ -175,9 +175,13 @@ func TestIsUserProfileCompletedUsesStoredFields(t *testing.T) {
 
 func TestToUserDTOWithPublishWhitelist(t *testing.T) {
 	steamID := "7656119"
-	user := model.User{SteamID: &steamID}
+	user := model.User{OpenID: "openid-1", SteamID: &steamID}
 
-	if !toUserDTOWithPublishWhitelist(user, map[string]bool{steamID: true}).PublishWhitelisted {
+	dto := toAdminWXUserDTOWithPublishWhitelist(user, map[string]bool{steamID: true})
+	if dto.OpenID != "openid-1" {
+		t.Fatalf("OpenID = %q, want openid-1", dto.OpenID)
+	}
+	if !dto.PublishWhitelisted {
 		t.Fatal("expected user marked publish whitelisted")
 	}
 
@@ -185,5 +189,8 @@ func TestToUserDTOWithPublishWhitelist(t *testing.T) {
 	user.SteamID = &emptySteamID
 	if toUserDTOWithPublishWhitelist(user, map[string]bool{"": true}).PublishWhitelisted {
 		t.Fatal("expected empty steam id not marked publish whitelisted")
+	}
+	if !toAdminWXUserDTOWithPublishWhitelist(user, map[string]bool{"openid-1": true}).PublishWhitelisted {
+		t.Fatal("expected openid whitelist to work without steam id")
 	}
 }

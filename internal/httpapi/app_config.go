@@ -48,21 +48,18 @@ func (h *Handler) canPublishTakeover(user model.User) bool {
 	if globalEnabled {
 		return true
 	}
-	if user.SteamID == nil || strings.TrimSpace(*user.SteamID) == "" {
-		return false
-	}
-	steamID := strings.TrimSpace(*user.SteamID)
+	steamID := strings.TrimSpace(stringValue(user.SteamID))
 	var count int64
 	if err := h.db.Model(&model.PublishTakeoverWhitelist{}).
-		Where("steam_id = ? AND enabled = ?", steamID, true).
+		Where("enabled = ? AND (openid = ? OR (steam_id <> '' AND steam_id = ?))", true, user.OpenID, steamID).
 		Count(&count).Error; err != nil {
 		return false
 	}
-	return publishTakeoverAllowed(globalEnabled, steamID, count > 0)
+	return publishTakeoverAllowed(globalEnabled, count > 0)
 }
 
-func publishTakeoverAllowed(globalEnabled bool, steamID string, whitelisted bool) bool {
-	return globalEnabled || (strings.TrimSpace(steamID) != "" && whitelisted)
+func publishTakeoverAllowed(globalEnabled bool, whitelisted bool) bool {
+	return globalEnabled || whitelisted
 }
 
 func (h *Handler) AdminGetSettings(c *gin.Context) {

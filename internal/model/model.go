@@ -165,7 +165,8 @@ func (SensitiveWord) TableName() string { return "ttw_sensitive_word" }
 
 type PublishTakeoverWhitelist struct {
 	ID          uint64    `gorm:"primaryKey;column:id"`
-	SteamID     string    `gorm:"column:steam_id;size:64;uniqueIndex:uk_steam_id"`
+	OpenID      *string   `gorm:"column:openid;size:64;uniqueIndex:uk_openid"`
+	SteamID     *string   `gorm:"column:steam_id;size:64;uniqueIndex:uk_steam_id"`
 	Enabled     bool      `gorm:"column:enabled;index:idx_enabled"`
 	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
 	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
