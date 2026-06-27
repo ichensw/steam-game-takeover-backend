@@ -180,6 +180,7 @@ const (
 	AppConfigSteamWebAPIKey         = "steam_web_api_key"
 	AppConfigKookBotToken           = "kook_bot_token"
 	AppConfigKookGuildID            = "kook_guild_id"
+	AppConfigAPIBaseURL             = "api_base_url"
 )
 
 type AppConfig struct {

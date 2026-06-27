@@ -35,6 +35,16 @@ func (h *Handler) kookGuildID() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookGuildID))
 }
 
+func (h *Handler) apiBaseURL() string {
+	return strings.TrimRight(strings.TrimSpace(h.appConfigValue(model.AppConfigAPIBaseURL)), "/")
+}
+
+func (h *Handler) GetAppConfig(c *gin.Context) {
+	ok(c, "success", gin.H{
+		"apiBaseUrl": h.apiBaseURL(),
+	})
+}
+
 func (h *Handler) appConfigValue(key string) string {
 	var config model.AppConfig
 	if err := h.db.Where("config_key = ?", key).First(&config).Error; err != nil {

@@ -20,6 +20,7 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 
 	api := r.Group("/api")
 	api.GET("/health", h.Health)
+	api.GET("/app-config", h.GetAppConfig)
 	api.POST("/auth/wx-login", h.WXLogin)
 	api.POST("/auth/bot-login", h.BotLogin)
 
