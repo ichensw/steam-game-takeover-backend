@@ -896,7 +896,7 @@ Content-Type: application/json
 ### 管理员查询接龙列表
 
 ```http
-GET /api/admin/takeovers?page=1&pageSize=20&keyword=&status=&sortField=&sortOrder=
+GET /api/admin/takeovers?page=1&pageSize=20&keyword=&status=&timeFilter=&startDate=&endDate=&sortField=&sortOrder=
 Authorization: Bearer <admin-token>
 ```
 
@@ -906,6 +906,9 @@ Authorization: Bearer <admin-token>
 | --- | --- | --- |
 | `keyword` | string | 按标题、介绍搜索 |
 | `status` | string | `normal` 或 `closed` |
+| `timeFilter` | string | 时间筛选：`all`、`today`、`tomorrow`、`this_week`、`daily`、`date_range`、`custom_range`，默认 `all` |
+| `startDate` | string | `timeFilter=custom_range` 时必填，格式 `YYYY-MM-DD` |
+| `endDate` | string | `timeFilter=custom_range` 时必填，格式 `YYYY-MM-DD`，不能早于 `startDate` |
 | `sortField` | string | 排序字段：`id`、`title`、`participantLimit`、`scheduleType`、`startDate`、`endDate`、`playTime`、`status`、`createdAt`，默认 `createdAt` |
 | `sortOrder` | string | `asc` 或 `desc`，默认 `desc` |
 | `page` | number | 页码，默认 `1` |

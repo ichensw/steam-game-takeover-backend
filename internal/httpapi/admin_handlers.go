@@ -443,6 +443,12 @@ func (h *Handler) AdminListTakeovers(c *gin.Context) {
 
 	query := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false)
 	query = applyKeywordFilter(query, c.Query("keyword"))
+	var err error
+	query, err = applyTimeFilter(query, c)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
 	if state := strings.TrimSpace(c.Query("status")); state != "" {
 		switch state {
 		case "normal":
