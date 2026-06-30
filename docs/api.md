@@ -269,6 +269,7 @@ Content-Type: application/json
 说明：
 
 - `nickname` 会先走本地敏感词表，再走微信文本内容安全。
+- `nickname` 不能与其他用户重复，重复时返回 `409`，提示“该昵称已被使用，请换一个昵称”。
 - Steam 好友码不存在时返回 `PARAM_INVALID`，提示“Steam好友码错误，请填写正确的好友码。”
 - 检测未通过时返回 `PARAM_INVALID`，提示“内容包含不合规信息，请修改后再提交”。
 

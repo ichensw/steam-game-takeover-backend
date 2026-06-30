@@ -96,6 +96,7 @@ var messageTranslations = map[string]string{
 	"leave failed":                               "退出接龙失败，请稍后再试",
 	"login failed":                               "登录失败，请稍后再试",
 	"nickname is required and must be at most 32 characters": "请输入 32 个字以内的昵称",
+	"nickname already taken":                                 "该昵称已被使用，请换一个昵称",
 	"nickname must be between 2 and 12 characters":           "请输入 2-12 个字的昵称",
 	"not joined": "您还没有加入这个接龙",
 	"only jpg, png, gif, and webp images are allowed":               "仅支持上传 JPG、PNG、GIF 或 WebP 图片",

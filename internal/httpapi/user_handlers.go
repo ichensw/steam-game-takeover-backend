@@ -13,7 +13,10 @@ import (
 	"gorm.io/gorm"
 )
 
-var errSteamIDTaken = errors.New("steamId already taken")
+var (
+	errNicknameTaken = errors.New("nickname already taken")
+	errSteamIDTaken  = errors.New("steamId already taken")
+)
 
 func (h *Handler) Health(c *gin.Context) {
 	ok(c, "ok", gin.H{"status": "ok"})
@@ -251,6 +254,14 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		taken, err := h.isNicknameTaken(tx, nickname, user.ID)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return errNicknameTaken
+		}
+
 		if steamID != "" {
 			taken, err := h.isSteamIDTaken(tx, steamID, user.ID)
 			if err != nil {
@@ -270,6 +281,10 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 			"is_admin":             user.IsAdmin,
 		}).Error
 	}); err != nil {
+		if errors.Is(err, errNicknameTaken) {
+			fail(c, http.StatusConflict, CodeParamInvalid, errNicknameTaken.Error())
+			return
+		}
 		if errors.Is(err, errSteamIDTaken) {
 			fail(c, http.StatusConflict, CodeSteamIDTaken, errSteamIDTaken.Error())
 			return
@@ -282,6 +297,14 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 		return
 	}
 	ok(c, "saved", toUserDTO(user))
+}
+
+func (h *Handler) isNicknameTaken(tx *gorm.DB, nickname string, currentUserID uint64) (bool, error) {
+	var count int64
+	err := tx.Model(&model.User{}).
+		Where("nickname = ? AND id <> ? AND is_deleted = ?", nickname, currentUserID, false).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (h *Handler) isSteamIDTaken(tx *gorm.DB, steamID string, currentUserID uint64) (bool, error) {
