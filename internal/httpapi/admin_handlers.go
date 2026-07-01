@@ -452,9 +452,9 @@ func (h *Handler) AdminListTakeovers(c *gin.Context) {
 	if state := strings.TrimSpace(c.Query("status")); state != "" {
 		switch state {
 		case "normal":
-			query = query.Where("takeover_state = ?", model.TakeoverStateNormal)
+			query = applyTakeoverEndedFilter(query, false, time.Now())
 		case "closed":
-			query = query.Where("takeover_state = ?", model.TakeoverStateClosed)
+			query = applyTakeoverEndedFilter(query, true, time.Now())
 		}
 	}
 

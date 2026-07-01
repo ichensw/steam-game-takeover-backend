@@ -848,6 +848,20 @@ func applyRangeHit(query *gorm.DB, start, end time.Time) *gorm.DB {
 	)
 }
 
+func applyTakeoverEndedFilter(query *gorm.DB, ended bool, now time.Time) *gorm.DB {
+	date := now.Format("2006-01-02")
+	clock := now.Format("15:04:05")
+	expired := "(schedule_type = ? AND (start_date < ? OR (start_date = ? AND play_time < ?))) OR (schedule_type = ? AND (end_date < ? OR (end_date = ? AND play_time < ?)))"
+	args := []interface{}{
+		model.ScheduleSpecifiedDate, date, date, clock,
+		model.ScheduleDateRange, date, date, clock,
+	}
+	if ended {
+		return query.Where("takeover_state = ? OR "+expired, append([]interface{}{model.TakeoverStateClosed}, args...)...)
+	}
+	return query.Where("takeover_state = ? AND NOT ("+expired+")", append([]interface{}{model.TakeoverStateNormal}, args...)...)
+}
+
 func pathUint64(c *gin.Context, name string) (uint64, bool) {
 	value, err := strconv.ParseUint(c.Param(name), 10, 64)
 	return value, err == nil && value > 0

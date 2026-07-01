@@ -62,6 +62,15 @@ func TestTakeoverStatusLabelMarksExpiredSchedulesEnded(t *testing.T) {
 			joinedCount: 0,
 			want:        "招募中",
 		},
+		{
+			name: "closed state ended",
+			takeover: model.Takeover{
+				TakeoverState: model.TakeoverStateClosed,
+				ScheduleType:  model.ScheduleDaily,
+				PlayTime:      "00:00:00",
+			},
+			want: "已结束",
+		},
 	}
 
 	for _, tt := range cases {

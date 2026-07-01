@@ -222,6 +222,9 @@ func scheduleText(t model.Takeover) string {
 }
 
 func takeoverStatusLabel(t model.Takeover, joinedCount int64) string {
+	if t.TakeoverState == model.TakeoverStateClosed {
+		return "已结束"
+	}
 	if isTakeoverExpired(t) {
 		return "已结束"
 	}

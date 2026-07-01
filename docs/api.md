@@ -906,7 +906,7 @@ Authorization: Bearer <admin-token>
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `keyword` | string | 按标题、介绍搜索 |
-| `status` | string | `normal` 或 `closed` |
+| `status` | string | `normal` 查未结束接龙，`closed` 查已结束接龙 |
 | `timeFilter` | string | 时间筛选：`all`、`today`、`tomorrow`、`this_week`、`daily`、`date_range`、`custom_range`，默认 `all` |
 | `startDate` | string | `timeFilter=custom_range` 时必填，格式 `YYYY-MM-DD` |
 | `endDate` | string | `timeFilter=custom_range` 时必填，格式 `YYYY-MM-DD`，不能早于 `startDate` |
