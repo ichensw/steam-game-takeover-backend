@@ -378,6 +378,13 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 			KookInviteURL:    parsed.KookInviteURL,
 			TakeoverState:    model.TakeoverStateNormal,
 		}
+		conflict, err := h.hasActiveScheduleConflict(tx, freshUser.ID, takeover)
+		if err != nil {
+			return err
+		}
+		if conflict {
+			return errTakeoverTimeConflict
+		}
 		if err := tx.Create(&takeover).Error; err != nil {
 			return err
 		}
@@ -395,6 +402,10 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		}
 		if errors.Is(err, errCreditTooLowForCreate) {
 			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for create")
+			return
+		}
+		if errors.Is(err, errTakeoverTimeConflict) {
+			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
 			return
 		}
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
@@ -484,6 +495,9 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			First(&takeover).Error; err != nil {
 			return err
 		}
+		if isTakeoverExpired(takeover) {
+			return errTakeoverEnded
+		}
 
 		var member model.TakeoverMember
 		err = tx.Where("takeover_id = ? AND user_id = ?", takeoverID, freshUser.ID).First(&member).Error
@@ -531,6 +545,8 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			fail(c, http.StatusConflict, CodeAlreadyJoined, "already joined")
 		case errors.Is(err, errTakeoverTimeConflict):
 			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
+		case errors.Is(err, errTakeoverEnded):
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be joined")
 		case errors.Is(err, errTakeoverFull):
 			fail(c, http.StatusConflict, CodeTakeoverFull, "takeover full")
 		case errors.Is(err, errProfileRequired):
@@ -601,6 +617,7 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 var (
 	errAlreadyJoined         = errors.New("already joined")
 	errTakeoverTimeConflict  = errors.New("takeover time conflict")
+	errTakeoverEnded         = errors.New("ended takeover cannot be joined")
 	errTakeoverFull          = errors.New("takeover full")
 	errNotJoined             = errors.New("not joined")
 	errProfileRequired       = errors.New("profile required")

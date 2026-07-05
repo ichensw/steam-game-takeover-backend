@@ -109,6 +109,7 @@ var messageTranslations = map[string]string{
 	"publish takeover disabled":                                     "暂未开放发起接龙",
 	"query failed":                                                  "获取数据失败，请稍后再试",
 	"ended takeover cannot be deleted":                              "已结束的接龙不可删除",
+	"ended takeover cannot be joined":                               "已结束的接龙不可加入",
 	"ended takeover cannot be modified":                             "已结束的接龙不可编辑",
 	"report content is required and must be at most 500 characters": "请填写 500 个字以内的举报内容",
 	"report failed":                                                 "举报提交失败，请稍后再试",
