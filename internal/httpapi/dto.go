@@ -70,6 +70,7 @@ type takeoverDTO struct {
 	PlayTime            string      `json:"playTime"`
 	ScheduleText        string      `json:"scheduleText"`
 	StatusLabel         string      `json:"statusLabel"`
+	TakeoverState       uint8       `json:"takeoverState"`
 	Description         string      `json:"description"`
 	KookChannelID       string      `json:"kookChannelId"`
 	KookChannelName     string      `json:"kookChannelName"`
@@ -152,6 +153,7 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 		PlayTime:         shortTime(t.PlayTime),
 		ScheduleText:     scheduleText(t),
 		StatusLabel:      takeoverStatusLabel(t, joinedCount),
+		TakeoverState:    t.TakeoverState,
 		Description:      stringValue(t.Description),
 		KookChannelID:    stringValue(t.KookChannelID),
 		KookChannelName:  stringValue(t.KookChannelName),
@@ -226,9 +228,6 @@ func scheduleText(t model.Takeover) string {
 
 func takeoverStatusLabel(t model.Takeover, joinedCount int64) string {
 	if t.TakeoverState == model.TakeoverStateClosed {
-		return "已结束"
-	}
-	if isTakeoverExpired(t) {
 		return "已结束"
 	}
 	if t.ParticipantLimit > 0 && joinedCount >= int64(t.ParticipantLimit) {

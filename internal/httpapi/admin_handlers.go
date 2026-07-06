@@ -18,6 +18,10 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
 		return
 	}
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
 	var takeover model.Takeover
 	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
 		if isNotFound(err) {
@@ -27,7 +31,7 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	if isTakeoverExpired(takeover) {
+	if takeover.TakeoverState == model.TakeoverStateClosed {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be modified")
 		return
 	}
@@ -435,6 +439,11 @@ func (h *Handler) AdminBatchSetUserAdmin(c *gin.Context) {
 }
 
 func (h *Handler) AdminListTakeovers(c *gin.Context) {
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)
 	if pageSize > 50 {

@@ -21,6 +21,11 @@ const duplicateCreateWindow = 10 * time.Second
 func (h *Handler) ListTakeovers(c *gin.Context) {
 	user, _ := currentUser(c)
 
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 10)
 	if pageSize > 50 {
@@ -122,6 +127,10 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
 		return
 	}
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
 
 	var takeover model.Takeover
 	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
@@ -186,7 +195,15 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
 		return
 	}
-	if isTakeoverExpired(takeover) {
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if takeover.TakeoverState == model.TakeoverStateClosed {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be modified")
 		return
 	}
@@ -287,7 +304,15 @@ func (h *Handler) DeleteTakeover(c *gin.Context) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
 		return
 	}
-	if isTakeoverExpired(takeover) {
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if takeover.TakeoverState == model.TakeoverStateClosed {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be deleted")
 		return
 	}
@@ -351,6 +376,9 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		}
 		if freshUser.CreditScore < model.MinCreateCreditScore {
 			return errCreditTooLowForCreate
+		}
+		if err := syncExpiredTakeovers(tx, time.Now()); err != nil {
+			return err
 		}
 		existing, err := h.findRecentDuplicateTakeover(tx, freshUser.ID, parsed)
 		if err != nil {
@@ -493,6 +521,9 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		if freshUser.CreditScore < model.MinJoinCreditScore {
 			return errCreditTooLowForJoin
 		}
+		if err := syncExpiredTakeovers(tx, time.Now()); err != nil {
+			return err
+		}
 
 		var takeover model.Takeover
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -500,7 +531,7 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			First(&takeover).Error; err != nil {
 			return err
 		}
-		if takeover.TakeoverState == model.TakeoverStateClosed || isTakeoverExpired(takeover) {
+		if takeover.TakeoverState == model.TakeoverStateClosed {
 			return errTakeoverEnded
 		}
 
@@ -587,14 +618,14 @@ func (h *Handler) UpdateMemberRemark(c *gin.Context) {
 	}
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := syncExpiredTakeovers(tx, time.Now()); err != nil {
+			return err
+		}
 		var takeover model.Takeover
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND is_deleted = ? AND takeover_state = ?", takeoverID, false, model.TakeoverStateNormal).
 			First(&takeover).Error; err != nil {
 			return err
-		}
-		if isTakeoverExpired(takeover) {
-			return errTakeoverEnded
 		}
 		result := tx.Model(&model.TakeoverMember{}).
 			Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, user.ID, model.MemberStateJoined).
@@ -706,9 +737,6 @@ func (h *Handler) hasActiveScheduleConflict(tx *gorm.DB, userID uint64, target m
 	}
 
 	for _, takeover := range takeovers {
-		if isTakeoverExpired(takeover) {
-			continue
-		}
 		if schedulesConflict(target, takeover) {
 			return true, nil
 		}
@@ -953,18 +981,28 @@ func applyRangeHit(query *gorm.DB, start, end time.Time) *gorm.DB {
 	)
 }
 
-func applyTakeoverEndedFilter(query *gorm.DB, ended bool, now time.Time) *gorm.DB {
+func applyTakeoverEndedFilter(query *gorm.DB, ended bool, _ time.Time) *gorm.DB {
+	if ended {
+		return query.Where("takeover_state = ?", model.TakeoverStateClosed)
+	}
+	return query.Where("takeover_state = ?", model.TakeoverStateNormal)
+}
+
+func syncExpiredTakeovers(db *gorm.DB, now time.Time) error {
+	expired, args := takeoverExpiredWhere(now)
+	params := append([]interface{}{false, model.TakeoverStateNormal}, args...)
+	return db.Model(&model.Takeover{}).
+		Where("is_deleted = ? AND takeover_state = ? AND ("+expired+")", params...).
+		Update("takeover_state", model.TakeoverStateClosed).Error
+}
+
+func takeoverExpiredWhere(now time.Time) (string, []interface{}) {
 	date := now.Format("2006-01-02")
 	clock := now.Format("15:04:05")
-	expired := "(schedule_type = ? AND (start_date < ? OR (start_date = ? AND play_time < ?))) OR (schedule_type = ? AND (end_date < ? OR (end_date = ? AND play_time < ?)))"
-	args := []interface{}{
+	return "(schedule_type = ? AND (start_date < ? OR (start_date = ? AND play_time < ?))) OR (schedule_type = ? AND (end_date < ? OR (end_date = ? AND play_time < ?)))", []interface{}{
 		model.ScheduleSpecifiedDate, date, date, clock,
 		model.ScheduleDateRange, date, date, clock,
 	}
-	if ended {
-		return query.Where("takeover_state = ? OR "+expired, append([]interface{}{model.TakeoverStateClosed}, args...)...)
-	}
-	return query.Where("takeover_state = ? AND NOT ("+expired+")", append([]interface{}{model.TakeoverStateNormal}, args...)...)
 }
 
 func pathUint64(c *gin.Context, name string) (uint64, bool) {

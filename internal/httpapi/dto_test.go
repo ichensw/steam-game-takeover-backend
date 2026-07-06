@@ -9,7 +9,7 @@ import (
 	"steam-game-takeover-backend/internal/model"
 )
 
-func TestTakeoverStatusLabelMarksExpiredSchedulesEnded(t *testing.T) {
+func TestTakeoverStatusLabelUsesStateAndJoinedCount(t *testing.T) {
 	now := time.Now()
 	yesterday := truncateDate(now.AddDate(0, 0, -1))
 	tomorrow := truncateDate(now.AddDate(0, 0, 1))
@@ -21,27 +21,16 @@ func TestTakeoverStatusLabelMarksExpiredSchedulesEnded(t *testing.T) {
 		want        string
 	}{
 		{
-			name: "specified date expired",
+			name: "expired date remains recruiting until state is synced",
 			takeover: model.Takeover{
+				TakeoverState:    model.TakeoverStateNormal,
 				ScheduleType:     model.ScheduleSpecifiedDate,
 				StartDate:        &yesterday,
 				PlayTime:         "23:59:00",
 				ParticipantLimit: 4,
 			},
-			joinedCount: 4,
-			want:        "已结束",
-		},
-		{
-			name: "date range expired by end date time",
-			takeover: model.Takeover{
-				ScheduleType:     model.ScheduleDateRange,
-				StartDate:        &yesterday,
-				EndDate:          &yesterday,
-				PlayTime:         "23:59:00",
-				ParticipantLimit: 4,
-			},
 			joinedCount: 1,
-			want:        "已结束",
+			want:        "招募中",
 		},
 		{
 			name: "future date not expired",
@@ -106,9 +95,12 @@ func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
 
 func TestTakeoverDTOIncludesKookInviteURL(t *testing.T) {
 	url := "https://kook.top/abc"
-	dto := toTakeoverDTO(model.Takeover{KookInviteURL: &url}, 0, false)
+	dto := toTakeoverDTO(model.Takeover{KookInviteURL: &url, TakeoverState: model.TakeoverStateNormal}, 0, false)
 	if dto.KookInviteURL != url {
 		t.Fatalf("KookInviteURL = %q, want %q", dto.KookInviteURL, url)
+	}
+	if dto.TakeoverState != model.TakeoverStateNormal {
+		t.Fatalf("TakeoverState = %d, want %d", dto.TakeoverState, model.TakeoverStateNormal)
 	}
 }
 

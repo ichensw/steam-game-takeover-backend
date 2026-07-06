@@ -386,6 +386,8 @@ Authorization: Bearer <user-token>
         "endDate": null,
         "playTime": "21:42",
         "scheduleText": "今天 21:42",
+        "statusLabel": "招募中",
+        "takeoverState": 1,
         "description": "",
         "hasJoined": true,
         "previewMembers": [
@@ -434,6 +436,8 @@ Authorization: Bearer <user-token>
     "endDate": null,
     "playTime": "21:42",
     "scheduleText": "今天 21:42",
+    "statusLabel": "招募中",
+    "takeoverState": 1,
     "description": "",
     "hasJoined": true,
     "members": [
