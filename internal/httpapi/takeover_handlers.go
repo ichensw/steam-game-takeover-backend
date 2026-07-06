@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -478,6 +479,10 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
 		return
 	}
+	remark, valid := bindOptionalMemberRemark(c)
+	if !valid {
+		return
+	}
 
 	var joinedCount int64
 	err := h.db.Transaction(func(tx *gorm.DB) error {
@@ -491,11 +496,11 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 
 		var takeover model.Takeover
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND is_deleted = ? AND takeover_state = ?", takeoverID, false, model.TakeoverStateNormal).
+			Where("id = ? AND is_deleted = ?", takeoverID, false).
 			First(&takeover).Error; err != nil {
 			return err
 		}
-		if isTakeoverExpired(takeover) {
+		if takeover.TakeoverState == model.TakeoverStateClosed || isTakeoverExpired(takeover) {
 			return errTakeoverEnded
 		}
 
@@ -525,11 +530,14 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		}
 
 		if member.ID != 0 {
-			if err := tx.Model(&model.TakeoverMember{}).Where("id = ?", member.ID).Update("member_state", model.MemberStateJoined).Error; err != nil {
+			if err := tx.Model(&model.TakeoverMember{}).Where("id = ?", member.ID).Updates(map[string]interface{}{
+				"member_state": model.MemberStateJoined,
+				"remark":       remark,
+			}).Error; err != nil {
 				return err
 			}
 		} else {
-			member = model.TakeoverMember{TakeoverID: takeoverID, UserID: freshUser.ID, MemberState: model.MemberStateJoined}
+			member = model.TakeoverMember{TakeoverID: takeoverID, UserID: freshUser.ID, MemberState: model.MemberStateJoined, Remark: remark}
 			if err := tx.Create(&member).Error; err != nil {
 				return err
 			}
@@ -560,6 +568,60 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 	}
 
 	ok(c, "joined", gin.H{"hasJoined": true, "joinedCount": joinedCount})
+}
+
+func (h *Handler) UpdateMemberRemark(c *gin.Context) {
+	user, _ := currentUser(c)
+	if !ensureUserAllowed(c, user, false) {
+		return
+	}
+
+	takeoverID, okID := pathUint64(c, "takeoverId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+	remark, valid := bindOptionalMemberRemark(c)
+	if !valid {
+		return
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var takeover model.Takeover
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND is_deleted = ? AND takeover_state = ?", takeoverID, false, model.TakeoverStateNormal).
+			First(&takeover).Error; err != nil {
+			return err
+		}
+		if isTakeoverExpired(takeover) {
+			return errTakeoverEnded
+		}
+		result := tx.Model(&model.TakeoverMember{}).
+			Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, user.ID, model.MemberStateJoined).
+			Update("remark", remark)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return errNotJoined
+		}
+		return nil
+	})
+	if err != nil {
+		switch {
+		case isNotFound(err):
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		case errors.Is(err, errTakeoverEnded):
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be modified")
+		case errors.Is(err, errNotJoined):
+			fail(c, http.StatusConflict, CodeParamInvalid, "not joined")
+		default:
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		}
+		return
+	}
+
+	ok(c, "saved", gin.H{"remark": stringValue(remark)})
 }
 
 func (h *Handler) LeaveTakeover(c *gin.Context) {
@@ -623,6 +685,7 @@ var (
 	errProfileRequired       = errors.New("profile required")
 	errCreditTooLowForCreate = errors.New("credit too low for create")
 	errCreditTooLowForJoin   = errors.New("credit too low for join")
+	errRemarkTooLong         = errors.New("remark too long")
 )
 
 func (h *Handler) hasActiveScheduleConflict(tx *gorm.DB, userID uint64, target model.Takeover) (bool, error) {
@@ -751,7 +814,7 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit int) ([]memberDTO, error) {
 	var rows []memberRow
 	query := h.db.Table("ttw_takeover_member AS m").
-		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, u.credit_score, m.gmt_create AS joined_at").
+		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, m.remark, u.credit_score, m.gmt_create AS joined_at").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
 		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false).
 		Order("m.gmt_create ASC")
@@ -766,6 +829,31 @@ func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit i
 		members = append(members, toMemberDTO(row, includeOpenID))
 	}
 	return members, nil
+}
+
+func bindOptionalMemberRemark(c *gin.Context) (*string, bool) {
+	var req struct {
+		Remark string `json:"remark"`
+	}
+	err := c.ShouldBindJSON(&req)
+	if err != nil && !errors.Is(err, io.EOF) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return nil, false
+	}
+	remark, err := normalizeMemberRemark(req.Remark)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "remark must be at most 100 characters")
+		return nil, false
+	}
+	return remark, true
+}
+
+func normalizeMemberRemark(value string) (*string, error) {
+	remark := strings.TrimSpace(value)
+	if len([]rune(remark)) > 100 {
+		return nil, errRemarkTooLong
+	}
+	return optionalStringPtr(remark), nil
 }
 
 func (h *Handler) reportedUserIDs(takeoverID uint64, reporterUserID uint64) (map[uint64]bool, error) {

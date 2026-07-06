@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +109,36 @@ func TestTakeoverDTOIncludesKookInviteURL(t *testing.T) {
 	dto := toTakeoverDTO(model.Takeover{KookInviteURL: &url}, 0, false)
 	if dto.KookInviteURL != url {
 		t.Fatalf("KookInviteURL = %q, want %q", dto.KookInviteURL, url)
+	}
+}
+
+func TestMemberRemarkNormalization(t *testing.T) {
+	remark, err := normalizeMemberRemark("  可能晚到 5 分钟  ")
+	if err != nil {
+		t.Fatalf("normalizeMemberRemark() error = %v", err)
+	}
+	if remark == nil || *remark != "可能晚到 5 分钟" {
+		t.Fatalf("remark = %v, want trimmed value", remark)
+	}
+
+	remark, err = normalizeMemberRemark("   ")
+	if err != nil {
+		t.Fatalf("normalizeMemberRemark(blank) error = %v", err)
+	}
+	if remark != nil {
+		t.Fatalf("blank remark = %v, want nil", *remark)
+	}
+
+	if _, err := normalizeMemberRemark(strings.Repeat("字", 101)); !errors.Is(err, errRemarkTooLong) {
+		t.Fatalf("normalizeMemberRemark(long) error = %v, want %v", err, errRemarkTooLong)
+	}
+}
+
+func TestMemberDTOIncludesRemark(t *testing.T) {
+	remark := "可能晚到"
+	dto := toMemberDTO(memberRow{Remark: &remark}, false)
+	if dto.Remark != remark {
+		t.Fatalf("Remark = %q, want %q", dto.Remark, remark)
 	}
 }
 

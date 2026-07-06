@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover_member` (
   `takeover_id` bigint unsigned NOT NULL COMMENT '接龙ID',
   `user_id` bigint unsigned NOT NULL COMMENT '用户ID',
   `member_state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '成员状态：1已加入，2已退出',
+  `remark` varchar(100) DEFAULT NULL COMMENT '加入备注',
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
   PRIMARY KEY (`id`),

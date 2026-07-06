@@ -47,6 +47,7 @@ type memberDTO struct {
 	SteamID      string `json:"steamId"`
 	Gender       *uint8 `json:"gender"`
 	AvatarURL    string `json:"avatarUrl"`
+	Remark       string `json:"remark"`
 	CreditScore  uint   `json:"creditScore"`
 	CreditStatus string `json:"creditStatus"`
 	JoinedAt     string `json:"joinedAt,omitempty"`
@@ -87,6 +88,7 @@ type memberRow struct {
 	SteamID     *string
 	Gender      *uint8
 	AvatarURL   *string
+	Remark      *string
 	CreditScore uint
 	JoinedAt    time.Time
 }
@@ -176,6 +178,7 @@ func toMemberDTO(row memberRow, includeOpenID bool) memberDTO {
 		SteamID:      stringValue(row.SteamID),
 		Gender:       row.Gender,
 		AvatarURL:    normalizeAvatarURL(stringValue(row.AvatarURL), row.Gender),
+		Remark:       stringValue(row.Remark),
 		CreditScore:  row.CreditScore,
 		CreditStatus: creditStatus(row.CreditScore),
 		JoinedAt:     row.JoinedAt.Format("2006-01-02 15:04:05"),

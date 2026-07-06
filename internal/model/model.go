@@ -104,6 +104,7 @@ type TakeoverMember struct {
 	TakeoverID  uint64    `gorm:"column:takeover_id;uniqueIndex:uk_takeover_user"`
 	UserID      uint64    `gorm:"column:user_id;uniqueIndex:uk_takeover_user;index:idx_user_id"`
 	MemberState uint8     `gorm:"column:member_state"`
+	Remark      *string   `gorm:"column:remark;size:100"`
 	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
 	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
 }

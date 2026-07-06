@@ -443,6 +443,7 @@ Authorization: Bearer <user-token>
         "steamId": "364262801",
         "gender": 1,
         "avatarUrl": "https://example.com/avatar.jpg",
+        "remark": "可能晚到 5 分钟",
         "joinedAt": "2026-06-21 21:42:00"
       }
     ]
@@ -520,6 +521,15 @@ Content-Type: application/json
 ```http
 POST /api/takeovers/{takeoverId}/join
 Authorization: Bearer <user-token>
+Content-Type: application/json
+```
+
+请求体可为空；传 `remark` 时会保存为加入备注：
+
+```json
+{
+  "remark": "可能晚到 5 分钟"
+}
 ```
 
 响应：
@@ -544,6 +554,49 @@ Authorization: Bearer <user-token>
 | `404` | `TAKEOVER_NOT_FOUND` | 接龙不存在 |
 | `409` | `ALREADY_JOINED` | 已加入 |
 | `409` | `TAKEOVER_FULL` | 人数已满 |
+
+### 修改接龙成员备注
+
+```http
+PUT /api/takeovers/{takeoverId}/member-remark
+Authorization: Bearer <user-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "remark": "可能晚到 5 分钟"
+}
+```
+
+校验：
+
+| 字段 | 要求 |
+| --- | --- |
+| `remark` | 非必填，前后空格会被 trim，最多 100 字，空字符串表示清空备注 |
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "saved",
+  "data": {
+    "remark": "可能晚到 5 分钟"
+  }
+}
+```
+
+常见错误：
+
+| HTTP | code | 说明 |
+| --- | --- | --- |
+| `400` | `PARAM_INVALID` | takeoverId 非法、备注超长或接龙已结束 |
+| `404` | `TAKEOVER_NOT_FOUND` | 接龙不存在 |
+| `409` | `PARAM_INVALID` | 当前用户未加入或已退出该接龙 |
 
 ### 退出接龙
 
