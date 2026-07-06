@@ -262,7 +262,7 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 		return
 	}
 
-	query = applySort(query, c.Query("sortField"), c.Query("sortOrder"), wxUserSortFields, "gmt_create")
+	query = applyWXUserSort(query, c.Query("sortField"), c.Query("sortOrder"))
 
 	var users []model.User
 	if err := query.
@@ -331,6 +331,28 @@ var wxUserSortFields = map[string]string{
 	"creditScore":   "credit_score",
 	"lastLoginTime": "last_login_time",
 	"createdAt":     "gmt_create",
+}
+
+func applyWXUserSort(query *gorm.DB, field string, order string) *gorm.DB {
+	if strings.TrimSpace(field) != "publishWhitelisted" {
+		return applySort(query, field, order, wxUserSortFields, "gmt_create")
+	}
+	return query.Order(wxUserPublishWhitelistSortClause(order)).Order("gmt_create DESC")
+}
+
+func wxUserPublishWhitelistSortClause(order string) string {
+	direction := "DESC"
+	if strings.EqualFold(strings.TrimSpace(order), "asc") {
+		direction = "ASC"
+	}
+	return `EXISTS (
+		SELECT 1 FROM ttw_publish_takeover_whitelist w
+		WHERE w.enabled = TRUE
+		  AND (
+		    w.openid = ttw_user.openid
+		    OR (ttw_user.steam_id IS NOT NULL AND ttw_user.steam_id <> '' AND w.steam_id = ttw_user.steam_id)
+		  )
+	) ` + direction
 }
 
 func (h *Handler) AdminGetUser(c *gin.Context) {
