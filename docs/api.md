@@ -675,6 +675,83 @@ curl -X POST "http://47.102.200.211:8081/api/uploads/image" \
   -F "file=@avatar.jpg"
 ```
 
+## 用户反馈接口
+
+### 上传反馈图片
+
+```http
+POST /api/user-feedback/images
+Authorization: Bearer <user-token>
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `file` | file | 是 | 图片文件 |
+
+限制：
+
+- 大小：1 byte 到 5 MB。
+- 类型：JPG、PNG、WebP。
+- 图片上传到 OSS 前会先走微信图片内容安全。
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "uploaded",
+  "data": {
+    "url": "https://xxx/feedback/xxx.png"
+  }
+}
+```
+
+### 提交用户反馈
+
+```http
+POST /api/user-feedback
+Authorization: Bearer <user-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "feedback_type": "suggestion",
+  "content": "希望可以增加队伍筛选功能",
+  "contact": "微信 xxx",
+  "images": [
+    "https://xxx/feedback/1.png",
+    "https://xxx/feedback/2.png"
+  ]
+}
+```
+
+校验：
+
+| 字段 | 要求 |
+| --- | --- |
+| `feedback_type` | 必填，只允许 `suggestion`、`problem`、`experience`、`other` |
+| `content` | 必填，最多 500 字 |
+| `contact` | 选填，最多 100 字 |
+| `images` | 选填，最多 3 张，每项必须是非空 URL |
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "反馈已提交，感谢你的建议",
+  "data": null
+}
+```
+
 ## KOOK 接口
 
 ### 查询频道列表
@@ -1053,6 +1130,116 @@ Authorization: Bearer <admin-token>
   "success": true,
   "code": "SUCCESS",
   "message": "deleted",
+  "data": null
+}
+```
+
+### 管理员查询用户反馈列表
+
+```http
+GET /api/admin/user-feedbacks?page=1&page_size=20&status=&feedback_type=&keyword=&start_time=&end_time=
+Authorization: Bearer <admin-token>
+```
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `page` | number | 页码，默认 `1` |
+| `page_size` | number | 每页数量，默认 `20`，最大 `50` |
+| `status` | number | 选填，`1` 待采纳，`2` 已采纳，`3` 不理睬 |
+| `feedback_type` | string | 选填，`suggestion`、`problem`、`experience`、`other` |
+| `keyword` | string | 选填，模糊匹配反馈内容、联系方式、用户昵称 |
+| `start_time` | string | 选填，按 `created_at` 筛选，支持 `YYYY-MM-DD HH:mm:ss` |
+| `end_time` | string | 选填，按 `created_at` 筛选，支持 `YYYY-MM-DD HH:mm:ss` |
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "user_id": 10001,
+        "nickname": "阿川",
+        "avatar_url": "https://example.com/avatar.jpg",
+        "feedback_type": "suggestion",
+        "content": "希望可以增加队伍筛选功能",
+        "contact": "微信 xxx",
+        "images": ["https://xxx/feedback/1.png"],
+        "status": 1,
+        "status_label": "待采纳",
+        "created_at": "2026-07-06 12:00:00"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+### 管理员查询用户反馈详情
+
+```http
+GET /api/admin/user-feedbacks/{feedbackId}
+Authorization: Bearer <admin-token>
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "id": 1,
+    "user_id": 10001,
+    "nickname": "阿川",
+    "avatar_url": "https://example.com/avatar.jpg",
+    "steam_id": "364262801",
+    "feedback_type": "suggestion",
+    "content": "希望可以增加队伍筛选功能",
+    "contact": "微信 xxx",
+    "images": ["https://xxx/feedback/1.png"],
+    "status": 1,
+    "status_label": "待采纳",
+    "created_at": "2026-07-06 12:00:00",
+    "updated_at": "2026-07-06 12:00:00"
+  }
+}
+```
+
+### 管理员更新用户反馈状态
+
+```http
+PUT /api/admin/user-feedbacks/{feedbackId}/status
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "status": 2
+}
+```
+
+说明：`status` 只允许 `1`、`2`、`3`，分别表示待采纳、已采纳、不理睬。
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "反馈状态已更新",
   "data": null
 }
 ```

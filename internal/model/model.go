@@ -20,6 +20,10 @@ const (
 	ReportStateIgnored   = 2
 	ReportStatePenalized = 3
 
+	FeedbackStatusPending  = 1
+	FeedbackStatusAccepted = 2
+	FeedbackStatusIgnored  = 3
+
 	ContentAuditStatusPass   = "pass"
 	ContentAuditStatusReview = "review"
 	ContentAuditStatusRisky  = "risky"
@@ -128,6 +132,20 @@ type TakeoverReport struct {
 }
 
 func (TakeoverReport) TableName() string { return "ttw_takeover_report" }
+
+type UserFeedback struct {
+	ID           uint64    `gorm:"primaryKey;column:id"`
+	UserID       uint64    `gorm:"column:user_id;index:idx_user_id"`
+	FeedbackType string    `gorm:"column:feedback_type;size:32"`
+	Content      string    `gorm:"column:content;size:500"`
+	Contact      string    `gorm:"column:contact;size:100"`
+	Images       *string   `gorm:"column:images;type:json"`
+	Status       uint8     `gorm:"column:status;index:idx_status_created_at"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime;index:idx_created_at;index:idx_status_created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (UserFeedback) TableName() string { return "ttw_user_feedback" }
 
 type AdminOperateLog struct {
 	ID             uint64    `gorm:"primaryKey;column:id"`

@@ -39,6 +39,8 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	api.GET("/me/takeovers", h.UserAuth(), h.ListMyTakeovers)
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)
 	api.POST("/uploads/image", h.UserAuth(), h.UploadImage)
+	api.POST("/user-feedback", h.UserAuth(), h.SubmitUserFeedback)
+	api.POST("/user-feedback/images", h.UserAuth(), h.UploadUserFeedbackImage)
 	api.GET("/kook/channels", h.UserAuth(), h.ListKookChannels)
 	api.GET("/kook/channels/all", h.UserAuth(), h.ListAllKookChannels)
 	api.GET("/kook/channel-tree", h.UserAuth(), h.ListKookChannelTree)
@@ -69,6 +71,9 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	adminAuthed.POST("/reports/:reportId/approve", h.AdminApproveReport)
 	adminAuthed.POST("/reports/:reportId/reject", h.AdminRejectReport)
 	adminAuthed.POST("/reports/:reportId/handle", h.AdminHandleReport)
+	adminAuthed.GET("/user-feedbacks", h.AdminListUserFeedbacks)
+	adminAuthed.GET("/user-feedbacks/:feedbackId", h.AdminGetUserFeedback)
+	adminAuthed.PUT("/user-feedbacks/:feedbackId/status", h.AdminUpdateUserFeedbackStatus)
 	adminAuthed.POST("/publish-whitelist/batch", h.AdminBatchPublishWhitelist)
 
 	return r
