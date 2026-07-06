@@ -9,7 +9,11 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-var errSteamFriendCodeInvalid = errors.New("steam friend code invalid")
+var (
+	errSteamFriendCodeInvalid = errors.New("steam friend code invalid")
+	errSteamIDTooLong         = errors.New("steamId must be at most 64 characters")
+	errSteamIDNotDigits       = errors.New("steamId must contain digits only")
+)
 
 type steamSummaryResponse struct {
 	Response struct {
@@ -37,6 +41,25 @@ func (h *Handler) validateSteamFriendCode(steamID string) (string, error) {
 		return "", errSteamFriendCodeInvalid
 	}
 	return normalizeSteamID64ToFriendCode(result.Response.Players[0].SteamID), nil
+}
+
+func (h *Handler) validateSteamID(steamID string) (string, error) {
+	steamID, err := normalizeSteamIDInput(steamID)
+	if err != nil || steamID == "" {
+		return steamID, err
+	}
+	return h.validateSteamFriendCode(steamID)
+}
+
+func normalizeSteamIDInput(steamID string) (string, error) {
+	steamID = strings.TrimSpace(steamID)
+	if len([]rune(steamID)) > 64 {
+		return "", errSteamIDTooLong
+	}
+	if steamID != "" && !isDigits(steamID) {
+		return "", errSteamIDNotDigits
+	}
+	return normalizeSteamID64ToFriendCode(steamID), nil
 }
 
 func friendCodeToSteamID64(steamID string) string {

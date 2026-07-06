@@ -1,6 +1,9 @@
 package httpapi
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestIsDigits(t *testing.T) {
 	if !isDigits("76561198000000000") {
@@ -28,5 +31,20 @@ func TestNormalizeSteamID64ToFriendCode(t *testing.T) {
 	}
 	if got := normalizeSteamID64ToFriendCode("1738029940"); got != "1738029940" {
 		t.Fatalf("normalizeSteamID64ToFriendCode(friend code) = %q, want 1738029940", got)
+	}
+}
+
+func TestNormalizeSteamIDInput(t *testing.T) {
+	got, err := normalizeSteamIDInput(" 76561199698295668 ")
+	if err != nil {
+		t.Fatalf("normalizeSteamIDInput() error = %v", err)
+	}
+	if got != "1738029940" {
+		t.Fatalf("normalizeSteamIDInput() = %q, want 1738029940", got)
+	}
+
+	_, err = (&Handler{}).validateSteamID("abc")
+	if !errors.Is(err, errSteamIDNotDigits) {
+		t.Fatalf("validateSteamID() error = %v, want %v", err, errSteamIDNotDigits)
 	}
 }

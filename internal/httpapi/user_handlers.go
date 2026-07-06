@@ -207,18 +207,14 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 	}
 
 	nickname := strings.TrimSpace(req.Nickname)
-	steamID := strings.TrimSpace(req.SteamID)
 	avatarURL := strings.TrimSpace(req.AvatarURL)
 	if nicknameLen := len([]rune(nickname)); nicknameLen < 2 || nicknameLen > 12 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "nickname must be between 2 and 12 characters")
 		return
 	}
-	if len([]rune(steamID)) > 64 {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId must be at most 64 characters")
-		return
-	}
-	if steamID != "" && !isDigits(steamID) {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "steamId must contain digits only")
+	steamID, err := normalizeSteamIDInput(req.SteamID)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		return
 	}
 	if req.Gender != model.GenderMale && req.Gender != model.GenderFemale {
@@ -229,19 +225,6 @@ func (h *Handler) SaveProfile(c *gin.Context) {
 	if len([]rune(avatarURL)) > 255 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "avatarUrl must be at most 255 characters")
 		return
-	}
-	currentSteamID := normalizeSteamID64ToFriendCode(strings.TrimSpace(stringValue(user.SteamID)))
-	if steamID != "" && currentSteamID != steamID {
-		normalizedSteamID, err := h.validateSteamFriendCode(steamID)
-		if err != nil {
-			if errors.Is(err, errSteamFriendCodeInvalid) {
-				fail(c, http.StatusBadRequest, CodeParamInvalid, "steam friend code invalid")
-				return
-			}
-			fail(c, http.StatusBadGateway, CodeSystemError, "steam friend code check failed")
-			return
-		}
-		steamID = normalizedSteamID
 	}
 	if err := h.checkTextSecurity(contentSecurityTarget{
 		User:        user,
