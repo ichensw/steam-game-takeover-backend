@@ -144,12 +144,12 @@ func applyTakeoverRecommendOrder(query *gorm.DB, now time.Time) *gorm.DB {
 		nowStr, soonStr,
 		model.ScheduleDaily, model.ScheduleSpecifiedDate, todayStr, model.ScheduleDateRange, todayStr, todayStr, clock,
 	)
+	orderSQL := fullPartitionSQL + ", " + rankSQL + ", " + nextPlaySQL + " ASC, ttw_takeover.id DESC"
+	orderVars := append([]interface{}{}, rankVars...)
+	orderVars = append(orderVars, nextPlayVars...)
 
 	return query.
-		Order(clause.Expr{SQL: fullPartitionSQL, WithoutParentheses: true}).
-		Order(clause.Expr{SQL: rankSQL, Vars: rankVars, WithoutParentheses: true}).
-		Order(clause.Expr{SQL: nextPlaySQL + " ASC", Vars: nextPlayVars, WithoutParentheses: true}).
-		Order("ttw_takeover.id DESC")
+		Order(clause.OrderBy{Expression: clause.Expr{SQL: orderSQL, Vars: orderVars, WithoutParentheses: true}})
 }
 
 func takeoverRecommendTags(t model.Takeover, joinedCount int64, hasJoined bool, now time.Time) []recommendTagDTO {
