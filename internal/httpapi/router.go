@@ -32,6 +32,7 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	api.POST("/takeovers/:takeoverId/join", h.UserAuth(), h.JoinTakeover)
 	api.POST("/takeovers/:takeoverId/leave", h.UserAuth(), h.LeaveTakeover)
 	api.PUT("/takeovers/:takeoverId/member-remark", h.UserAuth(), h.UpdateMemberRemark)
+	api.POST("/takeovers/:takeoverId/reminder-subscription", h.UserAuth(), h.SubscribeTakeoverReminder)
 	api.POST("/takeovers/:takeoverId/reports", h.UserAuth(), h.ReportTakeoverMember)
 
 	api.GET("/me/profile", h.UserAuth(), h.GetProfile)

@@ -16,6 +16,10 @@ const (
 	MemberStateJoined = 1
 	MemberStateExited = 2
 
+	ReminderSendPending = 1
+	ReminderSendSent    = 2
+	ReminderSendFailed  = 3
+
 	ReportStatePending   = 1
 	ReportStateIgnored   = 2
 	ReportStatePenalized = 3
@@ -118,6 +122,24 @@ type TakeoverMember struct {
 }
 
 func (TakeoverMember) TableName() string { return "ttw_takeover_member" }
+
+type TakeoverReminderSubscription struct {
+	ID          uint64     `gorm:"primaryKey;column:id"`
+	TakeoverID  uint64     `gorm:"column:takeover_id;uniqueIndex:uk_takeover_user_play_at;index:idx_takeover_id"`
+	UserID      uint64     `gorm:"column:user_id;uniqueIndex:uk_takeover_user_play_at;index:idx_user_id"`
+	OpenID      string     `gorm:"column:openid;size:64"`
+	RemindAt    time.Time  `gorm:"column:remind_at;index:idx_remind_state"`
+	PlayAt      time.Time  `gorm:"column:play_at;uniqueIndex:uk_takeover_user_play_at"`
+	SendState   uint8      `gorm:"column:send_state;index:idx_remind_state"`
+	SendError   *string    `gorm:"column:send_error;size:255"`
+	SentAt      *time.Time `gorm:"column:sent_at"`
+	GmtCreate   time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (TakeoverReminderSubscription) TableName() string {
+	return "ttw_takeover_reminder_subscription"
+}
 
 type TakeoverReport struct {
 	ID               uint64     `gorm:"primaryKey;column:id"`

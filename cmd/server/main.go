@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"steam-game-takeover-backend/internal/config"
@@ -20,6 +21,7 @@ func main() {
 	}
 
 	router := httpapi.NewRouter(cfg, db)
+	httpapi.NewHandler(cfg, db).StartTakeoverReminderWorker(context.Background())
 	log.Printf("server listening on %s", cfg.Addr)
 	if err := router.Run(cfg.Addr); err != nil {
 		log.Fatalf("run server: %v", err)

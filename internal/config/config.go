@@ -19,6 +19,8 @@ type Config struct {
 	WXAppID                string
 	WXAppSecret            string
 	WXLoginMock            bool
+	ReminderTemplateID     string
+	ReminderMinutes        int
 	ContentSecurityEnabled bool
 	BotQueryEnabled        bool
 	BotQuerySteamID        string
@@ -47,6 +49,8 @@ func Load() Config {
 		WXAppID:                env("WX_APP_ID", ""),
 		WXAppSecret:            env("WX_APP_SECRET", ""),
 		WXLoginMock:            wxLoginMock,
+		ReminderTemplateID:     env("TAKEOVER_REMINDER_TEMPLATE_ID", "7ag6n1mjOoMCpyAE0E9SXpx72vwc_dij8HqD9kB-NeY"),
+		ReminderMinutes:        intValue("TAKEOVER_REMINDER_MINUTES", 15),
 		ContentSecurityEnabled: envBool("CONTENT_SECURITY_ENABLED", !wxLoginMock),
 		BotQueryEnabled:        envBool("BOT_QUERY_ENABLED", true),
 		BotQuerySteamID:        env("BOT_QUERY_STEAM_ID", "wechat-bot-query"),
@@ -118,4 +122,16 @@ func uint8Value(key string, fallback uint8) uint8 {
 		return fallback
 	}
 	return uint8(parsed)
+}
+
+func intValue(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
