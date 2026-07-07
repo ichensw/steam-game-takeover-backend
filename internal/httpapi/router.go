@@ -41,6 +41,8 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	api.POST("/uploads/image", h.UserAuth(), h.UploadImage)
 	api.POST("/user-feedback", h.UserAuth(), h.SubmitUserFeedback)
 	api.POST("/user-feedback/images", h.UserAuth(), h.UploadUserFeedbackImage)
+	api.GET("/announcements/current", h.UserAuth(), h.GetCurrentAnnouncement)
+	api.POST("/announcements/:announcementId/read", h.UserAuth(), h.MarkAnnouncementRead)
 	api.GET("/kook/channels", h.UserAuth(), h.ListKookChannels)
 	api.GET("/kook/channels/all", h.UserAuth(), h.ListAllKookChannels)
 	api.GET("/kook/channel-tree", h.UserAuth(), h.ListKookChannelTree)
@@ -74,6 +76,13 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	adminAuthed.GET("/user-feedbacks", h.AdminListUserFeedbacks)
 	adminAuthed.GET("/user-feedbacks/:feedbackId", h.AdminGetUserFeedback)
 	adminAuthed.PUT("/user-feedbacks/:feedbackId/status", h.AdminUpdateUserFeedbackStatus)
+	adminAuthed.GET("/announcements", h.AdminListAnnouncements)
+	adminAuthed.POST("/announcements", h.AdminCreateAnnouncement)
+	adminAuthed.GET("/announcements/:announcementId", h.AdminGetAnnouncement)
+	adminAuthed.PUT("/announcements/:announcementId", h.AdminUpdateAnnouncement)
+	adminAuthed.POST("/announcements/:announcementId/enable", h.AdminSetAnnouncementEnabled)
+	adminAuthed.POST("/announcements/:announcementId/disable", h.AdminSetAnnouncementDisabled)
+	adminAuthed.DELETE("/announcements/:announcementId", h.AdminDeleteAnnouncement)
 	adminAuthed.POST("/publish-whitelist/batch", h.AdminBatchPublishWhitelist)
 
 	return r

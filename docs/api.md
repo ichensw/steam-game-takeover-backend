@@ -752,6 +752,60 @@ Content-Type: application/json
 }
 ```
 
+## 公告接口
+
+### 查询当前未读公告
+
+```http
+GET /api/announcements/current
+Authorization: Bearer <user-token>
+```
+
+说明：
+
+- 只返回当前时间有效、状态启用、当前用户未读的最新一条公告。
+- 没有公告时 `data` 为 `null`。
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": {
+    "id": 1,
+    "title": "版本公告",
+    "content": "新增意见反馈和公告功能",
+    "image_url": "https://example.com/notice.png",
+    "status": 1,
+    "status_label": "启用",
+    "start_time": "2026-07-07 10:00:00",
+    "end_time": "",
+    "created_at": "2026-07-07 10:00:00",
+    "updated_at": "2026-07-07 10:00:00"
+  }
+}
+```
+
+### 标记公告已读
+
+```http
+POST /api/announcements/{announcementId}/read
+Authorization: Bearer <user-token>
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "success",
+  "data": null
+}
+```
+
 ## KOOK 接口
 
 ### 查询频道列表
@@ -1242,6 +1296,70 @@ Content-Type: application/json
   "message": "反馈状态已更新",
   "data": null
 }
+```
+
+### 管理员查询公告列表
+
+```http
+GET /api/admin/announcements?page=1&page_size=20&status=&keyword=
+Authorization: Bearer <admin-token>
+```
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `status` | number | 选填，`1=启用`、`2=停用` |
+| `keyword` | string | 选填，模糊匹配标题、内容 |
+| `page` | number | 页码，默认 `1` |
+| `page_size` | number | 每页数量，默认 `20`，最大 `50` |
+
+排序：`gmt_create DESC`。
+
+### 管理员新增公告
+
+```http
+POST /api/admin/announcements
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "title": "版本公告",
+  "content": "新增意见反馈和公告功能",
+  "image_url": "https://example.com/notice.png",
+  "status": 1,
+  "start_time": "2026-07-07 10:00:00",
+  "end_time": ""
+}
+```
+
+说明：
+
+- `status` 只允许 `1=启用`、`2=停用`。
+- `start_time` 为空时默认当前时间。
+- `end_time` 为空表示长期有效。
+
+### 管理员编辑公告
+
+```http
+PUT /api/admin/announcements/{announcementId}
+Authorization: Bearer <admin-token>
+Content-Type: application/json
+```
+
+请求体同新增公告。
+
+### 管理员启用/停用/删除公告
+
+```http
+POST /api/admin/announcements/{announcementId}/enable
+POST /api/admin/announcements/{announcementId}/disable
+DELETE /api/admin/announcements/{announcementId}
+Authorization: Bearer <admin-token>
 ```
 
 ### 管理员查询用户
