@@ -169,6 +169,9 @@ func (h *Handler) AdminRestoreUserCredit(c *gin.Context) {
 		if err := tx.Model(&model.User{}).Where("id = ?", userID).Update("credit_score", score).Error; err != nil {
 			return err
 		}
+		if err := recordCreditLog(tx, user.ID, user.CreditScore, score, "admin_restore", "管理员恢复信誉分", nil, nil); err != nil {
+			return err
+		}
 		content := "restore credit"
 		return tx.Create(&model.AdminOperateLog{
 			OperateType:    "USER_CREDIT_RESTORE",

@@ -422,6 +422,9 @@ func (h *Handler) handleReport(c *gin.Context, reportID uint64, state uint8, pen
 			if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("credit_score", score).Error; err != nil {
 				return err
 			}
+			if err := recordCreditLog(tx, user.ID, user.CreditScore, score, "report_penalty", firstNonEmpty(note, "举报核实扣分"), nullableUint64(admin.ID), nullableUint64(report.ID)); err != nil {
+				return err
+			}
 		}
 
 		updates := map[string]interface{}{

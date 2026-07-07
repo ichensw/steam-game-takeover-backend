@@ -64,6 +64,21 @@ type User struct {
 
 func (User) TableName() string { return "ttw_user" }
 
+type UserCreditLog struct {
+	ID              uint64    `gorm:"primaryKey;column:id"`
+	UserID          uint64    `gorm:"column:user_id;index:idx_user_id"`
+	ScoreDelta      int       `gorm:"column:score_delta"`
+	ScoreBefore     uint      `gorm:"column:score_before"`
+	ScoreAfter      uint      `gorm:"column:score_after"`
+	ReasonType      string    `gorm:"column:reason_type;size:32"`
+	Reason          *string   `gorm:"column:reason;size:255"`
+	OperatorAdminID *uint64   `gorm:"column:operator_admin_id"`
+	RelatedReportID *uint64   `gorm:"column:related_report_id"`
+	GmtCreate       time.Time `gorm:"column:gmt_create;autoCreateTime"`
+}
+
+func (UserCreditLog) TableName() string { return "ttw_user_credit_log" }
+
 type AdminUser struct {
 	ID            uint64     `gorm:"primaryKey;column:id"`
 	Username      string     `gorm:"column:username;size:64;uniqueIndex:uk_username"`

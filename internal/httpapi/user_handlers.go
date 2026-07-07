@@ -175,6 +175,46 @@ func (h *Handler) ListMyTakeovers(c *gin.Context) {
 	})
 }
 
+func (h *Handler) ListMyCreditLogs(c *gin.Context) {
+	user, _ := currentUser(c)
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(firstNonEmpty(c.Query("page_size"), c.Query("pageSize")), 20)
+	if pageSize > 50 {
+		pageSize = 50
+	}
+
+	query := h.db.Model(&model.UserCreditLog{}).Where("user_id = ?", user.ID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var rows []model.UserCreditLog
+	if err := query.Order("id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, gin.H{
+			"id":              row.ID,
+			"scoreDelta":      row.ScoreDelta,
+			"scoreBefore":     row.ScoreBefore,
+			"scoreAfter":      row.ScoreAfter,
+			"reasonType":      row.ReasonType,
+			"reason":          stringValue(row.Reason),
+			"createdAt":       row.GmtCreate.Format("2006-01-02 15:04:05"),
+			"relatedReportId": row.RelatedReportID,
+		})
+	}
+	ok(c, "success", gin.H{"items": items, "total": total, "page": page, "pageSize": pageSize})
+}
+
 func applyMyTakeoverKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
@@ -191,6 +231,22 @@ func applyMyTakeoverKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
 		false,
 		like,
 	)
+}
+
+func recordCreditLog(tx *gorm.DB, userID uint64, before uint, after uint, reasonType string, reason string, adminID *uint64, reportID *uint64) error {
+	if before == after {
+		return nil
+	}
+	return tx.Create(&model.UserCreditLog{
+		UserID:          userID,
+		ScoreDelta:      int(after) - int(before),
+		ScoreBefore:     before,
+		ScoreAfter:      after,
+		ReasonType:      reasonType,
+		Reason:          stringPtr(reason),
+		OperatorAdminID: adminID,
+		RelatedReportID: reportID,
+	}).Error
 }
 
 func (h *Handler) SaveProfile(c *gin.Context) {

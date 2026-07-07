@@ -33,6 +33,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.GET("/me/profile", h.UserAuth(), h.GetProfile)
 	api.GET("/me/summary", h.UserAuth(), h.GetMeSummary)
 	api.GET("/me/takeovers", h.UserAuth(), h.ListMyTakeovers)
+	api.GET("/me/credit-logs", h.UserAuth(), h.ListMyCreditLogs)
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)
 	api.POST("/uploads/image", h.UserAuth(), h.UploadImage)
 	api.POST("/user-feedback", h.UserAuth(), h.SubmitUserFeedback)
