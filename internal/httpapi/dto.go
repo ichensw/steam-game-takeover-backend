@@ -56,31 +56,38 @@ type memberDTO struct {
 	HasReported  bool   `json:"hasReported"`
 }
 
+type recommendTagDTO struct {
+	Type  string `json:"type"`
+	Label string `json:"label"`
+	Tone  string `json:"tone"`
+}
+
 type takeoverDTO struct {
-	ID                  uint64      `json:"id"`
-	CreatorUserID       uint64      `json:"creatorUserId"`
-	CreatorName         string      `json:"creatorName"`
-	CreatorCreditScore  uint        `json:"creatorCreditScore"`
-	CreatorCreditStatus string      `json:"creatorCreditStatus"`
-	Title               string      `json:"title"`
-	ParticipantLimit    uint        `json:"participantLimit"`
-	JoinedCount         int64       `json:"joinedCount"`
-	ScheduleType        uint8       `json:"scheduleType"`
-	StartDate           *string     `json:"startDate"`
-	EndDate             *string     `json:"endDate"`
-	PlayTime            string      `json:"playTime"`
-	ScheduleText        string      `json:"scheduleText"`
-	StatusLabel         string      `json:"statusLabel"`
-	TakeoverState       uint8       `json:"takeoverState"`
-	Description         string      `json:"description"`
-	KookChannelID       string      `json:"kookChannelId"`
-	KookChannelName     string      `json:"kookChannelName"`
-	KookInviteURL       string      `json:"kookInviteUrl"`
-	HasJoined           bool        `json:"hasJoined"`
-	IsCreator           bool        `json:"isCreator"`
-	CanManage           bool        `json:"canManage"`
-	PreviewMembers      []memberDTO `json:"previewMembers,omitempty"`
-	Members             []memberDTO `json:"members,omitempty"`
+	ID                  uint64            `json:"id"`
+	CreatorUserID       uint64            `json:"creatorUserId"`
+	CreatorName         string            `json:"creatorName"`
+	CreatorCreditScore  uint              `json:"creatorCreditScore"`
+	CreatorCreditStatus string            `json:"creatorCreditStatus"`
+	Title               string            `json:"title"`
+	ParticipantLimit    uint              `json:"participantLimit"`
+	JoinedCount         int64             `json:"joinedCount"`
+	ScheduleType        uint8             `json:"scheduleType"`
+	StartDate           *string           `json:"startDate"`
+	EndDate             *string           `json:"endDate"`
+	PlayTime            string            `json:"playTime"`
+	ScheduleText        string            `json:"scheduleText"`
+	StatusLabel         string            `json:"statusLabel"`
+	TakeoverState       uint8             `json:"takeoverState"`
+	Description         string            `json:"description"`
+	KookChannelID       string            `json:"kookChannelId"`
+	KookChannelName     string            `json:"kookChannelName"`
+	KookInviteURL       string            `json:"kookInviteUrl"`
+	HasJoined           bool              `json:"hasJoined"`
+	IsCreator           bool              `json:"isCreator"`
+	CanManage           bool              `json:"canManage"`
+	RecommendTags       []recommendTagDTO `json:"recommendTags,omitempty"`
+	PreviewMembers      []memberDTO       `json:"previewMembers,omitempty"`
+	Members             []memberDTO       `json:"members,omitempty"`
 }
 
 type memberRow struct {

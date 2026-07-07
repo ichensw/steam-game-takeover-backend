@@ -17,11 +17,19 @@ import (
 )
 
 const duplicateCreateWindow = 10 * time.Second
+const soonTakeoverWindow = 2 * time.Hour
+
+type takeoverListRow struct {
+	model.Takeover `gorm:"embedded"`
+	JoinedCount    int64 `gorm:"column:joined_count"`
+	HasJoined      int   `gorm:"column:has_joined"`
+}
 
 func (h *Handler) ListTakeovers(c *gin.Context) {
 	user, _ := currentUser(c)
+	now := time.Now()
 
-	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+	if err := syncExpiredTakeovers(h.db, now); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
@@ -32,53 +40,53 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 		pageSize = 50
 	}
 
-	query := h.db.Model(&model.Takeover{}).
+	countQuery := h.db.Model(&model.Takeover{}).
 		Where("is_deleted = ? AND takeover_state = ?", false, model.TakeoverStateNormal)
-	query = applyKeywordFilter(query, c.Query("keyword"))
+	listQuery := h.takeoverListQuery(user.ID).
+		Where("is_deleted = ? AND takeover_state = ?", false, model.TakeoverStateNormal)
+	countQuery = applyKeywordFilter(countQuery, c.Query("keyword"))
+	listQuery = applyKeywordFilter(listQuery, c.Query("keyword"))
 	var err error
-	query, err = applyTimeFilter(query, c)
+	countQuery, err = applyTimeFilter(countQuery, c)
+	if err == nil {
+		listQuery, err = applyTimeFilter(listQuery, c)
+	}
 	if err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		return
 	}
 
-	var takeovers []model.Takeover
-	if err := query.Find(&takeovers).Error; err != nil {
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
 
-	allList := make([]takeoverDTO, 0, len(takeovers))
-	for _, takeover := range takeovers {
-		joinedCount, hasJoined, err := h.takeoverStats(takeover.ID, user.ID)
-		if err != nil {
-			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-			return
-		}
-		dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
+	var rows []takeoverListRow
+	if err := applyTakeoverRecommendOrder(listQuery, now).
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	list := make([]takeoverDTO, 0, len(rows))
+	for _, row := range rows {
+		takeover := row.Takeover
+		hasJoined := row.HasJoined == 1
+		dto := toTakeoverDTOWithCreator(h.db, takeover, row.JoinedCount, hasJoined)
 		dto.IsCreator = isTakeoverCreator(user, takeover)
 		dto.CanManage = canManageTakeover(user, takeover)
+		dto.RecommendTags = takeoverRecommendTags(takeover, row.JoinedCount, hasJoined, now)
 		members, err := h.takeoverMembers(takeover.ID, false, 5)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 			return
 		}
 		dto.PreviewMembers = members
-		if dto.StatusLabel != "已结束" {
-			allList = append(allList, dto)
-		}
+		list = append(list, dto)
 	}
-	sortTakeoverList(allList)
-	total := int64(len(allList))
-	start := (page - 1) * pageSize
-	end := start + pageSize
-	if start > len(allList) {
-		start = len(allList)
-	}
-	if end > len(allList) {
-		end = len(allList)
-	}
-	list := allList[start:end]
 
 	ok(c, "success", gin.H{
 		"page":     page,
@@ -86,6 +94,120 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 		"total":    total,
 		"list":     list,
 	})
+}
+
+func (h *Handler) takeoverListQuery(userID uint64) *gorm.DB {
+	return h.db.Table("ttw_takeover").
+		Select("ttw_takeover.*, COALESCE(j.joined_count, 0) AS joined_count, IF(hj.user_id IS NULL, 0, 1) AS has_joined").
+		Joins("LEFT JOIN (SELECT m.takeover_id, COUNT(*) AS joined_count FROM ttw_takeover_member AS m JOIN ttw_user AS u ON u.id = m.user_id AND u.is_deleted = ? WHERE m.member_state = ? GROUP BY m.takeover_id) AS j ON j.takeover_id = ttw_takeover.id", false, model.MemberStateJoined).
+		Joins("LEFT JOIN ttw_takeover_member AS hj ON hj.takeover_id = ttw_takeover.id AND hj.user_id = ? AND hj.member_state = ?", userID, model.MemberStateJoined)
+}
+
+func applyTakeoverRecommendOrder(query *gorm.DB, now time.Time) *gorm.DB {
+	today := truncateDate(now)
+	tomorrow := today.AddDate(0, 0, 1)
+	todayStr := today.Format("2006-01-02")
+	tomorrowStr := tomorrow.Format("2006-01-02")
+	clock := now.Format("15:04:05")
+	nowStr := now.Format("2006-01-02 15:04:05")
+	soonStr := now.Add(soonTakeoverWindow).Format("2006-01-02 15:04:05")
+	todayHit := "(schedule_type = ? OR (schedule_type = ? AND start_date = ?) OR (schedule_type = ? AND start_date <= ? AND end_date >= ?))"
+	upcomingToday := todayHit + " AND play_time >= ?"
+	nextPlaySQL := "CASE " +
+		"WHEN schedule_type = ? THEN CONCAT(start_date, ' ', play_time) " +
+		"WHEN schedule_type = ? AND start_date > ? THEN CONCAT(start_date, ' ', play_time) " +
+		"WHEN schedule_type = ? AND play_time < ? THEN CONCAT(?, ' ', play_time) " +
+		"WHEN schedule_type = ? AND play_time < ? THEN CONCAT(?, ' ', play_time) " +
+		"ELSE CONCAT(?, ' ', play_time) END"
+	nextPlayVars := []interface{}{
+		model.ScheduleSpecifiedDate,
+		model.ScheduleDateRange, todayStr,
+		model.ScheduleDateRange, clock, tomorrowStr,
+		model.ScheduleDaily, clock, tomorrowStr,
+		todayStr,
+	}
+	soon := "(" + nextPlaySQL + ") BETWEEN ? AND ?"
+	full := "participant_limit > 0 AND COALESCE(j.joined_count, 0) >= participant_limit"
+	almostFull := "participant_limit > COALESCE(j.joined_count, 0) AND participant_limit - COALESCE(j.joined_count, 0) <= 2"
+
+	rankSQL := "CASE " +
+		"WHEN hj.user_id IS NOT NULL THEN 0 " +
+		"WHEN " + full + " THEN 5 " +
+		"WHEN " + soon + " THEN 1 " +
+		"WHEN " + upcomingToday + " THEN 2 " +
+		"WHEN " + almostFull + " THEN 3 " +
+		"ELSE 4 END ASC"
+	rankVars := []interface{}{}
+	rankVars = append(rankVars, nextPlayVars...)
+	rankVars = append(rankVars,
+		nowStr, soonStr,
+		model.ScheduleDaily, model.ScheduleSpecifiedDate, todayStr, model.ScheduleDateRange, todayStr, todayStr, clock,
+	)
+
+	return query.
+		Order(clause.Expr{SQL: rankSQL, Vars: rankVars, WithoutParentheses: true}).
+		Order(clause.Expr{SQL: nextPlaySQL + " ASC", Vars: nextPlayVars, WithoutParentheses: true}).
+		Order("ttw_takeover.id DESC")
+}
+
+func takeoverRecommendTags(t model.Takeover, joinedCount int64, hasJoined bool, now time.Time) []recommendTagDTO {
+	tags := make([]recommendTagDTO, 0, 3)
+	if hasJoined {
+		tags = append(tags, recommendTagDTO{Type: "joined", Label: "我已加入", Tone: "primary"})
+	}
+	if t.TakeoverState == model.TakeoverStateClosed {
+		return appendRecommendTag(tags, recommendTagDTO{Type: "ended", Label: "已结束", Tone: "muted"})
+	}
+	if isTakeoverSoon(t, now) {
+		tags = appendRecommendTag(tags, recommendTagDTO{Type: "soon", Label: "快开始", Tone: "hot"})
+	} else if isTakeoverUpcomingToday(t, now) {
+		tags = appendRecommendTag(tags, recommendTagDTO{Type: "today", Label: "今日开局", Tone: "cool"})
+	}
+
+	remaining := int64(t.ParticipantLimit) - joinedCount
+	switch {
+	case remaining > 0 && remaining <= 2:
+		tags = appendRecommendTag(tags, recommendTagDTO{Type: "almostFull", Label: "差" + strconv.FormatInt(remaining, 10) + "人", Tone: "warm"})
+	case t.ParticipantLimit > 0 && remaining <= 0:
+		tags = appendRecommendTag(tags, recommendTagDTO{Type: "full", Label: "已满员", Tone: "muted"})
+	}
+	return tags
+}
+
+func appendRecommendTag(tags []recommendTagDTO, tag recommendTagDTO) []recommendTagDTO {
+	if len(tags) >= 3 {
+		return tags
+	}
+	return append(tags, tag)
+}
+
+func isTakeoverSoon(t model.Takeover, now time.Time) bool {
+	playAt, ok := nextTakeoverPlayAt(t, now)
+	return ok && !playAt.Before(now) && !playAt.After(now.Add(soonTakeoverWindow))
+}
+
+func isTakeoverUpcomingToday(t model.Takeover, now time.Time) bool {
+	playAt, ok := todayTakeoverPlayAt(t, now)
+	return ok && !playAt.Before(now)
+}
+
+func todayTakeoverPlayAt(t model.Takeover, now time.Time) (time.Time, bool) {
+	today := truncateDate(now)
+	switch t.ScheduleType {
+	case model.ScheduleDaily:
+	case model.ScheduleSpecifiedDate:
+		if t.StartDate == nil || !sameDate(*t.StartDate, today) {
+			return time.Time{}, false
+		}
+	case model.ScheduleDateRange:
+		if t.StartDate == nil || t.EndDate == nil || truncateDate(*t.StartDate).After(today) || truncateDate(*t.EndDate).Before(today) {
+			return time.Time{}, false
+		}
+	default:
+		return time.Time{}, false
+	}
+	playAt, err := combineDateAndPlayTime(today, t.PlayTime)
+	return playAt, err == nil
 }
 
 func sortTakeoverList(list []takeoverDTO) {

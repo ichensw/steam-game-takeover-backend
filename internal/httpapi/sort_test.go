@@ -3,6 +3,9 @@ package httpapi
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"steam-game-takeover-backend/internal/model"
 )
 
 func TestSortClause(t *testing.T) {
@@ -22,5 +25,13 @@ func TestWXUserPublishWhitelistSortClause(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "ASC") {
 		t.Fatalf("sort clause = %q, want ASC direction", got)
+	}
+}
+
+func TestTakeoverSoonAcrossMidnight(t *testing.T) {
+	now := time.Date(2026, 7, 7, 23, 30, 0, 0, time.Local)
+	takeover := model.Takeover{ScheduleType: model.ScheduleDaily, PlayTime: "01:00:00"}
+	if !isTakeoverSoon(takeover, now) {
+		t.Fatal("daily 01:00 should be soon at 23:30")
 	}
 }

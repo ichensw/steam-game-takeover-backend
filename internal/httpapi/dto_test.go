@@ -93,6 +93,71 @@ func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
 	}
 }
 
+func TestTakeoverRecommendTags(t *testing.T) {
+	now := time.Date(2026, 7, 7, 19, 0, 0, 0, time.Local)
+	today := truncateDate(now)
+	tomorrow := today.AddDate(0, 0, 1)
+
+	cases := []struct {
+		name        string
+		takeover    model.Takeover
+		joinedCount int64
+		hasJoined   bool
+		wantLabels  []string
+	}{
+		{
+			name: "joined soon almost full",
+			takeover: model.Takeover{
+				TakeoverState:    model.TakeoverStateNormal,
+				ScheduleType:     model.ScheduleSpecifiedDate,
+				StartDate:        &today,
+				PlayTime:         "20:00:00",
+				ParticipantLimit: 4,
+			},
+			joinedCount: 3,
+			hasJoined:   true,
+			wantLabels:  []string{"我已加入", "快开始", "差1人"},
+		},
+		{
+			name: "today but not soon",
+			takeover: model.Takeover{
+				TakeoverState:    model.TakeoverStateNormal,
+				ScheduleType:     model.ScheduleDaily,
+				PlayTime:         "22:30:00",
+				ParticipantLimit: 4,
+			},
+			joinedCount: 1,
+			wantLabels:  []string{"今日开局"},
+		},
+		{
+			name: "future full",
+			takeover: model.Takeover{
+				TakeoverState:    model.TakeoverStateNormal,
+				ScheduleType:     model.ScheduleSpecifiedDate,
+				StartDate:        &tomorrow,
+				PlayTime:         "20:00:00",
+				ParticipantLimit: 4,
+			},
+			joinedCount: 4,
+			wantLabels:  []string{"已满员"},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			tags := takeoverRecommendTags(tt.takeover, tt.joinedCount, tt.hasJoined, now)
+			if len(tags) != len(tt.wantLabels) {
+				t.Fatalf("len(tags) = %d, want %d: %#v", len(tags), len(tt.wantLabels), tags)
+			}
+			for index, want := range tt.wantLabels {
+				if tags[index].Label != want {
+					t.Fatalf("tags[%d].Label = %q, want %q", index, tags[index].Label, want)
+				}
+			}
+		})
+	}
+}
+
 func TestTakeoverDTOIncludesKookInviteURL(t *testing.T) {
 	url := "https://kook.top/abc"
 	dto := toTakeoverDTO(model.Takeover{KookInviteURL: &url, TakeoverState: model.TakeoverStateNormal}, 0, false)
