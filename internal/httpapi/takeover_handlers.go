@@ -129,6 +129,7 @@ func applyTakeoverRecommendOrder(query *gorm.DB, now time.Time) *gorm.DB {
 	soon := "(" + nextPlaySQL + ") BETWEEN ? AND ?"
 	full := "participant_limit > 0 AND COALESCE(j.joined_count, 0) >= participant_limit"
 	almostFull := "participant_limit > COALESCE(j.joined_count, 0) AND participant_limit - COALESCE(j.joined_count, 0) <= 2"
+	fullPartitionSQL := "CASE WHEN hj.user_id IS NOT NULL THEN 0 WHEN " + full + " THEN 2 ELSE 1 END ASC"
 
 	rankSQL := "CASE " +
 		"WHEN hj.user_id IS NOT NULL THEN 0 " +
@@ -145,6 +146,7 @@ func applyTakeoverRecommendOrder(query *gorm.DB, now time.Time) *gorm.DB {
 	)
 
 	return query.
+		Order(clause.Expr{SQL: fullPartitionSQL, WithoutParentheses: true}).
 		Order(clause.Expr{SQL: rankSQL, Vars: rankVars, WithoutParentheses: true}).
 		Order(clause.Expr{SQL: nextPlaySQL + " ASC", Vars: nextPlayVars, WithoutParentheses: true}).
 		Order("ttw_takeover.id DESC")
