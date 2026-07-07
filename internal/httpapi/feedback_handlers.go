@@ -128,6 +128,37 @@ func (h *Handler) SubmitUserFeedback(c *gin.Context) {
 	ok(c, "反馈已提交，感谢你的建议", nil)
 }
 
+func (h *Handler) ListMyUserFeedbacks(c *gin.Context) {
+	user, _ := currentUser(c)
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(firstNonEmpty(c.Query("page_size"), c.Query("pageSize")), 20)
+	if pageSize > 50 {
+		pageSize = 50
+	}
+	query := h.userFeedbackBaseQuery(adminFeedbackFilters{}).Where("f.user_id = ?", user.ID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var rows []userFeedbackRow
+	if err := query.Select(userFeedbackListSelect()).
+		Order("f.created_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Scan(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	items := make([]userFeedbackDTO, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, toUserFeedbackDTO(row, false))
+	}
+	ok(c, "success", gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+}
+
 func (h *Handler) AdminListUserFeedbacks(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(firstNonEmpty(c.Query("page_size"), c.Query("pageSize")), 20)

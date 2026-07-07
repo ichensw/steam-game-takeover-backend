@@ -36,6 +36,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)
 	api.POST("/uploads/image", h.UserAuth(), h.UploadImage)
 	api.POST("/user-feedback", h.UserAuth(), h.SubmitUserFeedback)
+	api.GET("/user-feedbacks", h.UserAuth(), h.ListMyUserFeedbacks)
 	api.POST("/user-feedback/images", h.UserAuth(), h.UploadUserFeedbackImage)
 	api.GET("/announcements/current", h.UserAuth(), h.GetCurrentAnnouncement)
 	api.POST("/announcements/:announcementId/read", h.UserAuth(), h.MarkAnnouncementRead)
