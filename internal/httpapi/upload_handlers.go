@@ -12,15 +12,41 @@ import (
 	"strings"
 	"time"
 
+	"steam-game-takeover-backend/internal/model"
+
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
 )
 
 const maxUploadImageSize = 5 << 20
 
+type imageUploadConfig struct {
+	auditUser        model.User
+	auditContentType string
+	objectKey        func(ext string) string
+	returnObjectKey  bool
+}
+
 func (h *Handler) UploadImage(c *gin.Context) {
 	user, _ := currentUser(c)
+	h.uploadImage(c, imageUploadConfig{
+		auditUser:        user,
+		auditContentType: "image",
+		objectKey:        func(ext string) string { return uploadObjectKey(user.ID, ext) },
+		returnObjectKey:  true,
+	})
+}
 
+func (h *Handler) AdminUploadImage(c *gin.Context) {
+	admin, _ := currentAdmin(c)
+	h.uploadImage(c, imageUploadConfig{
+		auditContentType: "announcement_image",
+		objectKey:        func(ext string) string { return adminUploadObjectKey(admin.ID, ext) },
+		returnObjectKey:  true,
+	})
+}
+
+func (h *Handler) uploadImage(c *gin.Context, cfg imageUploadConfig) {
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "file is required")
@@ -50,8 +76,8 @@ func (h *Handler) UploadImage(c *gin.Context) {
 		return
 	}
 	if err := h.checkImageSecurity(contentSecurityTarget{
-		User:        user,
-		ContentType: "image",
+		User:        cfg.auditUser,
+		ContentType: cfg.auditContentType,
 		Scene:       contentSceneProfile,
 	}, fileHeader.Filename, data); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
@@ -64,13 +90,17 @@ func (h *Handler) UploadImage(c *gin.Context) {
 		return
 	}
 
-	objectKey := uploadObjectKey(user.ID, ext)
+	objectKey := cfg.objectKey(ext)
 	if err := bucket.PutObject(objectKey, bytes.NewReader(data), oss.ContentType(contentType)); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "upload failed")
 		return
 	}
 
-	ok(c, "uploaded", gin.H{"url": h.ossObjectURL(objectKey), "objectKey": objectKey})
+	responseData := gin.H{"url": h.ossObjectURL(objectKey)}
+	if cfg.returnObjectKey {
+		responseData["objectKey"] = objectKey
+	}
+	ok(c, "uploaded", responseData)
 }
 
 func (h *Handler) ossBucket() (*oss.Bucket, error) {
@@ -117,6 +147,11 @@ func imageExt(fileHeader *multipart.FileHeader, contentType string) string {
 func uploadObjectKey(userID uint64, ext string) string {
 	now := time.Now()
 	return fmt.Sprintf("miniapp/uploads/%04d/%02d/%d-%d-%s%s", now.Year(), now.Month(), userID, now.UnixNano(), randomHex(6), ext)
+}
+
+func adminUploadObjectKey(adminID uint64, ext string) string {
+	now := time.Now()
+	return fmt.Sprintf("miniapp/admin/uploads/%04d/%02d/%d-%d-%s%s", now.Year(), now.Month(), adminID, now.UnixNano(), randomHex(6), ext)
 }
 
 func randomHex(size int) string {

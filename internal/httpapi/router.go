@@ -57,6 +57,7 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	adminAuthed.GET("/dashboard/summary", h.AdminDashboardSummary)
 	adminAuthed.GET("/settings", h.AdminGetSettings)
 	adminAuthed.PUT("/settings", h.AdminUpdateSettings)
+	adminAuthed.POST("/uploads/image", h.AdminUploadImage)
 	adminAuthed.GET("/takeovers", h.AdminListTakeovers)
 	adminAuthed.GET("/takeovers/:takeoverId", h.AdminGetTakeover)
 	adminAuthed.PUT("/takeovers/:takeoverId", h.AdminUpdateTakeover)
