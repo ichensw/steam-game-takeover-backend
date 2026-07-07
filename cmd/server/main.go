@@ -20,8 +20,9 @@ func main() {
 		log.Fatalf("ensure bot query account: %v", err)
 	}
 
-	router := httpapi.NewRouter(cfg, db)
-	httpapi.NewHandler(cfg, db).StartTakeoverReminderWorker(context.Background())
+	handler := httpapi.NewHandler(cfg, db)
+	router := httpapi.NewRouter(handler)
+	handler.StartTakeoverReminderWorker(context.Background())
 	log.Printf("server listening on %s", cfg.Addr)
 	if err := router.Run(cfg.Addr); err != nil {
 		log.Fatalf("run server: %v", err)

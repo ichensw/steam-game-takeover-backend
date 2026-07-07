@@ -79,11 +79,41 @@ func (h *Handler) checkTextSecurity(target contentSecurityTarget, content string
 	}
 
 	result, status := parseSecurityResult(resp.Body(), resp.StatusCode(), false)
+	if isWechatTokenInvalid(result) {
+		h.clearWechatAccessToken()
+		token, err = h.wechatAccessToken()
+		if err != nil {
+			h.writeContentAudit(target, model.ContentAuditStatusError, map[string]interface{}{"error": err.Error()})
+			return errContentSecurityReject
+		}
+		resp, err = resty.New().R().
+			SetQueryParam("access_token", token).
+			SetHeader("Content-Type", "application/json").
+			SetBody(req).
+			Post("https://api.weixin.qq.com/wxa/msg_sec_check")
+		if err != nil {
+			h.writeContentAudit(target, model.ContentAuditStatusError, map[string]interface{}{"error": err.Error()})
+			return errContentSecurityReject
+		}
+		result, status = parseSecurityResult(resp.Body(), resp.StatusCode(), false)
+	}
 	h.writeContentAudit(target, status, result)
 	if status != model.ContentAuditStatusPass {
 		return errContentSecurityReject
 	}
 	return nil
+}
+
+func (h *Handler) clearWechatAccessToken() {
+	h.tokenMu.Lock()
+	defer h.tokenMu.Unlock()
+	h.wxToken = ""
+	h.wxTokenUntil = time.Time{}
+}
+
+func isWechatTokenInvalid(result map[string]interface{}) bool {
+	errCode, _ := result["errcode"].(float64)
+	return int(errCode) == 40001 || int(errCode) == 42001
 }
 
 func (h *Handler) checkImageSecurity(target contentSecurityTarget, filename string, data []byte) error {

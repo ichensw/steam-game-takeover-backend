@@ -37,6 +37,18 @@ func TestParseSecurityResultStatus(t *testing.T) {
 	}
 }
 
+func TestIsWechatTokenInvalid(t *testing.T) {
+	if !isWechatTokenInvalid(map[string]interface{}{"errcode": float64(40001)}) {
+		t.Fatal("40001 should be treated as invalid token")
+	}
+	if !isWechatTokenInvalid(map[string]interface{}{"errcode": float64(42001)}) {
+		t.Fatal("42001 should be treated as invalid token")
+	}
+	if isWechatTokenInvalid(map[string]interface{}{"errcode": float64(0)}) {
+		t.Fatal("0 should not be treated as invalid token")
+	}
+}
+
 func TestParseSecurityResultRequiresSuggestUnlessAllowed(t *testing.T) {
 	body := []byte(`{"errcode":0,"errmsg":"ok"}`)
 	if _, got := parseSecurityResult(body, 200, false); got != model.ContentAuditStatusError {

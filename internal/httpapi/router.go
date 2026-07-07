@@ -5,18 +5,13 @@ import (
 	"net/url"
 	"strings"
 
-	"steam-game-takeover-backend/internal/config"
-
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
+func NewRouter(h *Handler) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.Use(corsMiddleware())
-
-	h := NewHandler(cfg, db)
 
 	api := r.Group("/api")
 	api.GET("/health", h.Health)

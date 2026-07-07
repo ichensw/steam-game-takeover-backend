@@ -283,7 +283,7 @@ func buildTakeoverReminderMessage(subscription model.TakeoverReminderSubscriptio
 		Page:       fmt.Sprintf("pages/detail/detail?id=%d", takeover.ID),
 		Data: map[string]interface{}{
 			"thing4":  map[string]string{"value": truncateRunes(takeover.Title, 20)},
-			"thing2":  map[string]string{"value": "接龙即将开始，请准时集合"},
+			"thing2":  map[string]string{"value": "兔兔窝小队开车啦，快来集合"},
 			"date3":   map[string]string{"value": subscription.PlayAt.Format("2006-01-02 15:04")},
 			"thing12": map[string]string{"value": "进入 Kook 语音频道"},
 		},
