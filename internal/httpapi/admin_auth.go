@@ -129,6 +129,77 @@ func (h *Handler) AdminLogout(c *gin.Context) {
 	ok(c, "logged out", nil)
 }
 
+func (h *Handler) AdminGetMe(c *gin.Context) {
+	admin, _ := currentAdmin(c)
+	ok(c, "success", toAdminUserDTO(admin))
+}
+
+func (h *Handler) AdminUpdateMe(c *gin.Context) {
+	admin, _ := currentAdmin(c)
+	var req struct {
+		Nickname  string `json:"nickname"`
+		AvatarURL string `json:"avatarUrl"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	nickname := strings.TrimSpace(req.Nickname)
+	avatarURL := strings.TrimSpace(req.AvatarURL)
+	if len([]rune(nickname)) > 64 || len([]rune(avatarURL)) > 255 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin profile")
+		return
+	}
+	updates := map[string]interface{}{
+		"nickname":   nullableString(nickname),
+		"avatar_url": nullableString(avatarURL),
+	}
+	if err := h.db.Model(&model.AdminUser{}).Where("id = ?", admin.ID).Updates(updates).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	admin.Nickname = nullableString(nickname)
+	admin.AvatarURL = nullableString(avatarURL)
+	ok(c, "saved", toAdminUserDTO(admin))
+}
+
+func (h *Handler) AdminUpdateMePassword(c *gin.Context) {
+	admin, _ := currentAdmin(c)
+	var req struct {
+		OldPassword string `json:"oldPassword"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	oldPassword := strings.TrimSpace(req.OldPassword)
+	newPassword := strings.TrimSpace(req.NewPassword)
+	if oldPassword == "" || len([]rune(newPassword)) < 6 || len([]rune(newPassword)) > 64 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin password")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(oldPassword)); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "old password invalid")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.AdminUser{}).Where("id = ?", admin.ID).Update("password_hash", string(hash)).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.AdminToken{}).Where("admin_user_id = ?", admin.ID).Update("is_revoked", true).Error
+	}); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	ok(c, "password updated", nil)
+}
+
 func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 	var req struct {
 		Username string `json:"username"`

@@ -35,6 +35,7 @@ type adminUserDTO struct {
 	ID            uint64 `json:"id"`
 	Username      string `json:"username"`
 	Nickname      string `json:"nickname"`
+	AvatarURL     string `json:"avatarUrl"`
 	Enabled       bool   `json:"enabled"`
 	LastLoginTime string `json:"lastLoginTime"`
 	CreatedAt     string `json:"createdAt"`
@@ -134,6 +135,7 @@ func toAdminUserDTO(admin model.AdminUser) adminUserDTO {
 		ID:            admin.ID,
 		Username:      admin.Username,
 		Nickname:      stringValue(admin.Nickname),
+		AvatarURL:     stringValue(admin.AvatarURL),
 		Enabled:       admin.Enabled,
 		LastLoginTime: timeString(admin.LastLoginTime),
 		CreatedAt:     admin.GmtCreate.Format("2006-01-02 15:04:05"),

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS `ttw_admin_user` (
   `username` varchar(64) NOT NULL COMMENT '管理员用户名',
   `password_hash` varchar(255) NOT NULL COMMENT '密码哈希',
   `nickname` varchar(64) DEFAULT NULL COMMENT '管理员昵称',
+  `avatar_url` varchar(255) DEFAULT NULL COMMENT '管理员头像地址',
   `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '是否启用：0否，1是',
   `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

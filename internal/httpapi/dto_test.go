@@ -134,6 +134,14 @@ func TestMemberDTOIncludesRemark(t *testing.T) {
 	}
 }
 
+func TestAdminUserDTOIncludesAvatarURL(t *testing.T) {
+	avatarURL := "https://example.com/admin.jpg"
+	dto := toAdminUserDTO(model.AdminUser{AvatarURL: &avatarURL})
+	if dto.AvatarURL != avatarURL {
+		t.Fatalf("AvatarURL = %q, want %q", dto.AvatarURL, avatarURL)
+	}
+}
+
 func TestSchedulesConflict(t *testing.T) {
 	day1 := truncateDate(time.Now().AddDate(0, 0, 1))
 	day2 := day1.AddDate(0, 0, 1)

@@ -65,6 +65,7 @@ type AdminUser struct {
 	Username      string     `gorm:"column:username;size:64;uniqueIndex:uk_username"`
 	PasswordHash  string     `gorm:"column:password_hash;size:255"`
 	Nickname      *string    `gorm:"column:nickname;size:64"`
+	AvatarURL     *string    `gorm:"column:avatar_url;size:255"`
 	Enabled       bool       `gorm:"column:enabled"`
 	LastLoginTime *time.Time `gorm:"column:last_login_time"`
 	GmtCreate     time.Time  `gorm:"column:gmt_create;autoCreateTime"`

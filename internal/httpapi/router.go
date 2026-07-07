@@ -52,6 +52,9 @@ func NewRouter(cfg config.Config, db *gorm.DB) *gin.Engine {
 	admin.POST("/auth/logout", h.AdminLogout)
 
 	adminAuthed := admin.Group("", h.AdminAuth())
+	adminAuthed.GET("/me", h.AdminGetMe)
+	adminAuthed.PUT("/me", h.AdminUpdateMe)
+	adminAuthed.PUT("/me/password", h.AdminUpdateMePassword)
 	adminAuthed.POST("/admin-users", h.AdminCreateAdminUser)
 	adminAuthed.GET("/admin-users", h.AdminListAdminUsers)
 	adminAuthed.GET("/dashboard/summary", h.AdminDashboardSummary)
