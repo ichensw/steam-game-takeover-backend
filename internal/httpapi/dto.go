@@ -229,7 +229,7 @@ func scheduleText(t model.Takeover) string {
 		if t.StartDate == nil || t.EndDate == nil {
 			return playTime
 		}
-		return fmt.Sprintf("%s 至 %s %s", friendlyDate(*t.StartDate), friendlyDate(*t.EndDate), playTime)
+		return fmt.Sprintf("%s-%s %s", friendlyDate(*t.StartDate), friendlyDate(*t.EndDate), playTime)
 	default:
 		return playTime
 	}
@@ -283,16 +283,11 @@ func combineDateAndPlayTime(date time.Time, playTime string) (time.Time, error) 
 }
 
 func friendlyDate(value time.Time) string {
-	today := truncateDate(time.Now())
 	day := truncateDate(value)
-	switch {
-	case sameDate(day, today):
-		return "今天"
-	case sameDate(day, today.AddDate(0, 0, 1)):
-		return "明天"
-	default:
-		return day.Format("01/02")
+	if day.Year() != time.Now().Year() {
+		return day.Format("2006/01/02")
 	}
+	return day.Format("01/02")
 }
 
 func stringValue(value *string) string {

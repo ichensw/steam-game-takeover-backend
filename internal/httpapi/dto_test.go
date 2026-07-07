@@ -73,6 +73,28 @@ func TestTakeoverStatusLabelUsesStateAndJoinedCount(t *testing.T) {
 	}
 }
 
+func TestScheduleTextUsesFixedShortDate(t *testing.T) {
+	today := truncateDate(time.Now())
+	tomorrow := today.AddDate(0, 0, 1)
+
+	if got, want := scheduleText(model.Takeover{
+		ScheduleType: model.ScheduleSpecifiedDate,
+		StartDate:    &today,
+		PlayTime:     "20:00:00",
+	}), today.Format("01/02")+" 20:00"; got != want {
+		t.Fatalf("scheduleText(today) = %q, want %q", got, want)
+	}
+
+	if got, want := scheduleText(model.Takeover{
+		ScheduleType: model.ScheduleDateRange,
+		StartDate:    &today,
+		EndDate:      &tomorrow,
+		PlayTime:     "20:00:00",
+	}), today.Format("01/02")+"-"+tomorrow.Format("01/02")+" 20:00"; got != want {
+		t.Fatalf("scheduleText(range) = %q, want %q", got, want)
+	}
+}
+
 func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
 	list := []takeoverDTO{
 		{ID: 1, StatusLabel: "招募中"},
