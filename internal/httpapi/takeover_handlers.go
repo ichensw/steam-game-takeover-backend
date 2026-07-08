@@ -103,53 +103,12 @@ func (h *Handler) takeoverListQuery(userID uint64) *gorm.DB {
 		Joins("LEFT JOIN ttw_takeover_member AS hj ON hj.takeover_id = ttw_takeover.id AND hj.user_id = ? AND hj.member_state = ?", userID, model.MemberStateJoined)
 }
 
-func applyTakeoverRecommendOrder(query *gorm.DB, now time.Time) *gorm.DB {
-	today := truncateDate(now)
-	tomorrow := today.AddDate(0, 0, 1)
-	todayStr := today.Format("2006-01-02")
-	tomorrowStr := tomorrow.Format("2006-01-02")
-	clock := now.Format("15:04:05")
-	nowStr := now.Format("2006-01-02 15:04:05")
-	soonStr := now.Add(soonTakeoverWindow).Format("2006-01-02 15:04:05")
-	todayHit := "(schedule_type = ? OR (schedule_type = ? AND start_date = ?) OR (schedule_type = ? AND start_date <= ? AND end_date >= ?))"
-	upcomingToday := todayHit + " AND play_time >= ?"
-	nextPlaySQL := "CASE " +
-		"WHEN schedule_type = ? THEN CONCAT(start_date, ' ', play_time) " +
-		"WHEN schedule_type = ? AND start_date > ? THEN CONCAT(start_date, ' ', play_time) " +
-		"WHEN schedule_type = ? AND play_time < ? THEN CONCAT(?, ' ', play_time) " +
-		"WHEN schedule_type = ? AND play_time < ? THEN CONCAT(?, ' ', play_time) " +
-		"ELSE CONCAT(?, ' ', play_time) END"
-	nextPlayVars := []interface{}{
-		model.ScheduleSpecifiedDate,
-		model.ScheduleDateRange, todayStr,
-		model.ScheduleDateRange, clock, tomorrowStr,
-		model.ScheduleDaily, clock, tomorrowStr,
-		todayStr,
-	}
-	soon := "(" + nextPlaySQL + ") BETWEEN ? AND ?"
+func applyTakeoverRecommendOrder(query *gorm.DB, _ time.Time) *gorm.DB {
 	full := "participant_limit > 0 AND COALESCE(j.joined_count, 0) >= participant_limit"
-	almostFull := "participant_limit > COALESCE(j.joined_count, 0) AND participant_limit - COALESCE(j.joined_count, 0) <= 2"
-	fullPartitionSQL := "CASE WHEN hj.user_id IS NOT NULL THEN 0 WHEN " + full + " THEN 2 ELSE 1 END ASC"
-
-	rankSQL := "CASE " +
-		"WHEN hj.user_id IS NOT NULL THEN 0 " +
-		"WHEN " + full + " THEN 5 " +
-		"WHEN " + soon + " THEN 1 " +
-		"WHEN " + upcomingToday + " THEN 2 " +
-		"WHEN " + almostFull + " THEN 3 " +
-		"ELSE 4 END ASC"
-	rankVars := []interface{}{}
-	rankVars = append(rankVars, nextPlayVars...)
-	rankVars = append(rankVars,
-		nowStr, soonStr,
-		model.ScheduleDaily, model.ScheduleSpecifiedDate, todayStr, model.ScheduleDateRange, todayStr, todayStr, clock,
-	)
-	orderSQL := fullPartitionSQL + ", " + rankSQL + ", " + nextPlaySQL + " ASC, ttw_takeover.id DESC"
-	orderVars := append([]interface{}{}, rankVars...)
-	orderVars = append(orderVars, nextPlayVars...)
+	orderSQL := "CASE WHEN " + full + " THEN 1 ELSE 0 END ASC, ttw_takeover.id DESC"
 
 	return query.
-		Order(clause.OrderBy{Expression: clause.Expr{SQL: orderSQL, Vars: orderVars, WithoutParentheses: true}})
+		Order(clause.OrderBy{Expression: clause.Expr{SQL: orderSQL, WithoutParentheses: true}})
 }
 
 func takeoverRecommendTags(t model.Takeover, joinedCount int64, hasJoined bool, now time.Time) []recommendTagDTO {
