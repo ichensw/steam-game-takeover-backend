@@ -41,7 +41,7 @@ func TestTakeoverSoonAcrossMidnight(t *testing.T) {
 	}
 }
 
-func TestApplyTakeoverRecommendOrderOnlyPartitionsFullThenLatest(t *testing.T) {
+func TestApplyTakeoverRecommendOrderUsesNextPlayTimeAfterFullPartition(t *testing.T) {
 	conn, err := sql.Open("mysql", "gorm:gorm@tcp(localhost:9910)/gorm?charset=utf8&parseTime=True&loc=Local")
 	if err != nil {
 		t.Fatalf("open sql handle: %v", err)
@@ -58,10 +58,12 @@ func TestApplyTakeoverRecommendOrderOnlyPartitionsFullThenLatest(t *testing.T) {
 	stmt := applyTakeoverRecommendOrder(db.Table("ttw_takeover"), time.Date(2026, 7, 7, 20, 30, 0, 0, time.Local)).
 		Find(&rows).Statement
 	sql := stmt.SQL.String()
-	if !strings.Contains(sql, "ORDER BY CASE WHEN participant_limit > 0 AND COALESCE(j.joined_count, 0) >= participant_limit THEN 1 ELSE 0 END ASC, ttw_takeover.id DESC") {
-		t.Fatalf("missing custom order expression: %s", sql)
+	if !strings.Contains(sql, "ORDER BY CASE WHEN participant_limit > 0 AND COALESCE(j.joined_count, 0) >= participant_limit THEN 1 ELSE 0 END ASC") {
+		t.Fatalf("missing full partition order expression: %s", sql)
 	}
-	if strings.Contains(sql, "BETWEEN") || strings.Contains(sql, "play_time") || strings.Contains(sql, "hj.user_id IS NOT NULL THEN 0") {
-		t.Fatalf("unexpected recommendation order expression: %s", sql)
+	if !strings.Contains(sql, "WHEN schedule_type = ? AND play_time < ? THEN ?") ||
+		!strings.Contains(sql, "WHEN schedule_type = ? AND start_date > ? THEN start_date") ||
+		!strings.Contains(sql, "play_time ASC, ttw_takeover.id DESC") {
+		t.Fatalf("missing next play time order expression: %s", sql)
 	}
 }

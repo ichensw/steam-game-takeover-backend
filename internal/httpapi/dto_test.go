@@ -95,26 +95,6 @@ func TestScheduleTextUsesFixedShortDate(t *testing.T) {
 	}
 }
 
-func TestSortTakeoverListOrdersRecruitingFullThenOthers(t *testing.T) {
-	list := []takeoverDTO{
-		{ID: 1, StatusLabel: "招募中"},
-		{ID: 2, StatusLabel: "已结束"},
-		{ID: 3, StatusLabel: "已满员"},
-		{ID: 4, StatusLabel: "招募中"},
-		{ID: 5, StatusLabel: "招募中"},
-		{ID: 6, StatusLabel: "已满员"},
-	}
-
-	sortTakeoverList(list)
-
-	wantIDs := []uint64{5, 4, 1, 6, 3, 2}
-	for index, wantID := range wantIDs {
-		if list[index].ID != wantID {
-			t.Fatalf("list[%d].ID = %d, want %d", index, list[index].ID, wantID)
-		}
-	}
-}
-
 func TestTakeoverRecommendTags(t *testing.T) {
 	now := time.Date(2026, 7, 7, 19, 0, 0, 0, time.Local)
 	today := truncateDate(now)

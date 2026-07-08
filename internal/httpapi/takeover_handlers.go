@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -103,12 +102,32 @@ func (h *Handler) takeoverListQuery(userID uint64) *gorm.DB {
 		Joins("LEFT JOIN ttw_takeover_member AS hj ON hj.takeover_id = ttw_takeover.id AND hj.user_id = ? AND hj.member_state = ?", userID, model.MemberStateJoined)
 }
 
-func applyTakeoverRecommendOrder(query *gorm.DB, _ time.Time) *gorm.DB {
+func applyTakeoverRecommendOrder(query *gorm.DB, now time.Time) *gorm.DB {
 	full := "participant_limit > 0 AND COALESCE(j.joined_count, 0) >= participant_limit"
-	orderSQL := "CASE WHEN " + full + " THEN 1 ELSE 0 END ASC, ttw_takeover.id DESC"
+	today := now.Format("2006-01-02")
+	tomorrow := now.AddDate(0, 0, 1).Format("2006-01-02")
+	clock := now.Format("15:04:05")
+	nextPlayDate := `CASE
+WHEN schedule_type = ? AND play_time < ? THEN ?
+WHEN schedule_type = ? THEN ?
+WHEN schedule_type = ? AND start_date > ? THEN start_date
+WHEN schedule_type = ? AND play_time < ? THEN ?
+WHEN schedule_type = ? THEN ?
+ELSE start_date END`
+	orderSQL := "CASE WHEN " + full + " THEN 1 ELSE 0 END ASC, " + nextPlayDate + " ASC, play_time ASC, ttw_takeover.id DESC"
 
 	return query.
-		Order(clause.OrderBy{Expression: clause.Expr{SQL: orderSQL, WithoutParentheses: true}})
+		Order(clause.OrderBy{Expression: clause.Expr{
+			SQL: orderSQL,
+			Vars: []interface{}{
+				model.ScheduleDaily, clock, tomorrow,
+				model.ScheduleDaily, today,
+				model.ScheduleDateRange, today,
+				model.ScheduleDateRange, clock, tomorrow,
+				model.ScheduleDateRange, today,
+			},
+			WithoutParentheses: true,
+		}})
 }
 
 func takeoverRecommendTags(t model.Takeover, joinedCount int64, hasJoined bool, now time.Time) []recommendTagDTO {
@@ -169,30 +188,6 @@ func todayTakeoverPlayAt(t model.Takeover, now time.Time) (time.Time, bool) {
 	}
 	playAt, err := combineDateAndPlayTime(today, t.PlayTime)
 	return playAt, err == nil
-}
-
-func sortTakeoverList(list []takeoverDTO) {
-	sort.SliceStable(list, func(i, j int) bool {
-		leftRank := takeoverListStatusRank(list[i].StatusLabel)
-		rightRank := takeoverListStatusRank(list[j].StatusLabel)
-		if leftRank != rightRank {
-			return leftRank < rightRank
-		}
-		return list[i].ID > list[j].ID
-	})
-}
-
-func takeoverListStatusRank(statusLabel string) int {
-	switch statusLabel {
-	case "招募中":
-		return 0
-	case "已满员":
-		return 1
-	case "已结束":
-		return 2
-	default:
-		return 3
-	}
 }
 
 func (h *Handler) GetTakeover(c *gin.Context) {
