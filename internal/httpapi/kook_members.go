@@ -854,7 +854,10 @@ func decryptKookPayload(encrypted string, encryptKey string) ([]byte, error) {
 	}
 	plain := make([]byte, len(cipherText))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plain, cipherText)
-	return pkcs7Unpad(plain, aes.BlockSize)
+	if unpadded, err := pkcs7Unpad(plain, aes.BlockSize); err == nil {
+		return unpadded, nil
+	}
+	return bytes.TrimRight(plain, "\x00"), nil
 }
 
 func pkcs7Unpad(value []byte, blockSize int) ([]byte, error) {
