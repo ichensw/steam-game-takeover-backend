@@ -28,6 +28,9 @@ const (
 	FeedbackStatusAccepted = 2
 	FeedbackStatusIgnored  = 3
 
+	KookMemberStatusJoined = 1
+	KookMemberStatusExited = 2
+
 	AnnouncementStatusEnabled  = 1
 	AnnouncementStatusDisabled = 2
 
@@ -78,6 +81,28 @@ type UserCreditLog struct {
 }
 
 func (UserCreditLog) TableName() string { return "ttw_user_credit_log" }
+
+type KookMember struct {
+	ID              uint64     `gorm:"primaryKey;column:id"`
+	GuildID         string     `gorm:"column:guild_id;size:64;uniqueIndex:uk_guild_user"`
+	KookUserID      string     `gorm:"column:kook_user_id;size:64;uniqueIndex:uk_guild_user;index:idx_kook_user_id"`
+	Username        *string    `gorm:"column:username;size:64"`
+	Nickname        *string    `gorm:"column:nickname;size:64"`
+	IdentifyNum     *string    `gorm:"column:identify_num;size:16"`
+	AvatarURL       *string    `gorm:"column:avatar_url;size:255"`
+	IsBot           bool       `gorm:"column:is_bot"`
+	MemberStatus    uint8      `gorm:"column:member_status;index:idx_member_status"`
+	JoinedAt        *time.Time `gorm:"column:joined_at"`
+	ExitedAt        *time.Time `gorm:"column:exited_at"`
+	IsBlacklisted   bool       `gorm:"column:is_blacklisted;index:idx_is_blacklisted"`
+	BlacklistReason *string    `gorm:"column:blacklist_reason;size:255"`
+	BlacklistedAt   *time.Time `gorm:"column:blacklisted_at"`
+	Remark          *string    `gorm:"column:remark;size:255"`
+	GmtCreate       time.Time  `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
+	GmtModified     time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (KookMember) TableName() string { return "ttw_kook_member" }
 
 type AdminUser struct {
 	ID            uint64     `gorm:"primaryKey;column:id"`
@@ -263,6 +288,7 @@ const (
 	AppConfigSteamWebAPIKey         = "steam_web_api_key"
 	AppConfigKookBotToken           = "kook_bot_token"
 	AppConfigKookGuildID            = "kook_guild_id"
+	AppConfigKookVerifyToken        = "kook_verify_token"
 	AppConfigAPIBaseURL             = "api_base_url"
 )
 

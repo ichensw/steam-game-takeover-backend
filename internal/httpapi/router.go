@@ -44,6 +44,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.GET("/kook/channels", h.UserAuth(), h.ListKookChannels)
 	api.GET("/kook/channels/all", h.UserAuth(), h.ListAllKookChannels)
 	api.GET("/kook/channel-tree", h.UserAuth(), h.ListKookChannelTree)
+	api.POST("/kook/webhook", h.KookWebhook)
 
 	admin := api.Group("/admin")
 	admin.POST("/auth/login", h.AdminLogin)
@@ -85,6 +86,14 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.POST("/announcements/:announcementId/enable", h.AdminSetAnnouncementEnabled)
 	adminAuthed.POST("/announcements/:announcementId/disable", h.AdminSetAnnouncementDisabled)
 	adminAuthed.DELETE("/announcements/:announcementId", h.AdminDeleteAnnouncement)
+	adminAuthed.GET("/kook-members", h.AdminListKookMembers)
+	adminAuthed.POST("/kook-members", h.AdminCreateKookMember)
+	adminAuthed.POST("/kook-members/sync", h.AdminSyncKookMembers)
+	adminAuthed.GET("/kook-members/:kookMemberId", h.AdminGetKookMember)
+	adminAuthed.PUT("/kook-members/:kookMemberId", h.AdminUpdateKookMember)
+	adminAuthed.DELETE("/kook-members/:kookMemberId", h.AdminDeleteKookMember)
+	adminAuthed.POST("/kook-members/:kookMemberId/blacklist", h.AdminBlacklistKookMember)
+	adminAuthed.POST("/kook-members/:kookMemberId/unblacklist", h.AdminUnblacklistKookMember)
 	adminAuthed.POST("/publish-whitelist/batch", h.AdminBatchPublishWhitelist)
 
 	return r

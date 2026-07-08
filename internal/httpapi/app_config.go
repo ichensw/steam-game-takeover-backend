@@ -35,6 +35,10 @@ func (h *Handler) kookGuildID() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookGuildID))
 }
 
+func (h *Handler) kookVerifyToken() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookVerifyToken))
+}
+
 func (h *Handler) apiBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(h.appConfigValue(model.AppConfigAPIBaseURL)), "/")
 }
@@ -79,6 +83,7 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 		"steamWebApiKey":         h.steamWebAPIKey(),
 		"kookBotToken":           h.kookBotToken(),
 		"kookGuildId":            h.kookGuildID(),
+		"kookVerifyToken":        h.kookVerifyToken(),
 	})
 }
 
@@ -89,12 +94,13 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		SteamWebAPIKey         *string `json:"steamWebApiKey"`
 		KookBotToken           *string `json:"kookBotToken"`
 		KookGuildID            *string `json:"kookGuildId"`
+		KookVerifyToken        *string `json:"kookVerifyToken"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -128,12 +134,19 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.KookVerifyToken != nil {
+		if err := h.saveAppConfig(model.AppConfigKookVerifyToken, strings.TrimSpace(*req.KookVerifyToken)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	ok(c, "saved", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
 		"steamWebApiKey":         h.steamWebAPIKey(),
 		"kookBotToken":           h.kookBotToken(),
 		"kookGuildId":            h.kookGuildID(),
+		"kookVerifyToken":        h.kookVerifyToken(),
 	})
 }
 
