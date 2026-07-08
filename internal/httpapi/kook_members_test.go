@@ -75,6 +75,30 @@ func TestKookSystemEventUsesExtraTypeAndBodyUser(t *testing.T) {
 	}
 }
 
+func TestMergeKookMemberFillsProfile(t *testing.T) {
+	base := model.KookMember{
+		GuildID:    "guild-1",
+		KookUserID: "user-1",
+	}
+	fetched := model.KookMember{
+		GuildID:     "guild-1",
+		KookUserID:  "user-1",
+		Username:    nullableString("user"),
+		Nickname:    nullableString("nick"),
+		IdentifyNum: nullableString("1234"),
+		AvatarURL:   nullableString("https://example.com/avatar.png"),
+		IsBot:       true,
+	}
+
+	got := mergeKookMember(base, fetched)
+	if got.GuildID != "guild-1" || got.KookUserID != "user-1" {
+		t.Fatalf("mergeKookMember() changed identity: %+v", got)
+	}
+	if stringValue(got.Username) != "user" || stringValue(got.Nickname) != "nick" || stringValue(got.AvatarURL) == "" || !got.IsBot {
+		t.Fatalf("mergeKookMember() did not fill profile: %+v", got)
+	}
+}
+
 func TestDecryptKookPayload(t *testing.T) {
 	got, err := decryptKookPayload(encryptKookPayloadForTest(t, "Q3EmliNjdK8LI", `{"challenge":"hello"}`), "Q3EmliNjdK8LI")
 	if err != nil {

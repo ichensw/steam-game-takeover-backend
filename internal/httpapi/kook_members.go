@@ -27,6 +27,8 @@ var (
 	errKookMemberInvalid   = errors.New("kook member invalid")
 )
 
+const kookGuildUserListURL = "https://www.kookapp.cn/api/v3/guild/user-list"
+
 type kookMemberInput struct {
 	GuildID      string  `json:"guildId"`
 	KookUserID   string  `json:"kookUserId"`
@@ -369,7 +371,11 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 			return
 		}
 		member.MemberStatus = model.KookMemberStatusJoined
+		member, hydrated := h.hydrateKookWebhookMember(member)
 		updates := kookWebhookMemberUpdates(payload, member)
+		if hydrated {
+			updates = kookMemberPartialUpdates(member)
+		}
 		updates["member_status"] = model.KookMemberStatusJoined
 		updates["exited_at"] = nil
 		if member.JoinedAt != nil {
@@ -399,7 +405,12 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 			return
 		}
 		member.MemberStatus = model.KookMemberStatusJoined
-		if err := upsertKookMember(h.db, member, kookWebhookMemberUpdates(payload, member)); err != nil {
+		member, hydrated := h.hydrateKookWebhookMember(member)
+		updates := kookWebhookMemberUpdates(payload, member)
+		if hydrated {
+			updates = kookMemberPartialUpdates(member)
+		}
+		if err := upsertKookMember(h.db, member, updates); err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 			return
 		}
@@ -582,7 +593,7 @@ func fetchKookMemberPage(client *resty.Client, token, guildID string, page int) 
 			"page_size": "50",
 		}).
 		SetResult(&result).
-		Get("https://www.kookapp.cn/api/v3/guild/user-list")
+		Get(kookGuildUserListURL)
 	if err != nil {
 		return result, err
 	}
@@ -590,6 +601,34 @@ func fetchKookMemberPage(client *resty.Client, token, guildID string, page int) 
 		return result, fmt.Errorf("kook member list failed: http=%d code=%d", resp.StatusCode(), result.Code)
 	}
 	return result, nil
+}
+
+func fetchKookMemberByID(client *resty.Client, token, guildID, userID string) (model.KookMember, bool, error) {
+	var result kookMemberListResponse
+	resp, err := client.R().
+		SetHeader("Authorization", "Bot "+token).
+		SetHeader("Content-Type", "application/json").
+		SetQueryParams(map[string]string{
+			"guild_id":       guildID,
+			"filter_user_id": userID,
+			"page":           "1",
+			"page_size":      "10",
+		}).
+		SetResult(&result).
+		Get(kookGuildUserListURL)
+	if err != nil {
+		return model.KookMember{}, false, err
+	}
+	if resp.StatusCode() != http.StatusOK || result.Code != 0 {
+		return model.KookMember{}, false, fmt.Errorf("kook member get failed: http=%d code=%d", resp.StatusCode(), result.Code)
+	}
+	for _, item := range result.Data.Items {
+		member := kookMemberFromAPI(guildID, item)
+		if member.KookUserID == userID {
+			return member, true, nil
+		}
+	}
+	return model.KookMember{}, false, nil
 }
 
 func kookMemberFromAPI(guildID string, item kookMemberAPIItem) model.KookMember {
@@ -604,6 +643,50 @@ func kookMemberFromAPI(guildID string, item kookMemberAPIItem) model.KookMember 
 		MemberStatus: model.KookMemberStatusJoined,
 		JoinedAt:     parseKookTimeValue(item.JoinedAt),
 	}
+}
+
+func (h *Handler) hydrateKookWebhookMember(member model.KookMember) (model.KookMember, bool) {
+	if !kookMemberNeedsHydration(member) {
+		return member, false
+	}
+	token := h.kookBotToken()
+	if token == "" || member.GuildID == "" || member.KookUserID == "" {
+		return member, false
+	}
+	fetched, okMember, err := fetchKookMemberByID(resty.New(), token, member.GuildID, member.KookUserID)
+	if err != nil {
+		log.Printf("kook member hydrate failed: guild_id=%s user_id=%s err=%v", member.GuildID, member.KookUserID, err)
+		return member, false
+	}
+	if !okMember {
+		log.Printf("kook member hydrate missed: guild_id=%s user_id=%s", member.GuildID, member.KookUserID)
+		return member, false
+	}
+	return mergeKookMember(member, fetched), true
+}
+
+func kookMemberNeedsHydration(member model.KookMember) bool {
+	return member.Username == nil || member.Nickname == nil || member.IdentifyNum == nil || member.AvatarURL == nil
+}
+
+func mergeKookMember(base, fetched model.KookMember) model.KookMember {
+	if fetched.Username != nil {
+		base.Username = fetched.Username
+	}
+	if fetched.Nickname != nil {
+		base.Nickname = fetched.Nickname
+	}
+	if fetched.IdentifyNum != nil {
+		base.IdentifyNum = fetched.IdentifyNum
+	}
+	if fetched.AvatarURL != nil {
+		base.AvatarURL = fetched.AvatarURL
+	}
+	base.IsBot = fetched.IsBot
+	if base.JoinedAt == nil {
+		base.JoinedAt = fetched.JoinedAt
+	}
+	return base
 }
 
 func upsertKookMember(db *gorm.DB, member model.KookMember, updates map[string]interface{}) error {
