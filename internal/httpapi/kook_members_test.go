@@ -47,3 +47,15 @@ func TestKookWebhookMemberUpdatesKeepsBotWhenAbsent(t *testing.T) {
 		t.Fatal("is_bot update exists when webhook payload did not include bot field")
 	}
 }
+
+func TestKookAdminErrorMessageShowsPermissionHint(t *testing.T) {
+	got := kookAdminErrorMessage("拉黑", kookAPIError{
+		HTTPStatus: 200,
+		Code:       40000,
+		Message:    "target_id不存在或者你没有权限操作",
+	})
+	want := "KOOK 拉黑失败：用户不存在，或机器人没有权限操作该用户。请检查机器人是否有封禁用户权限，并确认机器人角色高于目标用户。"
+	if got != want {
+		t.Fatalf("kookAdminErrorMessage() = %q, want %q", got, want)
+	}
+}

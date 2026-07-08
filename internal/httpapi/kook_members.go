@@ -89,6 +89,19 @@ type kookAPIResponse struct {
 	Message string `json:"message"`
 }
 
+type kookAPIError struct {
+	HTTPStatus int
+	Code       int
+	Message    string
+}
+
+func (e kookAPIError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("kook api failed: http=%d code=%d", e.HTTPStatus, e.Code)
+}
+
 func (h *Handler) AdminListKookMembers(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(firstNonEmpty(c.Query("page_size"), c.Query("pageSize")), 20)
@@ -282,7 +295,7 @@ func (h *Handler) AdminBlacklistKookMember(c *gin.Context) {
 		return
 	}
 	if err := h.createKookBlacklist(member.GuildID, member.KookUserID, reason, req.DelMsgDays); err != nil {
-		fail(c, http.StatusBadGateway, CodeSystemError, "kook blacklist failed")
+		fail(c, http.StatusBadGateway, CodeKookOperationFailed, kookAdminErrorMessage("拉黑", err))
 		return
 	}
 	now := time.Now()
@@ -304,7 +317,7 @@ func (h *Handler) AdminUnblacklistKookMember(c *gin.Context) {
 		return
 	}
 	if err := h.deleteKookBlacklist(member.GuildID, member.KookUserID); err != nil {
-		fail(c, http.StatusBadGateway, CodeSystemError, "kook unblacklist failed")
+		fail(c, http.StatusBadGateway, CodeKookOperationFailed, kookAdminErrorMessage("取消拉黑", err))
 		return
 	}
 	if err := h.db.Model(&model.KookMember{}).Where("id = ?", member.ID).Updates(map[string]interface{}{
@@ -633,9 +646,30 @@ func (h *Handler) postKookBlacklist(url string, body gin.H) error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK || result.Code != 0 {
-		return fmt.Errorf("kook blacklist failed: http=%d code=%d", resp.StatusCode(), result.Code)
+		return kookAPIError{
+			HTTPStatus: resp.StatusCode(),
+			Code:       result.Code,
+			Message:    strings.TrimSpace(result.Message),
+		}
 	}
 	return nil
+}
+
+func kookAdminErrorMessage(action string, err error) string {
+	var apiErr kookAPIError
+	if errors.As(err, &apiErr) {
+		message := strings.TrimSpace(apiErr.Message)
+		if strings.Contains(message, "target_id") || strings.Contains(message, "没有权限") {
+			return fmt.Sprintf("KOOK %s失败：用户不存在，或机器人没有权限操作该用户。请检查机器人是否有封禁用户权限，并确认机器人角色高于目标用户。", action)
+		}
+		if message != "" {
+			return fmt.Sprintf("KOOK %s失败：%s", action, message)
+		}
+	}
+	if strings.Contains(err.Error(), "not configured") {
+		return "KOOK 机器人未配置，无法执行操作"
+	}
+	return fmt.Sprintf("KOOK %s失败，请稍后再试", action)
 }
 
 func kookMemberFromWebhook(payload map[string]interface{}) model.KookMember {

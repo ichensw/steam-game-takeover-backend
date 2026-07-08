@@ -21,6 +21,7 @@ const (
 	CodeReportedUserNotInTakeover = "REPORTED_USER_NOT_IN_TAKEOVER"
 	CodeSteamIDTaken              = "STEAM_ID_TAKEN"
 	CodeAdminUnauthorized         = "ADMIN_UNAUTHORIZED"
+	CodeKookOperationFailed       = "KOOK_OPERATION_FAILED"
 	CodeSystemError               = "SYSTEM_ERROR"
 )
 
