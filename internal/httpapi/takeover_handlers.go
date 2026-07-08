@@ -271,6 +271,10 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
+	if takeover.TakeoverState == model.TakeoverStateClosed && !hasJoined && !isTakeoverCreator(user, takeover) && !canManageTakeover(user, takeover) {
+		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		return
+	}
 	members, err := h.takeoverMembers(takeover.ID, includeOpenID, 0)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")

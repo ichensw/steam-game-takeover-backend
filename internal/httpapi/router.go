@@ -20,7 +20,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.POST("/auth/bot-login", h.BotLogin)
 
 	api.GET("/takeovers", h.UserAuth(), h.ListTakeovers)
-	api.GET("/takeovers/:takeoverId", h.UserAuth(), h.GetTakeover)
+	api.GET("/takeovers/:takeoverId", h.OptionalUserAuth(), h.GetTakeover)
 	api.POST("/takeovers", h.UserAuth(), h.CreateTakeover)
 	api.PUT("/takeovers/:takeoverId", h.UserAuth(), h.UpdateTakeover)
 	api.DELETE("/takeovers/:takeoverId", h.UserAuth(), h.DeleteTakeover)
