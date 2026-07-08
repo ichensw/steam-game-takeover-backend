@@ -347,7 +347,7 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 		return
 	}
 
-	eventType := kookPayloadString(payload, "type")
+	eventType := kookEventType(payload)
 	member := kookMemberFromWebhook(payload)
 	switch eventType {
 	case "joined_guild":
@@ -674,7 +674,7 @@ func kookAdminErrorMessage(action string, err error) string {
 
 func kookMemberFromWebhook(payload map[string]interface{}) model.KookMember {
 	return model.KookMember{
-		GuildID:     kookPayloadString(payload, "guild_id", "guildId"),
+		GuildID:     kookPayloadGuildID(payload),
 		KookUserID:  kookPayloadUserID(payload),
 		Username:    nullableString(kookPayloadString(payload, "username")),
 		Nickname:    nullableString(kookPayloadString(payload, "nickname")),
@@ -686,8 +686,30 @@ func kookMemberFromWebhook(payload map[string]interface{}) model.KookMember {
 	}
 }
 
+func kookEventType(payload map[string]interface{}) string {
+	for _, item := range kookPayloadMaps(payload) {
+		switch value := stringFromAny(item["type"]); value {
+		case "joined_guild", "exited_guild", "updated_guild_member":
+			return value
+		}
+	}
+	return kookPayloadString(payload, "type")
+}
+
+func kookPayloadGuildID(payload map[string]interface{}) string {
+	if value := kookPayloadString(payload, "guild_id", "guildId"); value != "" {
+		return value
+	}
+	switch kookEventType(payload) {
+	case "joined_guild", "exited_guild", "updated_guild_member":
+		return kookPayloadString(payload, "target_id", "targetId")
+	default:
+		return ""
+	}
+}
+
 func kookPayloadUserID(payload map[string]interface{}) string {
-	if value := kookPayloadString(payload, "kook_user_id", "kookUserId", "user_id", "userId", "target_id", "targetId", "author_id", "authorId"); value != "" {
+	if value := kookPayloadString(payload, "kook_user_id", "kookUserId", "user_id", "userId"); value != "" {
 		return value
 	}
 	for _, parent := range kookPayloadMaps(payload) {
@@ -698,6 +720,9 @@ func kookPayloadUserID(payload map[string]interface{}) string {
 				}
 			}
 		}
+	}
+	if value := kookPayloadString(payload, "author_id", "authorId", "target_id", "targetId"); value != "" {
+		return value
 	}
 	return ""
 }
@@ -760,15 +785,9 @@ func kookPayloadHas(payload map[string]interface{}, keys ...string) bool {
 
 func kookPayloadMaps(payload map[string]interface{}) []map[string]interface{} {
 	maps := []map[string]interface{}{payload}
-	for _, parent := range []map[string]interface{}{payload} {
-		for _, key := range []string{"d", "extra", "body"} {
-			if child, ok := parent[key].(map[string]interface{}); ok {
-				maps = append(maps, child)
-			}
-		}
-	}
-	for _, parent := range append([]map[string]interface{}{}, maps...) {
-		for _, key := range []string{"extra", "body", "user", "member", "author"} {
+	for i := 0; i < len(maps); i++ {
+		parent := maps[i]
+		for _, key := range []string{"d", "extra", "body", "user", "member", "author"} {
 			if child, ok := parent[key].(map[string]interface{}); ok {
 				maps = append(maps, child)
 			}

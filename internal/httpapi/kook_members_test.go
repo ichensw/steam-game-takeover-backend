@@ -48,6 +48,29 @@ func TestKookWebhookMemberUpdatesKeepsBotWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestKookSystemEventUsesExtraTypeAndBodyUser(t *testing.T) {
+	payload := map[string]interface{}{
+		"d": map[string]interface{}{
+			"type":      float64(255),
+			"target_id": "guild-1",
+			"extra": map[string]interface{}{
+				"type": "joined_guild",
+				"body": map[string]interface{}{
+					"user_id":   "user-1",
+					"joined_at": float64(1783485600000),
+				},
+			},
+		},
+	}
+	if got := kookEventType(payload); got != "joined_guild" {
+		t.Fatalf("kookEventType() = %q, want joined_guild", got)
+	}
+	member := kookMemberFromWebhook(payload)
+	if member.GuildID != "guild-1" || member.KookUserID != "user-1" {
+		t.Fatalf("kookMemberFromWebhook() = %+v", member)
+	}
+}
+
 func TestKookAdminErrorMessageShowsPermissionHint(t *testing.T) {
 	got := kookAdminErrorMessage("拉黑", kookAPIError{
 		HTTPStatus: 200,
