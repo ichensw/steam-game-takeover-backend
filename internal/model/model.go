@@ -289,6 +289,7 @@ const (
 	AppConfigKookBotToken           = "kook_bot_token"
 	AppConfigKookGuildID            = "kook_guild_id"
 	AppConfigKookVerifyToken        = "kook_verify_token"
+	AppConfigKookEncryptKey         = "kook_encrypt_key"
 	AppConfigAPIBaseURL             = "api_base_url"
 )
 

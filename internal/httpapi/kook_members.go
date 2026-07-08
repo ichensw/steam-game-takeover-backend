@@ -1,6 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -338,6 +342,11 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
+	payload, err := h.decodeKookWebhookPayload(payload)
+	if err != nil {
+		fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
+		return
+	}
 	if challenge := kookPayloadString(payload, "challenge"); challenge != "" {
 		c.JSON(http.StatusOK, gin.H{"challenge": challenge})
 		return
@@ -392,6 +401,22 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 		}
 	}
 	ok(c, "success", nil)
+}
+
+func (h *Handler) decodeKookWebhookPayload(payload map[string]interface{}) (map[string]interface{}, error) {
+	encrypted := kookPayloadString(payload, "encrypt")
+	if encrypted == "" {
+		return payload, nil
+	}
+	plain, err := decryptKookPayload(encrypted, h.kookEncryptKey())
+	if err != nil {
+		return nil, err
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(plain, &decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }
 
 func (h *Handler) adminKookMember(c *gin.Context) (model.KookMember, bool) {
@@ -794,6 +819,52 @@ func kookPayloadMaps(payload map[string]interface{}) []map[string]interface{} {
 		}
 	}
 	return maps
+}
+
+func decryptKookPayload(encrypted string, encryptKey string) ([]byte, error) {
+	keyText := strings.TrimSpace(encryptKey)
+	if keyText == "" {
+		return nil, errors.New("kook encrypt key is required")
+	}
+	key := make([]byte, 32)
+	copy(key, []byte(keyText))
+
+	outer, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encrypted))
+	if err != nil {
+		return nil, err
+	}
+	if len(outer) <= aes.BlockSize {
+		return nil, errors.New("kook encrypted payload invalid")
+	}
+	iv := outer[:aes.BlockSize]
+	cipherText, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(outer[aes.BlockSize:])))
+	if err != nil {
+		cipherText = outer[aes.BlockSize:]
+	}
+	if len(cipherText)%aes.BlockSize != 0 {
+		return nil, errors.New("kook encrypted payload block size invalid")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	plain := make([]byte, len(cipherText))
+	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plain, cipherText)
+	return pkcs7Unpad(plain, aes.BlockSize)
+}
+
+func pkcs7Unpad(value []byte, blockSize int) ([]byte, error) {
+	if len(value) == 0 {
+		return nil, errors.New("padding invalid")
+	}
+	padding := int(value[len(value)-1])
+	if padding == 0 || padding > blockSize || padding > len(value) {
+		return nil, errors.New("padding invalid")
+	}
+	if !bytes.Equal(value[len(value)-padding:], bytes.Repeat([]byte{byte(padding)}, padding)) {
+		return nil, errors.New("padding invalid")
+	}
+	return value[:len(value)-padding], nil
 }
 
 func stringFromAny(value interface{}) string {

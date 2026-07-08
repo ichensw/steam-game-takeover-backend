@@ -1,6 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"testing"
 
 	"steam-game-takeover-backend/internal/model"
@@ -71,6 +75,16 @@ func TestKookSystemEventUsesExtraTypeAndBodyUser(t *testing.T) {
 	}
 }
 
+func TestDecryptKookPayload(t *testing.T) {
+	got, err := decryptKookPayload(encryptKookPayloadForTest(t, "Q3EmliNjdK8LI", `{"challenge":"hello"}`), "Q3EmliNjdK8LI")
+	if err != nil {
+		t.Fatalf("decryptKookPayload() error = %v", err)
+	}
+	if string(got) != `{"challenge":"hello"}` {
+		t.Fatalf("decryptKookPayload() = %s", got)
+	}
+}
+
 func TestKookAdminErrorMessageShowsPermissionHint(t *testing.T) {
 	got := kookAdminErrorMessage("拉黑", kookAPIError{
 		HTTPStatus: 200,
@@ -81,4 +95,23 @@ func TestKookAdminErrorMessageShowsPermissionHint(t *testing.T) {
 	if got != want {
 		t.Fatalf("kookAdminErrorMessage() = %q, want %q", got, want)
 	}
+}
+
+func encryptKookPayloadForTest(t *testing.T, encryptKey string, plainText string) string {
+	t.Helper()
+	key := make([]byte, 32)
+	copy(key, []byte(encryptKey))
+	iv := []byte("1234567890123456")
+	plain := []byte(plainText)
+	padding := aes.BlockSize - len(plain)%aes.BlockSize
+	plain = append(plain, bytes.Repeat([]byte{byte(padding)}, padding)...)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cipherText := make([]byte, len(plain))
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(cipherText, plain)
+	inner := base64.StdEncoding.EncodeToString(cipherText)
+	outer := append(append([]byte{}, iv...), []byte(inner)...)
+	return base64.StdEncoding.EncodeToString(outer)
 }

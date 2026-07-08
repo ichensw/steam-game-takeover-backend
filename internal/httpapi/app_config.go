@@ -39,6 +39,10 @@ func (h *Handler) kookVerifyToken() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookVerifyToken))
 }
 
+func (h *Handler) kookEncryptKey() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigKookEncryptKey))
+}
+
 func (h *Handler) apiBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(h.appConfigValue(model.AppConfigAPIBaseURL)), "/")
 }
@@ -84,6 +88,7 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 		"kookBotToken":           h.kookBotToken(),
 		"kookGuildId":            h.kookGuildID(),
 		"kookVerifyToken":        h.kookVerifyToken(),
+		"kookEncryptKey":         h.kookEncryptKey(),
 	})
 }
 
@@ -95,12 +100,13 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		KookBotToken           *string `json:"kookBotToken"`
 		KookGuildID            *string `json:"kookGuildId"`
 		KookVerifyToken        *string `json:"kookVerifyToken"`
+		KookEncryptKey         *string `json:"kookEncryptKey"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -140,6 +146,12 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.KookEncryptKey != nil {
+		if err := h.saveAppConfig(model.AppConfigKookEncryptKey, strings.TrimSpace(*req.KookEncryptKey)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	ok(c, "saved", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
@@ -147,6 +159,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		"kookBotToken":           h.kookBotToken(),
 		"kookGuildId":            h.kookGuildID(),
 		"kookVerifyToken":        h.kookVerifyToken(),
+		"kookEncryptKey":         h.kookEncryptKey(),
 	})
 }
 
