@@ -833,7 +833,7 @@ func decryptKookPayload(encrypted string, encryptKey string) ([]byte, error) {
 	key := make([]byte, 32)
 	copy(key, []byte(keyText))
 
-	outer, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encrypted))
+	outer, err := decodeKookBase64(encrypted)
 	if err != nil {
 		return nil, err
 	}
@@ -841,9 +841,9 @@ func decryptKookPayload(encrypted string, encryptKey string) ([]byte, error) {
 		return nil, errors.New("kook encrypted payload invalid")
 	}
 	iv := outer[:aes.BlockSize]
-	cipherText, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(outer[aes.BlockSize:])))
+	cipherText, err := decodeKookBase64(string(outer[aes.BlockSize:]))
 	if err != nil {
-		cipherText = outer[aes.BlockSize:]
+		return nil, err
 	}
 	if len(cipherText)%aes.BlockSize != 0 {
 		return nil, errors.New("kook encrypted payload block size invalid")
@@ -858,6 +858,24 @@ func decryptKookPayload(encrypted string, encryptKey string) ([]byte, error) {
 		return unpadded, nil
 	}
 	return bytes.TrimRight(plain, "\x00"), nil
+}
+
+func decodeKookBase64(value string) ([]byte, error) {
+	text := strings.TrimSpace(value)
+	var lastErr error
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		decoded, err := encoding.DecodeString(text)
+		if err == nil {
+			return decoded, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func pkcs7Unpad(value []byte, blockSize int) ([]byte, error) {

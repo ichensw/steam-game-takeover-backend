@@ -95,6 +95,16 @@ func TestDecryptKookPayloadWithoutPadding(t *testing.T) {
 	}
 }
 
+func TestDecryptKookPayloadWithURLBase64Cipher(t *testing.T) {
+	got, err := decryptKookPayload(encryptKookPayloadWithEncodingForTest(t, "Q3EmliNjdK8LI", `{"challenge":"hello"}`, base64.RawURLEncoding), "Q3EmliNjdK8LI")
+	if err != nil {
+		t.Fatalf("decryptKookPayload() error = %v", err)
+	}
+	if string(got) != `{"challenge":"hello"}` {
+		t.Fatalf("decryptKookPayload() = %s", got)
+	}
+}
+
 func TestKookAdminErrorMessageShowsPermissionHint(t *testing.T) {
 	got := kookAdminErrorMessage("拉黑", kookAPIError{
 		HTTPStatus: 200,
@@ -109,6 +119,11 @@ func TestKookAdminErrorMessageShowsPermissionHint(t *testing.T) {
 
 func encryptKookPayloadForTest(t *testing.T, encryptKey string, plainText string) string {
 	t.Helper()
+	return encryptKookPayloadWithEncodingForTest(t, encryptKey, plainText, base64.StdEncoding)
+}
+
+func encryptKookPayloadWithEncodingForTest(t *testing.T, encryptKey string, plainText string, encoding *base64.Encoding) string {
+	t.Helper()
 	key := make([]byte, 32)
 	copy(key, []byte(encryptKey))
 	iv := []byte("1234567890123456")
@@ -121,7 +136,7 @@ func encryptKookPayloadForTest(t *testing.T, encryptKey string, plainText string
 	}
 	cipherText := make([]byte, len(plain))
 	cipher.NewCBCEncrypter(block, iv).CryptBlocks(cipherText, plain)
-	inner := base64.StdEncoding.EncodeToString(cipherText)
+	inner := encoding.EncodeToString(cipherText)
 	outer := append(append([]byte{}, iv...), []byte(inner)...)
 	return base64.StdEncoding.EncodeToString(outer)
 }
