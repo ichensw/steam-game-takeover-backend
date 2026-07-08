@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -342,8 +343,10 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
+	encryptedLen := len(kookPayloadString(payload, "encrypt"))
 	payload, err := h.decodeKookWebhookPayload(payload)
 	if err != nil {
+		log.Printf("kook webhook decode failed: encrypt_len=%d err=%v", encryptedLen, err)
 		fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
 		return
 	}
@@ -352,6 +355,7 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 		return
 	}
 	if verifyToken := h.kookVerifyToken(); verifyToken == "" || kookPayloadString(payload, "verify_token") != verifyToken {
+		log.Printf("kook webhook unauthorized: encrypt_len=%d event=%q challenge=%t verify_len=%d saved_verify_len=%d", encryptedLen, kookEventType(payload), kookPayloadString(payload, "challenge") != "", len(kookPayloadString(payload, "verify_token")), len(verifyToken))
 		fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
 		return
 	}
