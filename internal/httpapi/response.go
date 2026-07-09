@@ -19,6 +19,7 @@ const (
 	CodeReportAlreadyExists       = "REPORT_ALREADY_EXISTS"
 	CodeCannotReportSelf          = "CANNOT_REPORT_SELF"
 	CodeReportedUserNotInTakeover = "REPORTED_USER_NOT_IN_TAKEOVER"
+	CodeReporterNotInTakeover     = "REPORTER_NOT_IN_TAKEOVER"
 	CodeSteamIDTaken              = "STEAM_ID_TAKEN"
 	CodeAdminUnauthorized         = "ADMIN_UNAUTHORIZED"
 	CodeKookOperationFailed       = "KOOK_OPERATION_FAILED"
@@ -65,6 +66,7 @@ var codeTranslations = map[string]string{
 	CodeReportAlreadyExists:       "已举报过该用户",
 	CodeCannotReportSelf:          "不能举报自己",
 	CodeReportedUserNotInTakeover: "被举报用户不在该接龙中",
+	CodeReporterNotInTakeover:     "只有当前队伍成员可以举报",
 	CodeSteamIDTaken:              "SteamID 已被其他玩家绑定，请确认后再填写。",
 	CodeAdminUnauthorized:         "当前账号暂无管理员权限",
 	CodeSystemError:               "系统开小差了，请稍后再试",

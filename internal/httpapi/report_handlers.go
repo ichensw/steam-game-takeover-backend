@@ -73,6 +73,18 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		return
 	}
 
+	var reporterCount int64
+	if err := h.db.Model(&model.TakeoverMember{}).
+		Where("takeover_id = ? AND user_id = ? AND member_state = ?", takeoverID, user.ID, model.MemberStateJoined).
+		Count(&reporterCount).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	if reporterCount == 0 {
+		fail(c, http.StatusForbidden, CodeReporterNotInTakeover, "只有当前队伍成员可以举报")
+		return
+	}
+
 	var memberCount int64
 	if err := h.db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").

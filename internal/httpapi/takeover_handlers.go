@@ -272,6 +272,7 @@ func (h *Handler) ListTakeoverMemberActivities(c *gin.Context) {
 
 	ok(c, "success", gin.H{
 		"takeoverState": takeover.TakeoverState,
+		"canReport":     hasJoined,
 		"page":          page,
 		"pageSize":      pageSize,
 		"total":         total,
