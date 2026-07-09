@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -33,6 +34,21 @@ func TestToKookChannelList(t *testing.T) {
 	}
 	if meta["pageTotal"] != 3 || meta["total"] != 120 {
 		t.Fatalf("unexpected meta: %#v", meta)
+	}
+}
+
+func TestKookRoleIDsJSON(t *testing.T) {
+	var ids kookRoleIDs
+	if err := json.Unmarshal([]byte(`[1,"2"]`), &ids); err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "1" || ids[1] != "2" {
+		t.Fatalf("ids = %#v", ids)
+	}
+	text := kookRoleIDsJSON(ids)
+	roundTrip := kookRoleIDsFromJSON(text)
+	if len(roundTrip) != 2 || roundTrip[0] != "1" || roundTrip[1] != "2" {
+		t.Fatalf("roundTrip = %#v", roundTrip)
 	}
 }
 

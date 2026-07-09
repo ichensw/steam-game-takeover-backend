@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS `ttw_kook_member` (
   `identify_num` varchar(16) DEFAULT NULL COMMENT 'KOOK用户名认证数字',
   `avatar_url` varchar(255) DEFAULT NULL COMMENT '头像地址',
   `is_bot` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否机器人',
+  `role_ids` json DEFAULT NULL COMMENT 'KOOK角色ID',
   `member_status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '成员状态：1在服 2已退出',
   `joined_at` datetime DEFAULT NULL COMMENT '加入服务器时间',
   `exited_at` datetime DEFAULT NULL COMMENT '退出服务器时间',

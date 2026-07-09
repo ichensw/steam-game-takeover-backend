@@ -48,11 +48,11 @@ const (
 )
 
 const (
-	ReportTypeNoShow      = "no_show"
-	ReportTypeLeaveEarly  = "leave_early"
-	ReportTypeDisruptive  = "disruptive"
-	ReportTypeOffensive   = "offensive"
-	ReportTypeOther       = "other"
+	ReportTypeNoShow     = "no_show"
+	ReportTypeLeaveEarly = "leave_early"
+	ReportTypeDisruptive = "disruptive"
+	ReportTypeOffensive  = "offensive"
+	ReportTypeOther      = "other"
 )
 
 type User struct {
@@ -102,6 +102,7 @@ type KookMember struct {
 	IdentifyNum     *string    `gorm:"column:identify_num;size:16"`
 	AvatarURL       *string    `gorm:"column:avatar_url;size:255"`
 	IsBot           bool       `gorm:"column:is_bot"`
+	RoleIDs         *string    `gorm:"column:role_ids;type:json"`
 	MemberStatus    uint8      `gorm:"column:member_status;index:idx_member_status"`
 	JoinedAt        *time.Time `gorm:"column:joined_at"`
 	ExitedAt        *time.Time `gorm:"column:exited_at"`

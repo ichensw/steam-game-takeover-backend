@@ -210,6 +210,15 @@ func TestMemberActionText(t *testing.T) {
 	}
 }
 
+func TestMemberActivityActionFilters(t *testing.T) {
+	if got := memberActivityActionFilters("join"); len(got) != 1 || got[0] != model.MemberActionJoin {
+		t.Fatalf("join filter = %v", got)
+	}
+	if got := memberActivityActionFilters("leave"); len(got) != 1 || got[0] != model.MemberActionLeave {
+		t.Fatalf("leave filter = %v", got)
+	}
+}
+
 func TestAdminUserDTOIncludesAvatarURL(t *testing.T) {
 	avatarURL := "https://example.com/admin.jpg"
 	dto := toAdminUserDTO(model.AdminUser{AvatarURL: &avatarURL})

@@ -44,23 +44,24 @@ type kookMemberInput struct {
 }
 
 type kookMemberDTO struct {
-	ID              uint64  `json:"id"`
-	GuildID         string  `json:"guildId"`
-	KookUserID      string  `json:"kookUserId"`
-	Username        string  `json:"username"`
-	Nickname        string  `json:"nickname"`
-	IdentifyNum     string  `json:"identifyNum"`
-	AvatarURL       string  `json:"avatarUrl"`
-	IsBot           bool    `json:"isBot"`
-	MemberStatus    uint8   `json:"memberStatus"`
-	JoinedAt        *string `json:"joinedAt"`
-	ExitedAt        *string `json:"exitedAt"`
-	IsBlacklisted   bool    `json:"isBlacklisted"`
-	BlacklistReason *string `json:"blacklistReason"`
-	BlacklistedAt   *string `json:"blacklistedAt"`
-	Remark          *string `json:"remark"`
-	CreatedAt       string  `json:"createdAt"`
-	UpdatedAt       string  `json:"updatedAt"`
+	ID              uint64   `json:"id"`
+	GuildID         string   `json:"guildId"`
+	KookUserID      string   `json:"kookUserId"`
+	Username        string   `json:"username"`
+	Nickname        string   `json:"nickname"`
+	IdentifyNum     string   `json:"identifyNum"`
+	AvatarURL       string   `json:"avatarUrl"`
+	IsBot           bool     `json:"isBot"`
+	RoleIDs         []string `json:"roleIds"`
+	MemberStatus    uint8    `json:"memberStatus"`
+	JoinedAt        *string  `json:"joinedAt"`
+	ExitedAt        *string  `json:"exitedAt"`
+	IsBlacklisted   bool     `json:"isBlacklisted"`
+	BlacklistReason *string  `json:"blacklistReason"`
+	BlacklistedAt   *string  `json:"blacklistedAt"`
+	Remark          *string  `json:"remark"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
 }
 
 type kookMemberListResponse struct {
@@ -88,7 +89,53 @@ type kookMemberAPIItem struct {
 	AvatarURL   string      `json:"avatar_url"`
 	IsBot       bool        `json:"is_bot"`
 	Bot         bool        `json:"bot"`
+	Roles       kookRoleIDs `json:"roles"`
 	JoinedAt    interface{} `json:"joined_at"`
+}
+
+type kookRoleIDs []string
+
+func (ids *kookRoleIDs) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*ids = nil
+		return nil
+	}
+	var values []interface{}
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		text := strings.TrimSpace(stringFromAny(value))
+		if text != "" {
+			result = append(result, text)
+		}
+	}
+	*ids = result
+	return nil
+}
+
+func kookRoleIDsJSON(ids []string) *string {
+	if len(ids) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(ids)
+	if err != nil {
+		return nil
+	}
+	text := string(data)
+	return &text
+}
+
+func kookRoleIDsFromJSON(value *string) []string {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal([]byte(*value), &ids); err != nil {
+		return nil
+	}
+	return ids
 }
 
 type kookAPIResponse struct {
@@ -562,6 +609,7 @@ func toKookMemberDTO(member model.KookMember) kookMemberDTO {
 		IdentifyNum:     stringValue(member.IdentifyNum),
 		AvatarURL:       stringValue(member.AvatarURL),
 		IsBot:           member.IsBot,
+		RoleIDs:         kookRoleIDsFromJSON(member.RoleIDs),
 		MemberStatus:    member.MemberStatus,
 		JoinedAt:        kookTimeString(member.JoinedAt),
 		ExitedAt:        kookTimeString(member.ExitedAt),
@@ -640,6 +688,7 @@ func kookMemberFromAPI(guildID string, item kookMemberAPIItem) model.KookMember 
 		IdentifyNum:  nullableString(strings.TrimSpace(item.IdentifyNum)),
 		AvatarURL:    nullableString(strings.TrimSpace(firstNonEmpty(item.AvatarURL, item.Avatar))),
 		IsBot:        item.IsBot || item.Bot,
+		RoleIDs:      kookRoleIDsJSON(item.Roles),
 		MemberStatus: model.KookMemberStatusJoined,
 		JoinedAt:     parseKookTimeValue(item.JoinedAt),
 	}
@@ -714,6 +763,9 @@ func kookMemberPartialUpdates(member model.KookMember) map[string]interface{} {
 	}
 	if member.AvatarURL != nil {
 		updates["avatar_url"] = member.AvatarURL
+	}
+	if member.RoleIDs != nil {
+		updates["role_ids"] = member.RoleIDs
 	}
 	return updates
 }
