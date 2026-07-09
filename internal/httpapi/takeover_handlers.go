@@ -39,10 +39,12 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 		pageSize = 100
 	}
 
-	countQuery := h.db.Model(&model.Takeover{}).
-		Where("is_deleted = ? AND takeover_state = ?", false, model.TakeoverStateNormal)
-	listQuery := h.takeoverListQuery(user.ID).
-		Where("is_deleted = ? AND takeover_state = ?", false, model.TakeoverStateNormal)
+	countQuery := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false)
+	listQuery := h.takeoverListQuery(user.ID).Where("is_deleted = ?", false)
+	if !canViewAllTakeovers(user) {
+		countQuery = countQuery.Where("takeover_state = ?", model.TakeoverStateNormal)
+		listQuery = listQuery.Where("takeover_state = ?", model.TakeoverStateNormal)
+	}
 	countQuery = applyKeywordFilter(countQuery, c.Query("keyword"))
 	listQuery = applyKeywordFilter(listQuery, c.Query("keyword"))
 	var err error
@@ -222,7 +224,7 @@ func (h *Handler) ListTakeoverMemberActivities(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	if takeover.TakeoverState == model.TakeoverStateClosed && !hasJoined && !isTakeoverCreator(user, takeover) && !canManageTakeover(user, takeover) {
+	if takeover.TakeoverState == model.TakeoverStateClosed && !hasJoined && !isTakeoverCreator(user, takeover) && !canManageTakeover(user, takeover) && !canViewAllTakeovers(user) {
 		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		return
 	}
@@ -307,7 +309,7 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	if takeover.TakeoverState == model.TakeoverStateClosed && !hasJoined && !isTakeoverCreator(user, takeover) && !canManageTakeover(user, takeover) {
+	if takeover.TakeoverState == model.TakeoverStateClosed && !hasJoined && !isTakeoverCreator(user, takeover) && !canManageTakeover(user, takeover) && !canViewAllTakeovers(user) {
 		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		return
 	}
@@ -989,6 +991,10 @@ func ensureUserAllowed(c *gin.Context, user model.User, requireProfile bool) boo
 
 func canManageTakeover(user model.User, takeover model.Takeover) bool {
 	return user.IsAdmin || isTakeoverCreator(user, takeover)
+}
+
+func canViewAllTakeovers(user model.User) bool {
+	return user.IsAdmin || user.CanViewAllTakeovers
 }
 
 func isTakeoverCreator(user model.User, takeover model.Takeover) bool {

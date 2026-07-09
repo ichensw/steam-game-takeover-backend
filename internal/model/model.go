@@ -56,24 +56,25 @@ const (
 )
 
 type User struct {
-	ID                 uint64     `gorm:"primaryKey;column:id"`
-	OpenID             string     `gorm:"column:openid;size:64;uniqueIndex:uk_openid"`
-	UnionID            *string    `gorm:"column:unionid;size:64"`
-	Nickname           *string    `gorm:"column:nickname;size:32"`
-	SteamID            *string    `gorm:"column:steam_id;size:64;index:idx_steam_id"`
-	Gender             *uint8     `gorm:"column:gender"`
-	AvatarURL          *string    `gorm:"column:avatar_url;size:255"`
-	IsProfileCompleted bool       `gorm:"column:is_profile_completed"`
-	IsAdmin            bool       `gorm:"column:is_admin"`
-	IsBanned           bool       `gorm:"column:is_banned"`
-	BanReason          *string    `gorm:"column:ban_reason;size:255"`
-	BannedAt           *time.Time `gorm:"column:banned_at"`
-	BannedByAdminID    *uint64    `gorm:"column:banned_by_admin_id"`
-	IsDeleted          bool       `gorm:"column:is_deleted"`
-	CreditScore        uint       `gorm:"column:credit_score;default:100"`
-	LastLoginTime      *time.Time `gorm:"column:last_login_time"`
-	GmtCreate          time.Time  `gorm:"column:gmt_create;autoCreateTime"`
-	GmtModified        time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+	ID                  uint64     `gorm:"primaryKey;column:id"`
+	OpenID              string     `gorm:"column:openid;size:64;uniqueIndex:uk_openid"`
+	UnionID             *string    `gorm:"column:unionid;size:64"`
+	Nickname            *string    `gorm:"column:nickname;size:32"`
+	SteamID             *string    `gorm:"column:steam_id;size:64;index:idx_steam_id"`
+	Gender              *uint8     `gorm:"column:gender"`
+	AvatarURL           *string    `gorm:"column:avatar_url;size:255"`
+	IsProfileCompleted  bool       `gorm:"column:is_profile_completed"`
+	IsAdmin             bool       `gorm:"column:is_admin"`
+	CanViewAllTakeovers bool       `gorm:"column:can_view_all_takeovers"`
+	IsBanned            bool       `gorm:"column:is_banned"`
+	BanReason           *string    `gorm:"column:ban_reason;size:255"`
+	BannedAt            *time.Time `gorm:"column:banned_at"`
+	BannedByAdminID     *uint64    `gorm:"column:banned_by_admin_id"`
+	IsDeleted           bool       `gorm:"column:is_deleted"`
+	CreditScore         uint       `gorm:"column:credit_score;default:100"`
+	LastLoginTime       *time.Time `gorm:"column:last_login_time"`
+	GmtCreate           time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified         time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
 }
 
 func (User) TableName() string { return "ttw_user" }

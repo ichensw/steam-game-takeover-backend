@@ -463,6 +463,33 @@ func (h *Handler) AdminBatchSetUserAdmin(c *gin.Context) {
 	ok(c, "saved", gin.H{"count": result.RowsAffected})
 }
 
+func (h *Handler) AdminBatchSetTakeoverView(c *gin.Context) {
+	var req struct {
+		UserIDs             []uint64 `json:"userIds"`
+		CanViewAllTakeovers *bool    `json:"canViewAllTakeovers"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	if len(req.UserIDs) == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "userIds is required")
+		return
+	}
+	if req.CanViewAllTakeovers == nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "canViewAllTakeovers is required")
+		return
+	}
+	result := h.db.Model(&model.User{}).
+		Where("id IN ? AND is_deleted = ?", req.UserIDs, false).
+		Update("can_view_all_takeovers", *req.CanViewAllTakeovers)
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	ok(c, "saved", gin.H{"count": result.RowsAffected})
+}
+
 func (h *Handler) AdminListTakeovers(c *gin.Context) {
 	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")

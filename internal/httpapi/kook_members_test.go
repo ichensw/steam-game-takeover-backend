@@ -27,12 +27,17 @@ func TestNormalizeKookMemberInput(t *testing.T) {
 		GuildID:    " guild-1 ",
 		KookUserID: " user-1 ",
 		Username:   " abc ",
+		RoleIDs:    []string{" 1 ", "2", "1", ""},
 	}, true, model.KookMemberStatusJoined)
 	if err != nil {
 		t.Fatalf("normalizeKookMemberInput() error = %v", err)
 	}
 	if member.GuildID != "guild-1" || member.KookUserID != "user-1" || member.MemberStatus != model.KookMemberStatusJoined {
 		t.Fatalf("normalizeKookMemberInput() = %+v", member)
+	}
+	roles := kookRoleIDsFromJSON(member.RoleIDs)
+	if len(roles) != 2 || roles[0] != "1" || roles[1] != "2" {
+		t.Fatalf("role IDs = %#v", roles)
 	}
 }
 

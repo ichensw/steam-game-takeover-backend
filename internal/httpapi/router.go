@@ -72,6 +72,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.POST("/users/:userId/ban", h.AdminBanUser)
 	adminAuthed.POST("/users/:userId/unban", h.AdminUnbanUser)
 	adminAuthed.POST("/users/:userId/credit", h.AdminRestoreUserCredit)
+	adminAuthed.POST("/takeover-view/batch", h.AdminBatchSetTakeoverView)
 	adminAuthed.GET("/reports", h.AdminListReports)
 	adminAuthed.GET("/reports/:reportId", h.AdminGetReport)
 	adminAuthed.POST("/reports/:reportId/approve", h.AdminApproveReport)
@@ -114,6 +115,11 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.DELETE("/kook-roles/:roleId", h.AdminDeleteKookGuildRole)
 	adminAuthed.POST("/kook-roles/:roleId/grant", h.AdminGrantKookGuildRole)
 	adminAuthed.POST("/kook-roles/:roleId/revoke", h.AdminRevokeKookGuildRole)
+	adminAuthed.GET("/kook-users/me", h.AdminGetKookUserMe)
+	adminAuthed.GET("/kook-users/view/:userId", h.AdminGetKookUser)
+	adminAuthed.POST("/kook-users/bot/offline", h.AdminOfflineKookBot)
+	adminAuthed.POST("/kook-users/bot/online", h.AdminOnlineKookBot)
+	adminAuthed.GET("/kook-users/bot/online-status", h.AdminGetKookBotOnlineStatus)
 	adminAuthed.POST("/publish-whitelist/batch", h.AdminBatchPublishWhitelist)
 
 	return r

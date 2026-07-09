@@ -30,17 +30,18 @@ var (
 const kookGuildUserListURL = "https://www.kookapp.cn/api/v3/guild/user-list"
 
 type kookMemberInput struct {
-	GuildID      string  `json:"guildId"`
-	KookUserID   string  `json:"kookUserId"`
-	Username     string  `json:"username"`
-	Nickname     string  `json:"nickname"`
-	IdentifyNum  string  `json:"identifyNum"`
-	AvatarURL    string  `json:"avatarUrl"`
-	IsBot        bool    `json:"isBot"`
-	MemberStatus uint8   `json:"memberStatus"`
-	JoinedAt     *string `json:"joinedAt"`
-	ExitedAt     *string `json:"exitedAt"`
-	Remark       string  `json:"remark"`
+	GuildID      string   `json:"guildId"`
+	KookUserID   string   `json:"kookUserId"`
+	Username     string   `json:"username"`
+	Nickname     string   `json:"nickname"`
+	IdentifyNum  string   `json:"identifyNum"`
+	AvatarURL    string   `json:"avatarUrl"`
+	IsBot        bool     `json:"isBot"`
+	RoleIDs      []string `json:"roleIds"`
+	MemberStatus uint8    `json:"memberStatus"`
+	JoinedAt     *string  `json:"joinedAt"`
+	ExitedAt     *string  `json:"exitedAt"`
+	Remark       string   `json:"remark"`
 }
 
 type kookMemberDTO struct {
@@ -274,10 +275,14 @@ func (h *Handler) AdminUpdateKookMember(c *gin.Context) {
 		"identify_num":  parsed.IdentifyNum,
 		"avatar_url":    parsed.AvatarURL,
 		"is_bot":        parsed.IsBot,
+		"role_ids":      parsed.RoleIDs,
 		"member_status": parsed.MemberStatus,
 		"joined_at":     parsed.JoinedAt,
 		"exited_at":     parsed.ExitedAt,
 		"remark":        parsed.Remark,
+	}
+	if req.RoleIDs == nil {
+		delete(updates, "role_ids")
 	}
 	if err := h.db.Model(&model.KookMember{}).Where("id = ?", member.ID).Updates(updates).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
@@ -551,11 +556,29 @@ func normalizeKookMemberInput(req kookMemberInput, requireIDs bool, defaultStatu
 		IdentifyNum:  nullableString(identifyNum),
 		AvatarURL:    nullableString(avatarURL),
 		IsBot:        req.IsBot,
+		RoleIDs:      kookRoleIDsJSON(normalizeKookRoleIDs(req.RoleIDs)),
 		MemberStatus: status,
 		JoinedAt:     joinedAt,
 		ExitedAt:     exitedAt,
 		Remark:       nullableString(remark),
 	}, nil
+}
+
+func normalizeKookRoleIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		text := strings.TrimSpace(id)
+		if text == "" {
+			continue
+		}
+		if _, ok := seen[text]; ok {
+			continue
+		}
+		seen[text] = struct{}{}
+		result = append(result, text)
+	}
+	return result
 }
 
 func parseKookMemberStatus(raw string) (uint8, error) {

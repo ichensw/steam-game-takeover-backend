@@ -301,7 +301,7 @@ func TestIsUserProfileCompletedUsesStoredFields(t *testing.T) {
 
 func TestToUserDTOWithPublishWhitelist(t *testing.T) {
 	steamID := "7656119"
-	user := model.User{OpenID: "openid-1", SteamID: &steamID}
+	user := model.User{OpenID: "openid-1", SteamID: &steamID, CanViewAllTakeovers: true}
 
 	dto := toAdminWXUserDTOWithPublishWhitelist(user, map[string]bool{steamID: true})
 	if dto.OpenID != "openid-1" {
@@ -309,6 +309,9 @@ func TestToUserDTOWithPublishWhitelist(t *testing.T) {
 	}
 	if !dto.PublishWhitelisted {
 		t.Fatal("expected user marked publish whitelisted")
+	}
+	if !dto.CanViewAllTakeovers {
+		t.Fatal("expected user marked can view all takeovers")
 	}
 
 	emptySteamID := ""
@@ -318,5 +321,17 @@ func TestToUserDTOWithPublishWhitelist(t *testing.T) {
 	}
 	if !toAdminWXUserDTOWithPublishWhitelist(user, map[string]bool{"openid-1": true}).PublishWhitelisted {
 		t.Fatal("expected openid whitelist to work without steam id")
+	}
+}
+
+func TestCanViewAllTakeovers(t *testing.T) {
+	if !canViewAllTakeovers(model.User{CanViewAllTakeovers: true}) {
+		t.Fatal("expected explicit view permission to allow all takeovers")
+	}
+	if !canViewAllTakeovers(model.User{IsAdmin: true}) {
+		t.Fatal("expected admin to allow all takeovers")
+	}
+	if canViewAllTakeovers(model.User{}) {
+		t.Fatal("expected normal user not to allow all takeovers")
 	}
 }

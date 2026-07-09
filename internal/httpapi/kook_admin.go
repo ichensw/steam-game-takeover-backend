@@ -97,6 +97,26 @@ func (h *Handler) AdminRevokeKookGuildRole(c *gin.Context) {
 	h.proxyKookPOST(c, "/guild-role/revoke", gin.H{"guild_id": h.kookGuildID(), "role_id": c.Param("roleId")})
 }
 
+func (h *Handler) AdminGetKookUserMe(c *gin.Context) {
+	h.proxyKookGET(c, "/user/me", gin.H{})
+}
+
+func (h *Handler) AdminGetKookUser(c *gin.Context) {
+	h.proxyKookGET(c, "/user/view", gin.H{"guild_id": h.kookGuildID(), "user_id": c.Param("userId")})
+}
+
+func (h *Handler) AdminOfflineKookBot(c *gin.Context) {
+	h.proxyKookPOST(c, "/user/offline", gin.H{})
+}
+
+func (h *Handler) AdminOnlineKookBot(c *gin.Context) {
+	h.proxyKookPOST(c, "/user/online", gin.H{})
+}
+
+func (h *Handler) AdminGetKookBotOnlineStatus(c *gin.Context) {
+	h.proxyKookGET(c, "/user/get-online-status", gin.H{})
+}
+
 func (h *Handler) proxyKookGET(c *gin.Context, path string, defaults gin.H) {
 	params := gin.H{}
 	for key, values := range c.Request.URL.Query() {

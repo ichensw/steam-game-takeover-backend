@@ -11,19 +11,20 @@ import (
 )
 
 type userDTO struct {
-	ID                 uint64 `json:"id"`
-	Nickname           string `json:"nickname"`
-	SteamID            string `json:"steamId"`
-	Gender             *uint8 `json:"gender"`
-	AvatarURL          string `json:"avatarUrl"`
-	ProfileCompleted   bool   `json:"profileCompleted"`
-	IsAdmin            bool   `json:"isAdmin"`
-	IsBanned           bool   `json:"isBanned"`
-	BanReason          string `json:"banReason,omitempty"`
-	BannedAt           string `json:"bannedAt,omitempty"`
-	PublishWhitelisted bool   `json:"publishWhitelisted"`
-	CreditScore        uint   `json:"creditScore"`
-	CreditStatus       string `json:"creditStatus"`
+	ID                  uint64 `json:"id"`
+	Nickname            string `json:"nickname"`
+	SteamID             string `json:"steamId"`
+	Gender              *uint8 `json:"gender"`
+	AvatarURL           string `json:"avatarUrl"`
+	ProfileCompleted    bool   `json:"profileCompleted"`
+	IsAdmin             bool   `json:"isAdmin"`
+	CanViewAllTakeovers bool   `json:"canViewAllTakeovers"`
+	IsBanned            bool   `json:"isBanned"`
+	BanReason           string `json:"banReason,omitempty"`
+	BannedAt            string `json:"bannedAt,omitempty"`
+	PublishWhitelisted  bool   `json:"publishWhitelisted"`
+	CreditScore         uint   `json:"creditScore"`
+	CreditStatus        string `json:"creditStatus"`
 }
 
 type adminWXUserDTO struct {
@@ -57,19 +58,19 @@ type memberDTO struct {
 }
 
 type memberActivityDTO struct {
-	ID           uint64 `json:"id"`
-	UserID       uint64 `json:"userId"`
-	OpenID       string `json:"openid,omitempty"`
-	Nickname     string `json:"nickname"`
-	SteamID      string `json:"steamId"`
-	Gender       *uint8 `json:"gender"`
-	AvatarURL    string `json:"avatarUrl"`
-	Remark       string `json:"remark"`
-	Action       uint8  `json:"action"`
-	ActionText   string `json:"actionText"`
-	CreatedAt    string `json:"createdAt"`
-	IsSelf       bool   `json:"isSelf"`
-	HasReported  bool   `json:"hasReported"`
+	ID          uint64 `json:"id"`
+	UserID      uint64 `json:"userId"`
+	OpenID      string `json:"openid,omitempty"`
+	Nickname    string `json:"nickname"`
+	SteamID     string `json:"steamId"`
+	Gender      *uint8 `json:"gender"`
+	AvatarURL   string `json:"avatarUrl"`
+	Remark      string `json:"remark"`
+	Action      uint8  `json:"action"`
+	ActionText  string `json:"actionText"`
+	CreatedAt   string `json:"createdAt"`
+	IsSelf      bool   `json:"isSelf"`
+	HasReported bool   `json:"hasReported"`
 }
 
 type recommendTagDTO struct {
@@ -79,31 +80,31 @@ type recommendTagDTO struct {
 }
 
 type takeoverDTO struct {
-	ID                  uint64            `json:"id"`
-	CreatorUserID       uint64            `json:"creatorUserId"`
-	CreatorName         string            `json:"creatorName"`
-	CreatorCreditScore  uint              `json:"creatorCreditScore"`
-	CreatorCreditStatus string            `json:"creatorCreditStatus"`
-	Title               string            `json:"title"`
-	ParticipantLimit    uint              `json:"participantLimit"`
-	JoinedCount         int64             `json:"joinedCount"`
-	ScheduleType        uint8             `json:"scheduleType"`
-	StartDate           *string           `json:"startDate"`
-	EndDate             *string           `json:"endDate"`
-	PlayTime            string            `json:"playTime"`
-	ScheduleText        string            `json:"scheduleText"`
-	StatusLabel         string            `json:"statusLabel"`
-	TakeoverState       uint8             `json:"takeoverState"`
-	Description         string            `json:"description"`
-	KookChannelID       string            `json:"kookChannelId"`
-	KookChannelName     string            `json:"kookChannelName"`
-	KookInviteURL       string            `json:"kookInviteUrl"`
-	HasJoined           bool              `json:"hasJoined"`
-	IsCreator           bool              `json:"isCreator"`
-	CanManage           bool              `json:"canManage"`
-	RecommendTags       []recommendTagDTO `json:"recommendTags,omitempty"`
-	PreviewMembers      []memberDTO       `json:"previewMembers,omitempty"`
-	Members             []memberDTO       `json:"members,omitempty"`
+	ID                  uint64              `json:"id"`
+	CreatorUserID       uint64              `json:"creatorUserId"`
+	CreatorName         string              `json:"creatorName"`
+	CreatorCreditScore  uint                `json:"creatorCreditScore"`
+	CreatorCreditStatus string              `json:"creatorCreditStatus"`
+	Title               string              `json:"title"`
+	ParticipantLimit    uint                `json:"participantLimit"`
+	JoinedCount         int64               `json:"joinedCount"`
+	ScheduleType        uint8               `json:"scheduleType"`
+	StartDate           *string             `json:"startDate"`
+	EndDate             *string             `json:"endDate"`
+	PlayTime            string              `json:"playTime"`
+	ScheduleText        string              `json:"scheduleText"`
+	StatusLabel         string              `json:"statusLabel"`
+	TakeoverState       uint8               `json:"takeoverState"`
+	Description         string              `json:"description"`
+	KookChannelID       string              `json:"kookChannelId"`
+	KookChannelName     string              `json:"kookChannelName"`
+	KookInviteURL       string              `json:"kookInviteUrl"`
+	HasJoined           bool                `json:"hasJoined"`
+	IsCreator           bool                `json:"isCreator"`
+	CanManage           bool                `json:"canManage"`
+	RecommendTags       []recommendTagDTO   `json:"recommendTags,omitempty"`
+	PreviewMembers      []memberDTO         `json:"previewMembers,omitempty"`
+	Members             []memberDTO         `json:"members,omitempty"`
 	MemberActivities    []memberActivityDTO `json:"memberActivities,omitempty"`
 }
 
@@ -151,19 +152,20 @@ func toUserDTOWithPublishWhitelist(user model.User, whitelist map[string]bool) u
 	steamID := stringValue(user.SteamID)
 	openID := strings.TrimSpace(user.OpenID)
 	return userDTO{
-		ID:                 user.ID,
-		Nickname:           stringValue(user.Nickname),
-		SteamID:            steamID,
-		Gender:             user.Gender,
-		AvatarURL:          normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
-		ProfileCompleted:   isUserProfileCompleted(user),
-		IsAdmin:            user.IsAdmin,
-		IsBanned:           user.IsBanned,
-		BanReason:          stringValue(user.BanReason),
-		BannedAt:           timeString(user.BannedAt),
-		PublishWhitelisted: (openID != "" && whitelist[openID]) || (steamID != "" && whitelist[steamID]),
-		CreditScore:        user.CreditScore,
-		CreditStatus:       creditStatus(user.CreditScore),
+		ID:                  user.ID,
+		Nickname:            stringValue(user.Nickname),
+		SteamID:             steamID,
+		Gender:              user.Gender,
+		AvatarURL:           normalizeAvatarURL(stringValue(user.AvatarURL), user.Gender),
+		ProfileCompleted:    isUserProfileCompleted(user),
+		IsAdmin:             user.IsAdmin,
+		CanViewAllTakeovers: user.CanViewAllTakeovers,
+		IsBanned:            user.IsBanned,
+		BanReason:           stringValue(user.BanReason),
+		BannedAt:            timeString(user.BannedAt),
+		PublishWhitelisted:  (openID != "" && whitelist[openID]) || (steamID != "" && whitelist[steamID]),
+		CreditScore:         user.CreditScore,
+		CreditStatus:        creditStatus(user.CreditScore),
 	}
 }
 
