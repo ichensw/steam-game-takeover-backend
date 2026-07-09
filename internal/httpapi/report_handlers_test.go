@@ -100,3 +100,19 @@ func TestReportStateFilter(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeReportType(t *testing.T) {
+	got, err := normalizeReportType(model.ReportTypeNoShow)
+	if err != nil || got != model.ReportTypeNoShow {
+		t.Fatalf("normalizeReportType(no_show) = %q, %v", got, err)
+	}
+
+	got, err = normalizeReportType("")
+	if err != nil || got != model.ReportTypeOther {
+		t.Fatalf("normalizeReportType(blank) = %q, %v", got, err)
+	}
+
+	if _, err := normalizeReportType("bad"); err == nil {
+		t.Fatal("normalizeReportType(bad) error = nil, want error")
+	}
+}

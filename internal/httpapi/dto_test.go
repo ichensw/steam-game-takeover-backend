@@ -201,6 +201,15 @@ func TestMemberDTOIncludesRemark(t *testing.T) {
 	}
 }
 
+func TestMemberActionText(t *testing.T) {
+	if got := memberActionText(model.MemberActionJoin); got != "加入" {
+		t.Fatalf("join text = %q", got)
+	}
+	if got := memberActionText(model.MemberActionLeave); got != "退出" {
+		t.Fatalf("leave text = %q", got)
+	}
+}
+
 func TestAdminUserDTOIncludesAvatarURL(t *testing.T) {
 	avatarURL := "https://example.com/admin.jpg"
 	dto := toAdminUserDTO(model.AdminUser{AvatarURL: &avatarURL})
