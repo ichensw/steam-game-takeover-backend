@@ -17,7 +17,12 @@ type kookProxyResponse struct {
 }
 
 func (h *Handler) AdminListKookChannels(c *gin.Context) {
-	h.proxyKookGET(c, "/channel/list", gin.H{"guild_id": h.kookGuildID()})
+	channels, meta, err := h.fetchKookChannels()
+	if err != nil {
+		fail(c, http.StatusBadGateway, CodeKookOperationFailed, "kook channel query failed")
+		return
+	}
+	ok(c, "success", gin.H{"list": channels, "meta": meta})
 }
 
 func (h *Handler) AdminGetKookChannel(c *gin.Context) {
