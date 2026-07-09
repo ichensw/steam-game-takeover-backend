@@ -73,6 +73,30 @@ func (h *Handler) AdminDeleteKookChannelRole(c *gin.Context) {
 	h.proxyKookPOST(c, "/channel-role/delete", gin.H{"channel_id": c.Param("channelId")})
 }
 
+func (h *Handler) AdminListKookGuildRoles(c *gin.Context) {
+	h.proxyKookGET(c, "/guild-role/list", gin.H{"guild_id": h.kookGuildID(), "page_size": 100})
+}
+
+func (h *Handler) AdminCreateKookGuildRole(c *gin.Context) {
+	h.proxyKookPOST(c, "/guild-role/create", gin.H{"guild_id": h.kookGuildID()})
+}
+
+func (h *Handler) AdminUpdateKookGuildRole(c *gin.Context) {
+	h.proxyKookPOST(c, "/guild-role/update", gin.H{"guild_id": h.kookGuildID(), "role_id": c.Param("roleId")})
+}
+
+func (h *Handler) AdminDeleteKookGuildRole(c *gin.Context) {
+	h.proxyKookPOST(c, "/guild-role/delete", gin.H{"guild_id": h.kookGuildID(), "role_id": c.Param("roleId")})
+}
+
+func (h *Handler) AdminGrantKookGuildRole(c *gin.Context) {
+	h.proxyKookPOST(c, "/guild-role/grant", gin.H{"guild_id": h.kookGuildID(), "role_id": c.Param("roleId")})
+}
+
+func (h *Handler) AdminRevokeKookGuildRole(c *gin.Context) {
+	h.proxyKookPOST(c, "/guild-role/revoke", gin.H{"guild_id": h.kookGuildID(), "role_id": c.Param("roleId")})
+}
+
 func (h *Handler) proxyKookGET(c *gin.Context, path string, defaults gin.H) {
 	params := gin.H{}
 	for key, values := range c.Request.URL.Query() {
@@ -169,6 +193,8 @@ func toKookParamName(key string) string {
 		return "user_id"
 	case "userIds":
 		return "user_ids"
+	case "roleId":
+		return "role_id"
 	default:
 		return key
 	}

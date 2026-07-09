@@ -107,6 +107,12 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.PUT("/kook-channels/:channelId/roles", h.AdminUpdateKookChannelRole)
 	adminAuthed.DELETE("/kook-channels/:channelId/roles", h.AdminDeleteKookChannelRole)
 	adminAuthed.POST("/kook-channels/:channelId/roles/sync", h.AdminSyncKookChannelRoles)
+	adminAuthed.GET("/kook-roles", h.AdminListKookGuildRoles)
+	adminAuthed.POST("/kook-roles", h.AdminCreateKookGuildRole)
+	adminAuthed.PUT("/kook-roles/:roleId", h.AdminUpdateKookGuildRole)
+	adminAuthed.DELETE("/kook-roles/:roleId", h.AdminDeleteKookGuildRole)
+	adminAuthed.POST("/kook-roles/:roleId/grant", h.AdminGrantKookGuildRole)
+	adminAuthed.POST("/kook-roles/:roleId/revoke", h.AdminRevokeKookGuildRole)
 	adminAuthed.POST("/publish-whitelist/batch", h.AdminBatchPublishWhitelist)
 
 	return r
