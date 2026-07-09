@@ -184,6 +184,18 @@ func (h *Handler) AdminListKookMembers(c *gin.Context) {
 		}
 		query = query.Where("is_blacklisted = ?", value)
 	}
+	if raw := strings.TrimSpace(c.Query("hasPermission")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "hasPermission invalid")
+			return
+		}
+		if value {
+			query = query.Where("role_ids IS NOT NULL AND JSON_LENGTH(role_ids) > 0")
+		} else {
+			query = query.Where("role_ids IS NULL OR JSON_LENGTH(role_ids) = 0")
+		}
+	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
