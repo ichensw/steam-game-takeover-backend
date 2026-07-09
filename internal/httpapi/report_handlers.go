@@ -16,6 +16,7 @@ import (
 
 type takeoverReportInput struct {
 	ReportedUserID uint64   `json:"reportedUserId"`
+	ReportType     string   `json:"reportType"`
 	Content        string   `json:"content"`
 	ImageURLs      []string `json:"imageUrls"`
 }
@@ -39,6 +40,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	}
 
 	content := strings.TrimSpace(req.Content)
+	reportType, reportTypeErr := normalizeReportType(req.ReportType)
 	imageURLs, imageErr := normalizeReportImageURLs(req.ImageURLs)
 	if req.ReportedUserID == 0 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
@@ -50,6 +52,10 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	}
 	if content == "" || len([]rune(content)) > 500 {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "report content is required and must be at most 500 characters")
+		return
+	}
+	if reportTypeErr != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, reportTypeErr.Error())
 		return
 	}
 	if imageErr != nil {
@@ -70,7 +76,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	var memberCount int64
 	if err := h.db.Table("ttw_takeover_member AS m").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-		Where("m.takeover_id = ? AND m.user_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, req.ReportedUserID, model.MemberStateJoined, false).
+		Where("m.takeover_id = ? AND m.user_id = ? AND u.is_deleted = ?", takeoverID, req.ReportedUserID, false).
 		Count(&memberCount).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
@@ -96,6 +102,7 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 		TakeoverID:     takeoverID,
 		ReporterUserID: user.ID,
 		ReportedUserID: req.ReportedUserID,
+		ReportType:     reportType,
 		ReportContent:  content,
 		ImageURLs:      reportImageURLsJSON(imageURLs),
 		ReportState:    model.ReportStatePending,
@@ -115,8 +122,8 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 func (h *Handler) AdminListReports(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	type reportRow struct {
@@ -129,6 +136,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 		ReportedNickname *string
 		ReportedSteamID  *string
 		ReportedCredit   uint
+		ReportType       string
 		ReportContent    string
 		ImageURLs        *string
 		ReportState      uint8
@@ -139,9 +147,18 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 	}
 
 	query := h.adminReportBaseQuery(c.Query("state"))
+	reportTypeText := strings.TrimSpace(c.Query("reportType"))
+	if reportTypeText != "" {
+		reportType, err := normalizeReportType(reportTypeText)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+			return
+		}
+		query = query.Where("r.report_type = ?", reportType)
+	}
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	if keyword != "" {
-		query = query.Where("r.report_content LIKE ?", "%"+keyword+"%")
+		query = query.Where("r.report_content LIKE ? OR r.report_type LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
 	startDate, err := parseOptionalDate(stringPtr(c.Query("startDate")))
 	if err != nil {
@@ -171,7 +188,7 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 	}
 
 	var rows []reportRow
-	if err := query.Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
+	if err := query.Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_type, r.report_content, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
 		Order("r.gmt_create DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
@@ -194,6 +211,8 @@ func (h *Handler) AdminListReports(c *gin.Context) {
 			"reportedSteamId":      stringValue(row.ReportedSteamID),
 			"reportedCreditScore":  row.ReportedCredit,
 			"reportedCreditStatus": creditStatus(row.ReportedCredit),
+			"reportType":           row.ReportType,
+			"reportTypeLabel":      reportTypeLabel(row.ReportType),
 			"content":              row.ReportContent,
 			"imageUrls":            imageURLs,
 			"state":                row.ReportState,
@@ -249,6 +268,7 @@ func (h *Handler) AdminGetReport(c *gin.Context) {
 		ReportedNickname *string
 		ReportedSteamID  *string
 		ReportedCredit   uint
+		ReportType       string
 		ReportContent    string
 		ImageURLs        *string
 		ReportState      uint8
@@ -260,7 +280,7 @@ func (h *Handler) AdminGetReport(c *gin.Context) {
 
 	var row reportDetailRow
 	if err := h.db.Table("ttw_takeover_report AS r").
-		Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, reporter.steam_id AS reporter_steam_id, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_content, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
+		Select("r.id, r.takeover_id, t.title AS takeover_title, r.reporter_user_id, reporter.nickname AS reporter_nickname, reporter.steam_id AS reporter_steam_id, r.reported_user_id, reported.nickname AS reported_nickname, reported.steam_id AS reported_steam_id, reported.credit_score AS reported_credit, r.report_type, r.report_content, r.image_urls, r.report_state, r.penalty_score, r.handle_note, r.handled_at, r.gmt_create").
 		Joins("JOIN ttw_takeover AS t ON t.id = r.takeover_id").
 		Joins("JOIN ttw_user AS reporter ON reporter.id = r.reporter_user_id").
 		Joins("JOIN ttw_user AS reported ON reported.id = r.reported_user_id").
@@ -285,6 +305,8 @@ func (h *Handler) AdminGetReport(c *gin.Context) {
 		"reportedSteamId":      stringValue(row.ReportedSteamID),
 		"reportedCreditScore":  row.ReportedCredit,
 		"reportedCreditStatus": creditStatus(row.ReportedCredit),
+		"reportType":           row.ReportType,
+		"reportTypeLabel":      reportTypeLabel(row.ReportType),
 		"content":              row.ReportContent,
 		"imageUrls":            reportImageURLs(row.ImageURLs),
 		"state":                row.ReportState,
@@ -465,6 +487,40 @@ func normalizeReportImageURLs(imageURLs []string) ([]string, error) {
 		result = append(result, trimmed)
 	}
 	return result, nil
+}
+
+func normalizeReportType(value string) (string, error) {
+	switch strings.TrimSpace(value) {
+	case "":
+		return model.ReportTypeOther, nil
+	case model.ReportTypeNoShow:
+		return model.ReportTypeNoShow, nil
+	case model.ReportTypeLeaveEarly:
+		return model.ReportTypeLeaveEarly, nil
+	case model.ReportTypeDisruptive:
+		return model.ReportTypeDisruptive, nil
+	case model.ReportTypeOffensive:
+		return model.ReportTypeOffensive, nil
+	case model.ReportTypeOther:
+		return model.ReportTypeOther, nil
+	default:
+		return "", errors.New("report type invalid")
+	}
+}
+
+func reportTypeLabel(value string) string {
+	switch value {
+	case model.ReportTypeNoShow:
+		return "到点不来"
+	case model.ReportTypeLeaveEarly:
+		return "中途跳车"
+	case model.ReportTypeDisruptive:
+		return "消极捣乱"
+	case model.ReportTypeOffensive:
+		return "言语攻击"
+	default:
+		return "其他"
+	}
 }
 
 func reportImageURLsJSON(imageURLs []string) *string {

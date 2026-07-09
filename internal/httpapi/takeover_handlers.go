@@ -35,8 +35,8 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 10)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	countQuery := h.db.Model(&model.Takeover{}).
@@ -234,6 +234,11 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
+	activities, err := h.takeoverMemberActivities(takeover.ID, includeOpenID, 100)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
 	if user.ID != 0 {
 		reportedUserIDs, err := h.reportedUserIDs(takeover.ID, user.ID)
 		if err != nil {
@@ -244,11 +249,16 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 			members[index].IsSelf = members[index].UserID == user.ID
 			members[index].HasReported = reportedUserIDs[members[index].UserID]
 		}
+		for index := range activities {
+			activities[index].IsSelf = activities[index].UserID == user.ID
+			activities[index].HasReported = reportedUserIDs[activities[index].UserID]
+		}
 	}
 	dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
 	dto.IsCreator = isTakeoverCreator(user, takeover)
 	dto.CanManage = canManageTakeover(user, takeover)
 	dto.Members = members
+	dto.MemberActivities = activities
 	ok(c, "success", dto)
 }
 
@@ -503,6 +513,9 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		if err := tx.Create(&member).Error; err != nil {
 			return err
 		}
+		if err := recordTakeoverMemberActivity(tx, takeover.ID, freshUser.ID, model.MemberActionJoin, nil); err != nil {
+			return err
+		}
 		joinedCount = 1
 		hasJoined = true
 		return nil
@@ -655,6 +668,9 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 				return err
 			}
 		}
+		if err := recordTakeoverMemberActivity(tx, takeoverID, freshUser.ID, model.MemberActionJoin, remark); err != nil {
+			return err
+		}
 		joinedCount++
 		return nil
 	})
@@ -765,6 +781,9 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 		}
 		if result.RowsAffected == 0 {
 			return errNotJoined
+		}
+		if err := recordTakeoverMemberActivity(tx, takeoverID, user.ID, model.MemberActionLeave, nil); err != nil {
+			return err
 		}
 
 		count, err := countValidJoinedMembers(tx, takeoverID)
@@ -939,6 +958,35 @@ func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit i
 		members = append(members, toMemberDTO(row, includeOpenID))
 	}
 	return members, nil
+}
+
+func (h *Handler) takeoverMemberActivities(takeoverID uint64, includeOpenID bool, limit int) ([]memberActivityDTO, error) {
+	var rows []memberActivityRow
+	query := h.db.Table("ttw_takeover_member_activity AS a").
+		Select("a.id, u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, a.remark, a.action, a.gmt_create AS created_at").
+		Joins("JOIN ttw_user AS u ON u.id = a.user_id").
+		Where("a.takeover_id = ? AND u.is_deleted = ?", takeoverID, false).
+		Order("a.gmt_create DESC, a.id DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	activities := make([]memberActivityDTO, 0, len(rows))
+	for _, row := range rows {
+		activities = append(activities, toMemberActivityDTO(row, includeOpenID))
+	}
+	return activities, nil
+}
+
+func recordTakeoverMemberActivity(tx *gorm.DB, takeoverID, userID uint64, action uint8, remark *string) error {
+	return tx.Create(&model.TakeoverMemberActivity{
+		TakeoverID: takeoverID,
+		UserID:     userID,
+		Action:     action,
+		Remark:     remark,
+	}).Error
 }
 
 func bindOptionalMemberRemark(c *gin.Context) (*string, bool) {

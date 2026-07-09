@@ -56,6 +56,22 @@ type memberDTO struct {
 	HasReported  bool   `json:"hasReported"`
 }
 
+type memberActivityDTO struct {
+	ID           uint64 `json:"id"`
+	UserID       uint64 `json:"userId"`
+	OpenID       string `json:"openid,omitempty"`
+	Nickname     string `json:"nickname"`
+	SteamID      string `json:"steamId"`
+	Gender       *uint8 `json:"gender"`
+	AvatarURL    string `json:"avatarUrl"`
+	Remark       string `json:"remark"`
+	Action       uint8  `json:"action"`
+	ActionText   string `json:"actionText"`
+	CreatedAt    string `json:"createdAt"`
+	IsSelf       bool   `json:"isSelf"`
+	HasReported  bool   `json:"hasReported"`
+}
+
 type recommendTagDTO struct {
 	Type  string `json:"type"`
 	Label string `json:"label"`
@@ -88,6 +104,7 @@ type takeoverDTO struct {
 	RecommendTags       []recommendTagDTO `json:"recommendTags,omitempty"`
 	PreviewMembers      []memberDTO       `json:"previewMembers,omitempty"`
 	Members             []memberDTO       `json:"members,omitempty"`
+	MemberActivities    []memberActivityDTO `json:"memberActivities,omitempty"`
 }
 
 type memberRow struct {
@@ -100,6 +117,19 @@ type memberRow struct {
 	Remark      *string
 	CreditScore uint
 	JoinedAt    time.Time
+}
+
+type memberActivityRow struct {
+	ID        uint64
+	UserID    uint64
+	OpenID    string
+	Nickname  *string
+	SteamID   *string
+	Gender    *uint8
+	AvatarURL *string
+	Remark    *string
+	Action    uint8
+	CreatedAt time.Time
 }
 
 func toUserDTO(user model.User) userDTO {
@@ -198,6 +228,32 @@ func toMemberDTO(row memberRow, includeOpenID bool) memberDTO {
 		dto.OpenID = row.OpenID
 	}
 	return dto
+}
+
+func toMemberActivityDTO(row memberActivityRow, includeOpenID bool) memberActivityDTO {
+	dto := memberActivityDTO{
+		ID:         row.ID,
+		UserID:     row.UserID,
+		Nickname:   stringValue(row.Nickname),
+		SteamID:    stringValue(row.SteamID),
+		Gender:     row.Gender,
+		AvatarURL:  normalizeAvatarURL(stringValue(row.AvatarURL), row.Gender),
+		Remark:     stringValue(row.Remark),
+		Action:     row.Action,
+		ActionText: memberActionText(row.Action),
+		CreatedAt:  row.CreatedAt.Format("2006-01-02 15:04:05"),
+	}
+	if includeOpenID {
+		dto.OpenID = row.OpenID
+	}
+	return dto
+}
+
+func memberActionText(action uint8) string {
+	if action == model.MemberActionLeave {
+		return "退出"
+	}
+	return "加入"
 }
 
 func dateString(value *time.Time) *string {

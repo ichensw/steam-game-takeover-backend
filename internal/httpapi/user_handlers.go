@@ -125,8 +125,8 @@ func (h *Handler) ListMyTakeovers(c *gin.Context) {
 	user, _ := currentUser(c)
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 10)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	query := h.db.Table("ttw_takeover AS t").
@@ -179,8 +179,8 @@ func (h *Handler) ListMyCreditLogs(c *gin.Context) {
 	user, _ := currentUser(c)
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(firstNonEmpty(c.Query("page_size"), c.Query("pageSize")), 20)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	query := h.db.Model(&model.UserCreditLog{}).Where("user_id = ?", user.ID)

@@ -94,8 +94,8 @@ func (h *Handler) MarkAnnouncementRead(c *gin.Context) {
 func (h *Handler) AdminListAnnouncements(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(firstNonEmpty(c.Query("page_size"), c.Query("pageSize")), 20)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 	query, err := h.adminAnnouncementQuery(c.Query("status"), c.Query("keyword"))
 	if err != nil {

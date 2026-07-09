@@ -16,6 +16,9 @@ const (
 	MemberStateJoined = 1
 	MemberStateExited = 2
 
+	MemberActionJoin  = 1
+	MemberActionLeave = 2
+
 	ReminderSendPending = 1
 	ReminderSendSent    = 2
 	ReminderSendFailed  = 3
@@ -42,6 +45,14 @@ const (
 	DefaultCreditScore   = 100
 	MinJoinCreditScore   = 70
 	MinCreateCreditScore = 51
+)
+
+const (
+	ReportTypeNoShow      = "no_show"
+	ReportTypeLeaveEarly  = "leave_early"
+	ReportTypeDisruptive  = "disruptive"
+	ReportTypeOffensive   = "offensive"
+	ReportTypeOther       = "other"
 )
 
 type User struct {
@@ -163,6 +174,17 @@ type TakeoverMember struct {
 
 func (TakeoverMember) TableName() string { return "ttw_takeover_member" }
 
+type TakeoverMemberActivity struct {
+	ID         uint64    `gorm:"primaryKey;column:id"`
+	TakeoverID uint64    `gorm:"column:takeover_id;index:idx_takeover_id"`
+	UserID     uint64    `gorm:"column:user_id;index:idx_user_id"`
+	Action     uint8     `gorm:"column:action"`
+	Remark     *string   `gorm:"column:remark;size:100"`
+	GmtCreate  time.Time `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
+}
+
+func (TakeoverMemberActivity) TableName() string { return "ttw_takeover_member_activity" }
+
 type TakeoverReminderSubscription struct {
 	ID          uint64     `gorm:"primaryKey;column:id"`
 	TakeoverID  uint64     `gorm:"column:takeover_id;uniqueIndex:uk_takeover_user_play_at;index:idx_takeover_id"`
@@ -186,6 +208,7 @@ type TakeoverReport struct {
 	TakeoverID       uint64     `gorm:"column:takeover_id;index:idx_takeover_id"`
 	ReporterUserID   uint64     `gorm:"column:reporter_user_id;index:idx_reporter_user_id"`
 	ReportedUserID   uint64     `gorm:"column:reported_user_id;index:idx_reported_user_id"`
+	ReportType       string     `gorm:"column:report_type;size:32"`
 	ReportContent    string     `gorm:"column:report_content;size:500"`
 	ImageURLs        *string    `gorm:"column:image_urls;type:json"`
 	PenaltyScore     uint       `gorm:"column:penalty_score"`

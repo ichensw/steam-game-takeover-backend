@@ -238,8 +238,8 @@ func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 func (h *Handler) AdminListAdminUsers(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	query := h.db.Model(&model.AdminUser{})

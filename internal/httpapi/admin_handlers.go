@@ -242,8 +242,8 @@ func (h *Handler) AdminUserSummary(c *gin.Context) {
 func (h *Handler) AdminListUsers(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	query := h.db.Model(&model.User{}).Where("is_deleted = ?", false)
@@ -471,8 +471,8 @@ func (h *Handler) AdminListTakeovers(c *gin.Context) {
 
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)
-	if pageSize > 50 {
-		pageSize = 50
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
 	query := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false)
