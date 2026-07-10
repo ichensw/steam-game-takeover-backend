@@ -330,6 +330,65 @@ func (h *Handler) AdminGetTakeover(c *gin.Context) {
 	h.getTakeoverDetail(c, true, model.User{IsAdmin: true})
 }
 
+func (h *Handler) AdminListTakeoverMemberActivities(c *gin.Context) {
+	takeoverID, okID := pathUint64(c, "takeoverId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var takeover model.Takeover
+	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(c.Query("pageSize"), 20)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	countQuery := applyMemberActivityKeywordFilter(h.memberActivityBaseQuery(takeover.ID), c.Query("keyword"))
+	listQuery := applyMemberActivityKeywordFilter(h.memberActivityBaseQuery(takeover.ID), c.Query("keyword"))
+
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var rows []memberActivityRow
+	if err := listQuery.
+		Select("a.id, u.id AS user_id, u.openid AS open_id, u.nickname, u.steam_id, u.gender, u.avatar_url, a.remark, a.action, a.gmt_create AS created_at").
+		Order("a.gmt_create DESC, a.id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Scan(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	list := make([]memberActivityDTO, 0, len(rows))
+	for _, row := range rows {
+		list = append(list, toMemberActivityDTO(row, true))
+	}
+
+	ok(c, "success", gin.H{
+		"page":     page,
+		"pageSize": pageSize,
+		"total":    total,
+		"list":     list,
+	})
+}
+
 func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user model.User) {
 	takeoverID, okID := pathUint64(c, "takeoverId")
 	if !okID {
@@ -1082,7 +1141,7 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit int) ([]memberDTO, error) {
 	var rows []memberRow
 	query := h.db.Table("ttw_takeover_member AS m").
-		Select("u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, m.remark, u.credit_score, m.gmt_create AS joined_at").
+		Select("u.id AS user_id, u.openid AS open_id, u.nickname, u.steam_id, u.gender, u.avatar_url, m.remark, u.credit_score, m.gmt_create AS joined_at").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
 		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false).
 		Order("m.gmt_create ASC")
@@ -1102,7 +1161,7 @@ func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit i
 func (h *Handler) takeoverMemberActivities(takeoverID uint64, includeOpenID bool, limit int) ([]memberActivityDTO, error) {
 	var rows []memberActivityRow
 	query := h.memberActivityBaseQuery(takeoverID).
-		Select("a.id, u.id AS user_id, u.openid, u.nickname, u.steam_id, u.gender, u.avatar_url, a.remark, a.action, a.gmt_create AS created_at").
+		Select("a.id, u.id AS user_id, u.openid AS open_id, u.nickname, u.steam_id, u.gender, u.avatar_url, a.remark, a.action, a.gmt_create AS created_at").
 		Order("a.gmt_create DESC, a.id DESC")
 	if limit > 0 {
 		query = query.Limit(limit)

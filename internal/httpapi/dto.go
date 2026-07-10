@@ -116,7 +116,7 @@ type takeoverDTO struct {
 
 type memberRow struct {
 	UserID      uint64
-	OpenID      string
+	OpenID      string `gorm:"column:open_id"`
 	Nickname    *string
 	SteamID     *string
 	Gender      *uint8
@@ -129,7 +129,7 @@ type memberRow struct {
 type memberActivityRow struct {
 	ID        uint64
 	UserID    uint64
-	OpenID    string
+	OpenID    string `gorm:"column:open_id"`
 	Nickname  *string
 	SteamID   *string
 	Gender    *uint8
