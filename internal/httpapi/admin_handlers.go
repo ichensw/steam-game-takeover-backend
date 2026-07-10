@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -11,6 +12,102 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func (h *Handler) AdminCreateTakeover(c *gin.Context) {
+	var req struct {
+		takeoverInput
+		CreatorUserID uint64 `json:"creatorUserId"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	if req.CreatorUserID == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "creatorUserId is required")
+		return
+	}
+	parsed, err := validateTakeoverInput(req.takeoverInput, true)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+
+	var takeover model.Takeover
+	var joinedCount int64
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		creator, err := h.lockProfileUser(tx, req.CreatorUserID)
+		if err != nil {
+			return err
+		}
+		if err := h.checkTextSecurity(contentSecurityTarget{
+			User:        creator,
+			ContentType: "takeover",
+			Scene:       contentScenePost,
+		}, takeoverSecurityText(parsed)); err != nil {
+			return err
+		}
+		if err := h.fillKookInviteURL(&parsed); err != nil {
+			return err
+		}
+		if err := syncExpiredTakeovers(tx, time.Now()); err != nil {
+			return err
+		}
+
+		takeover = model.Takeover{
+			CreatorUserID:    creator.ID,
+			Title:            parsed.Title,
+			ParticipantLimit: parsed.ParticipantLimit,
+			ScheduleType:     parsed.ScheduleType,
+			StartDate:        parsed.StartDate,
+			EndDate:          parsed.EndDate,
+			PlayTime:         parsed.PlayTime,
+			Description:      parsed.Description,
+			KookChannelID:    parsed.KookChannelID,
+			KookChannelName:  parsed.KookChannelName,
+			KookInviteURL:    parsed.KookInviteURL,
+			TakeoverState:    model.TakeoverStateNormal,
+		}
+		updates := map[string]interface{}{}
+		if err := applyManualTakeoverSummary(updates, &takeover, req.SummaryName); err != nil {
+			return err
+		}
+		conflict, err := h.hasActiveScheduleConflict(tx, creator.ID, takeover)
+		if err != nil {
+			return err
+		}
+		if conflict {
+			return errTakeoverTimeConflict
+		}
+		if err := tx.Create(&takeover).Error; err != nil {
+			return err
+		}
+		member := model.TakeoverMember{TakeoverID: takeover.ID, UserID: creator.ID, MemberState: model.MemberStateJoined}
+		if err := tx.Create(&member).Error; err != nil {
+			return err
+		}
+		if err := recordTakeoverMemberActivity(tx, takeover.ID, creator.ID, model.MemberActionJoin, nil); err != nil {
+			return err
+		}
+		joinedCount = 1
+		return nil
+	}); err != nil {
+		switch {
+		case errors.Is(err, errProfileRequired):
+			fail(c, http.StatusBadRequest, CodeProfileIncomplete, "creator profile incomplete")
+		case errors.Is(err, errContentSecurityReject):
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
+		case errors.Is(err, errTakeoverTimeConflict):
+			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
+		default:
+			fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
+		}
+		return
+	}
+	content := "create takeover: " + parsed.Title
+	_ = h.writeAdminLog("TAKEOVER_CREATE", "takeover", takeover.ID, &content)
+	h.refreshTakeoverSummary(&takeover)
+	ok(c, "created", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, true))
+}
 
 func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 	takeoverID, okID := pathUint64(c, "takeoverId")

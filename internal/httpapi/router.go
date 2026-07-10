@@ -68,6 +68,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.PUT("/settings", h.AdminUpdateSettings)
 	adminAuthed.POST("/uploads/image", h.AdminUploadImage)
 	adminAuthed.GET("/takeovers", h.AdminListTakeovers)
+	adminAuthed.POST("/takeovers", h.AdminCreateTakeover)
 	adminAuthed.POST("/takeovers/summary/refresh", h.AdminRefreshTakeoverSummaries)
 	adminAuthed.GET("/takeovers/:takeoverId", h.AdminGetTakeover)
 	adminAuthed.PUT("/takeovers/:takeoverId", h.AdminUpdateTakeover)
