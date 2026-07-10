@@ -202,11 +202,10 @@ func (h *Handler) AdminUpdateMePassword(c *gin.Context) {
 
 func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 	var req struct {
-		Username    string   `json:"username"`
-		Password    string   `json:"password"`
-		Nickname    string   `json:"nickname"`
-		Role        string   `json:"role"`
-		Permissions []string `json:"permissions"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Nickname string `json:"nickname"`
+		Role     string `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
@@ -224,17 +223,11 @@ func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 		return
 	}
-	permissions, err := adminPermissionsJSON(req.Permissions)
-	if err != nil {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin permissions")
-		return
-	}
 	admin := model.AdminUser{
 		Username:     username,
 		PasswordHash: string(hash),
 		Nickname:     nullableString(nickname),
 		Role:         normalizeAdminRole(strings.TrimSpace(req.Role)),
-		Permissions:  permissions,
 		Enabled:      true,
 	}
 	if err := h.db.Create(&admin).Error; err != nil {
@@ -251,11 +244,10 @@ func (h *Handler) AdminUpdateAdminUser(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Password    string   `json:"password"`
-		Nickname    string   `json:"nickname"`
-		Role        string   `json:"role"`
-		Permissions []string `json:"permissions"`
-		Enabled     *bool    `json:"enabled"`
+		Password string `json:"password"`
+		Nickname string `json:"nickname"`
+		Role     string `json:"role"`
+		Enabled  *bool  `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
@@ -273,22 +265,25 @@ func (h *Handler) AdminUpdateAdminUser(c *gin.Context) {
 		fail(c, http.StatusNotFound, CodeParamInvalid, "admin user not found")
 		return
 	}
-	if admin.Username == "admin" {
-		req.Role = model.AdminRoleSuperAdmin
-		req.Permissions = []string{}
-		enabled := true
-		req.Enabled = &enabled
+	nextRole := normalizeAdminRole(strings.TrimSpace(req.Role))
+	nextEnabled := admin.Enabled
+	if req.Enabled != nil {
+		nextEnabled = *req.Enabled
 	}
-
-	permissions, err := adminPermissionsJSON(req.Permissions)
-	if err != nil {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin permissions")
-		return
+	if adminRole(admin) == model.AdminRoleSuperAdmin && (nextRole != model.AdminRoleSuperAdmin || !nextEnabled) {
+		var superAdminCount int64
+		if err := h.db.Model(&model.AdminUser{}).Where("role = ? AND enabled = ? AND id <> ?", model.AdminRoleSuperAdmin, true, adminID).Count(&superAdminCount).Error; err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+			return
+		}
+		if superAdminCount == 0 {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "must keep one super admin")
+			return
+		}
 	}
 	updates := map[string]interface{}{
-		"nickname":    nullableString(nickname),
-		"role":        normalizeAdminRole(strings.TrimSpace(req.Role)),
-		"permissions": permissions,
+		"nickname": nullableString(nickname),
+		"role":     nextRole,
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled

@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS `ttw_admin_user` (
   `nickname` varchar(64) DEFAULT NULL COMMENT '管理员昵称',
   `avatar_url` varchar(255) DEFAULT NULL COMMENT '管理员头像地址',
   `role` varchar(32) NOT NULL DEFAULT 'admin' COMMENT '管理员角色',
-  `permissions` json DEFAULT NULL COMMENT '管理员权限列表',
   `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '是否启用：0否，1是',
   `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -38,8 +37,8 @@ CREATE TABLE IF NOT EXISTS `ttw_admin_user` (
   UNIQUE KEY `uk_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台管理员表';
 
-INSERT INTO `ttw_admin_user` (`username`, `password_hash`, `nickname`, `role`, `permissions`, `enabled`)
-VALUES ('admin', '$2a$10$W3ZjxXFR./UByWLjZvs5z.OIrZcd30i9C2droloE7aTlPENPBRm7u', '超级管理员', 'super_admin', JSON_ARRAY(), 1)
+INSERT INTO `ttw_admin_user` (`username`, `password_hash`, `nickname`, `role`, `enabled`)
+VALUES ('admin', '$2a$10$W3ZjxXFR./UByWLjZvs5z.OIrZcd30i9C2droloE7aTlPENPBRm7u', '超级管理员', 'super_admin', 1)
 ON DUPLICATE KEY UPDATE `username` = `username`;
 
 CREATE TABLE IF NOT EXISTS `ttw_admin_token` (

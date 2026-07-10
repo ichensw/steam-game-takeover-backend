@@ -56,9 +56,9 @@ const (
 )
 
 const (
-	AdminRoleSuperAdmin       = "super_admin"
-	AdminRoleAdmin            = "admin"
-	AdminPermissionKookManage = "kook:manage"
+	AdminRoleSuperAdmin = "super_admin"
+	AdminRoleKookAdmin  = "kook_admin"
+	AdminRoleAdmin      = "admin"
 )
 
 type User struct {
@@ -130,7 +130,6 @@ type AdminUser struct {
 	Nickname      *string    `gorm:"column:nickname;size:64"`
 	AvatarURL     *string    `gorm:"column:avatar_url;size:255"`
 	Role          string     `gorm:"column:role;size:32"`
-	Permissions   *string    `gorm:"column:permissions;type:json"`
 	Enabled       bool       `gorm:"column:enabled"`
 	LastLoginTime *time.Time `gorm:"column:last_login_time"`
 	GmtCreate     time.Time  `gorm:"column:gmt_create;autoCreateTime"`

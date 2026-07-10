@@ -91,7 +91,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.POST("/announcements/:announcementId/enable", h.AdminSetAnnouncementEnabled)
 	adminAuthed.POST("/announcements/:announcementId/disable", h.AdminSetAnnouncementDisabled)
 	adminAuthed.DELETE("/announcements/:announcementId", h.AdminDeleteAnnouncement)
-	kookAdmin := adminAuthed.Group("", h.AdminRequirePermission(model.AdminPermissionKookManage))
+	kookAdmin := adminAuthed.Group("", h.AdminRequireRole(model.AdminRoleKookAdmin))
 	kookAdmin.GET("/kook-members", h.AdminListKookMembers)
 	kookAdmin.POST("/kook-members", h.AdminCreateKookMember)
 	kookAdmin.POST("/kook-members/sync", h.AdminSyncKookMembers)
