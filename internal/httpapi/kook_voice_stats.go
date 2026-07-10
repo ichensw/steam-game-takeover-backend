@@ -54,6 +54,14 @@ type kookVoiceSessionDTO struct {
 	Source          string  `json:"source"`
 }
 
+type kookVoiceChannelUsageDTO struct {
+	ChannelID       string `json:"channelId"`
+	DurationSeconds int64  `json:"durationSeconds"`
+	DurationText    string `json:"durationText"`
+	SessionCount    int64  `json:"sessionCount"`
+	ActiveUserCount int64  `json:"activeUserCount"`
+}
+
 func (h *Handler) AdminKookVoiceStats(c *gin.Context) {
 	start, end, okRange := kookVoiceStatsRange(c)
 	if !okRange {
@@ -91,6 +99,25 @@ func (h *Handler) AdminKookVoiceStats(c *gin.Context) {
 		"total":        total,
 		"page":         page,
 		"pageSize":     pageSize,
+	})
+}
+
+func (h *Handler) AdminKookVoiceChannelUsageSummary(c *gin.Context) {
+	start, end, okRange := kookVoiceStatsRange(c)
+	if !okRange {
+		return
+	}
+	list, err := h.kookVoiceChannelUsageSummary(start, end)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	ok(c, "success", gin.H{
+		"range": gin.H{
+			"startTime": start.Format("2006-01-02 15:04:05"),
+			"endTime":   end.Format("2006-01-02 15:04:05"),
+		},
+		"list": list,
 	})
 }
 
@@ -156,6 +183,69 @@ func (h *Handler) kookVoiceSessionPage(start, end time.Time, channelID, userID s
 		Limit(pageSize).
 		Scan(&rows).Error
 	return total, rows, err
+}
+
+func (h *Handler) kookVoiceChannelUsageSummary(start, end time.Time) ([]kookVoiceChannelUsageDTO, error) {
+	type usageRow struct {
+		ChannelID       string
+		DurationSeconds int64
+		SessionCount    int64
+	}
+	usageRows := []usageRow{}
+	if err := h.db.Table("ttw_kook_voice_session").
+		Select("channel_id, SUM(GREATEST(0, TIMESTAMPDIFF(SECOND, GREATEST(joined_at, ?), LEAST(COALESCE(exited_at, NOW()), ?)))) AS duration_seconds, COUNT(*) AS session_count", start, end).
+		Where("joined_at < ? AND COALESCE(exited_at, NOW()) > ?", end, start).
+		Group("channel_id").
+		Scan(&usageRows).Error; err != nil {
+		return nil, err
+	}
+
+	type activeRow struct {
+		ChannelID       string
+		ActiveUserCount int64
+	}
+	activeRows := []activeRow{}
+	if err := h.db.Table("ttw_kook_voice_session").
+		Select("channel_id, COUNT(DISTINCT kook_user_id) AS active_user_count").
+		Where("exited_at IS NULL").
+		Group("channel_id").
+		Scan(&activeRows).Error; err != nil {
+		return nil, err
+	}
+
+	activeByChannel := make(map[string]int64, len(activeRows))
+	for _, row := range activeRows {
+		activeByChannel[row.ChannelID] = row.ActiveUserCount
+	}
+	list := make([]kookVoiceChannelUsageDTO, 0, len(usageRows)+len(activeRows))
+	seen := make(map[string]struct{}, len(usageRows)+len(activeRows))
+	for _, row := range usageRows {
+		seen[row.ChannelID] = struct{}{}
+		list = append(list, kookVoiceChannelUsageDTO{
+			ChannelID:       row.ChannelID,
+			DurationSeconds: row.DurationSeconds,
+			DurationText:    durationText(row.DurationSeconds),
+			SessionCount:    row.SessionCount,
+			ActiveUserCount: activeByChannel[row.ChannelID],
+		})
+	}
+	for _, row := range activeRows {
+		if _, ok := seen[row.ChannelID]; ok {
+			continue
+		}
+		list = append(list, kookVoiceChannelUsageDTO{
+			ChannelID:       row.ChannelID,
+			DurationText:    "0秒",
+			ActiveUserCount: row.ActiveUserCount,
+		})
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].ActiveUserCount == list[j].ActiveUserCount {
+			return list[i].DurationSeconds > list[j].DurationSeconds
+		}
+		return list[i].ActiveUserCount > list[j].ActiveUserCount
+	})
+	return list, nil
 }
 
 func (h *Handler) kookVoiceChannelNames() map[string]string {

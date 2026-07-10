@@ -103,6 +103,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	kookAdmin.POST("/kook-members/:kookMemberId/blacklist", h.AdminBlacklistKookMember)
 	kookAdmin.POST("/kook-members/:kookMemberId/unblacklist", h.AdminUnblacklistKookMember)
 	kookAdmin.GET("/kook-channels", h.AdminListKookChannels)
+	kookAdmin.GET("/kook-channels/usage-summary", h.AdminKookVoiceChannelUsageSummary)
 	kookAdmin.POST("/kook-channels", h.AdminCreateKookChannel)
 	kookAdmin.GET("/kook-channels/:channelId", h.AdminGetKookChannel)
 	kookAdmin.PUT("/kook-channels/:channelId", h.AdminUpdateKookChannel)
