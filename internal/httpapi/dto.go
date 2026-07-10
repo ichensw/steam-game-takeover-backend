@@ -101,6 +101,10 @@ type takeoverDTO struct {
 	KookChannelID       string              `json:"kookChannelId"`
 	KookChannelName     string              `json:"kookChannelName"`
 	KookInviteURL       string              `json:"kookInviteUrl"`
+	SummaryName         string              `json:"summaryName"`
+	SummarySource       string              `json:"summarySource"`
+	SummaryUpdatedAt    string              `json:"summaryUpdatedAt"`
+	SummaryError        string              `json:"summaryError"`
 	HasJoined           bool                `json:"hasJoined"`
 	IsCreator           bool                `json:"isCreator"`
 	CanManage           bool                `json:"canManage"`
@@ -203,6 +207,10 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 		KookChannelID:    stringValue(t.KookChannelID),
 		KookChannelName:  stringValue(t.KookChannelName),
 		KookInviteURL:    stringValue(t.KookInviteURL),
+		SummaryName:      stringValue(t.SummaryName),
+		SummarySource:    stringValue(t.SummarySource),
+		SummaryUpdatedAt: timeString(t.SummaryUpdatedAt),
+		SummaryError:     stringValue(t.SummaryError),
 		HasJoined:        hasJoined,
 	}
 }

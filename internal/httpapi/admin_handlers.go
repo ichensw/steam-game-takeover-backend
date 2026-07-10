@@ -72,30 +72,18 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 		return
 	}
 
-	result := h.db.Model(&model.Takeover{}).
-		Where("id = ? AND is_deleted = ?", takeoverID, false).
-		Updates(map[string]interface{}{
-			"title":             parsed.Title,
-			"participant_limit": parsed.ParticipantLimit,
-			"schedule_type":     parsed.ScheduleType,
-			"start_date":        parsed.StartDate,
-			"end_date":          parsed.EndDate,
-			"play_time":         parsed.PlayTime,
-			"description":       parsed.Description,
-			"kook_channel_id":   parsed.KookChannelID,
-			"kook_channel_name": parsed.KookChannelName,
-			"kook_invite_url":   parsed.KookInviteURL,
-		})
-	if result.Error != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
-		return
+	updates := map[string]interface{}{
+		"title":             parsed.Title,
+		"participant_limit": parsed.ParticipantLimit,
+		"schedule_type":     parsed.ScheduleType,
+		"start_date":        parsed.StartDate,
+		"end_date":          parsed.EndDate,
+		"play_time":         parsed.PlayTime,
+		"description":       parsed.Description,
+		"kook_channel_id":   parsed.KookChannelID,
+		"kook_channel_name": parsed.KookChannelName,
+		"kook_invite_url":   parsed.KookInviteURL,
 	}
-	if result.RowsAffected == 0 {
-		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
-		return
-	}
-	content := "update takeover: " + parsed.Title
-	_ = h.writeAdminLog("TAKEOVER_UPDATE", "takeover", takeoverID, &content)
 	takeover.Title = parsed.Title
 	takeover.ParticipantLimit = parsed.ParticipantLimit
 	takeover.ScheduleType = parsed.ScheduleType
@@ -106,6 +94,24 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 	takeover.KookChannelID = parsed.KookChannelID
 	takeover.KookChannelName = parsed.KookChannelName
 	takeover.KookInviteURL = parsed.KookInviteURL
+	if err := applyManualTakeoverSummary(updates, &takeover, req.SummaryName); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+	result := h.db.Model(&model.Takeover{}).
+		Where("id = ? AND is_deleted = ?", takeoverID, false).
+		Updates(updates)
+	if result.Error != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	if result.RowsAffected == 0 {
+		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		return
+	}
+	content := "update takeover: " + parsed.Title
+	_ = h.writeAdminLog("TAKEOVER_UPDATE", "takeover", takeoverID, &content)
+	h.refreshTakeoverSummary(&takeover)
 	ok(c, "saved", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, false))
 }
 
@@ -488,6 +494,26 @@ func (h *Handler) AdminBatchSetTakeoverView(c *gin.Context) {
 		return
 	}
 	ok(c, "saved", gin.H{"count": result.RowsAffected})
+}
+
+func (h *Handler) AdminRefreshTakeoverSummaries(c *gin.Context) {
+	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	var takeovers []model.Takeover
+	if err := h.db.
+		Where("is_deleted = ? AND takeover_state = ? AND (summary_source IS NULL OR summary_source <> ?)", false, model.TakeoverStateNormal, summarySourceManual).
+		Order("id DESC").
+		Find(&takeovers).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	for index := range takeovers {
+		takeovers[index].SummaryTitleHash = nil
+		h.refreshTakeoverSummary(&takeovers[index])
+	}
+	ok(c, "refreshed", gin.H{"count": len(takeovers)})
 }
 
 func (h *Handler) AdminListTakeovers(c *gin.Context) {

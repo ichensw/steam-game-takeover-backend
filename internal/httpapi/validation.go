@@ -21,6 +21,7 @@ type takeoverInput struct {
 	Description      string  `json:"description"`
 	KookChannelID    string  `json:"kookChannelId"`
 	KookChannelName  string  `json:"kookChannelName"`
+	SummaryName      *string `json:"summaryName"`
 }
 
 type parsedTakeoverInput struct {

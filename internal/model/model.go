@@ -192,6 +192,11 @@ type Takeover struct {
 	KookChannelID    *string    `gorm:"column:kook_channel_id;size:64"`
 	KookChannelName  *string    `gorm:"column:kook_channel_name;size:128"`
 	KookInviteURL    *string    `gorm:"column:kook_invite_url;size:255"`
+	SummaryName      *string    `gorm:"column:summary_name;size:64"`
+	SummarySource    *string    `gorm:"column:summary_source;size:16"`
+	SummaryTitleHash *string    `gorm:"column:summary_title_hash;size:64"`
+	SummaryError     *string    `gorm:"column:summary_error;size:255"`
+	SummaryUpdatedAt *time.Time `gorm:"column:summary_updated_at"`
 	TakeoverState    uint8      `gorm:"column:takeover_state"`
 	IsDeleted        bool       `gorm:"column:is_deleted"`
 	GmtCreate        time.Time  `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
@@ -352,6 +357,10 @@ const (
 	AppConfigKookVerifyToken        = "kook_verify_token"
 	AppConfigKookEncryptKey         = "kook_encrypt_key"
 	AppConfigAPIBaseURL             = "api_base_url"
+	AppConfigAIExtractEnabled       = "ai_extract_enabled"
+	AppConfigAIExtractAPIKey        = "ai_extract_api_key"
+	AppConfigAIExtractBaseURL       = "ai_extract_base_url"
+	AppConfigAIExtractModel         = "ai_extract_model"
 )
 
 type AppConfig struct {

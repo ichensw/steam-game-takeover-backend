@@ -22,6 +22,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.POST("/auth/bot-login", h.BotLogin)
 
 	api.GET("/takeovers", h.UserAuth(), h.ListTakeovers)
+	api.GET("/takeovers/summary", h.UserAuth(), h.ListTakeoverSummaries)
 	api.GET("/takeovers/:takeoverId", h.OptionalUserAuth(), h.GetTakeover)
 	api.GET("/takeovers/:takeoverId/member-activities", h.OptionalUserAuth(), h.ListTakeoverMemberActivities)
 	api.POST("/takeovers", h.UserAuth(), h.CreateTakeover)
@@ -67,6 +68,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.PUT("/settings", h.AdminUpdateSettings)
 	adminAuthed.POST("/uploads/image", h.AdminUploadImage)
 	adminAuthed.GET("/takeovers", h.AdminListTakeovers)
+	adminAuthed.POST("/takeovers/summary/refresh", h.AdminRefreshTakeoverSummaries)
 	adminAuthed.GET("/takeovers/:takeoverId", h.AdminGetTakeover)
 	adminAuthed.PUT("/takeovers/:takeoverId", h.AdminUpdateTakeover)
 	adminAuthed.DELETE("/takeovers/:takeoverId", h.AdminDeleteTakeover)

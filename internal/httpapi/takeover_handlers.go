@@ -97,6 +97,52 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 	})
 }
 
+func (h *Handler) ListTakeoverSummaries(c *gin.Context) {
+	now := time.Now()
+	if err := syncExpiredTakeovers(h.db, now); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	limit := positiveInt(c.Query("limit"), 20)
+	if limit > 100 {
+		limit = 100
+	}
+	query := h.takeoverListQuery(0).
+		Where("is_deleted = ? AND takeover_state = ? AND participant_limit > COALESCE(j.joined_count, 0)", false, model.TakeoverStateNormal)
+	var rows []takeoverListRow
+	if err := applyTakeoverRecommendOrder(query, now).Limit(limit).Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	list := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		t := row.Takeover
+		missing := int64(t.ParticipantLimit) - row.JoinedCount
+		list = append(list, gin.H{
+			"id":               t.ID,
+			"title":            t.Title,
+			"summaryName":      firstNonEmpty(stringValue(t.SummaryName), cleanSummaryName(t.Title)),
+			"summarySource":    stringValue(t.SummarySource),
+			"summaryUpdatedAt": timeString(t.SummaryUpdatedAt),
+			"scheduleText":     scheduleText(t),
+			"scheduleType":     t.ScheduleType,
+			"startDate":        dateString(t.StartDate),
+			"endDate":          dateString(t.EndDate),
+			"playTime":         shortTime(t.PlayTime),
+			"joinedCount":      row.JoinedCount,
+			"participantLimit": t.ParticipantLimit,
+			"missingCount":     missing,
+			"kookChannelId":    stringValue(t.KookChannelID),
+			"kookChannelName":  stringValue(t.KookChannelName),
+			"kookInviteUrl":    stringValue(t.KookInviteURL),
+			"takeoverState":    t.TakeoverState,
+			"statusLabel":      takeoverStatusLabel(t, row.JoinedCount),
+		})
+	}
+	ok(c, "success", gin.H{"total": len(list), "list": list})
+}
+
 func (h *Handler) takeoverListQuery(userID uint64) *gorm.DB {
 	return h.db.Table("ttw_takeover").
 		Select("ttw_takeover.*, COALESCE(j.joined_count, 0) AS joined_count, IF(hj.user_id IS NULL, 0, 1) AS has_joined").
@@ -453,6 +499,7 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 	takeover.KookChannelID = parsed.KookChannelID
 	takeover.KookChannelName = parsed.KookChannelName
 	takeover.KookInviteURL = parsed.KookInviteURL
+	h.refreshTakeoverSummary(&takeover)
 	ok(c, "saved", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, true))
 }
 
@@ -619,6 +666,9 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		}
 		fail(c, http.StatusInternalServerError, CodeSystemError, "create failed")
 		return
+	}
+	if !deduplicated {
+		h.refreshTakeoverSummary(&takeover)
 	}
 	ok(c, "created", gin.H{"id": takeover.ID, "hasJoined": hasJoined, "joinedCount": joinedCount, "deduplicated": deduplicated})
 }

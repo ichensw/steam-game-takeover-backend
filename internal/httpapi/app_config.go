@@ -47,6 +47,27 @@ func (h *Handler) apiBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(h.appConfigValue(model.AppConfigAPIBaseURL)), "/")
 }
 
+func (h *Handler) aiExtractEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractEnabled))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *Handler) aiExtractAPIKey() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractAPIKey))
+}
+
+func (h *Handler) aiExtractBaseURL() string {
+	return strings.TrimRight(strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractBaseURL)), "/")
+}
+
+func (h *Handler) aiExtractModel() string {
+	return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractModel))
+}
+
 func (h *Handler) GetAppConfig(c *gin.Context) {
 	ok(c, "success", gin.H{
 		"apiBaseUrl": h.apiBaseURL(),
@@ -89,6 +110,10 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 		"kookGuildId":            h.kookGuildID(),
 		"kookVerifyToken":        h.kookVerifyToken(),
 		"kookEncryptKey":         h.kookEncryptKey(),
+		"aiExtractEnabled":       h.aiExtractEnabled(),
+		"aiExtractApiKey":        h.aiExtractAPIKey(),
+		"aiExtractBaseUrl":       h.aiExtractBaseURL(),
+		"aiExtractModel":         h.aiExtractModel(),
 	})
 }
 
@@ -101,12 +126,16 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		KookGuildID            *string `json:"kookGuildId"`
 		KookVerifyToken        *string `json:"kookVerifyToken"`
 		KookEncryptKey         *string `json:"kookEncryptKey"`
+		AIExtractEnabled       *bool   `json:"aiExtractEnabled"`
+		AIExtractAPIKey        *string `json:"aiExtractApiKey"`
+		AIExtractBaseURL       *string `json:"aiExtractBaseUrl"`
+		AIExtractModel         *string `json:"aiExtractModel"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -152,6 +181,30 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.AIExtractEnabled != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractEnabled, boolString(*req.AIExtractEnabled)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.AIExtractAPIKey != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractAPIKey, strings.TrimSpace(*req.AIExtractAPIKey)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.AIExtractBaseURL != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractBaseURL, strings.TrimRight(strings.TrimSpace(*req.AIExtractBaseURL), "/")); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.AIExtractModel != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractModel, strings.TrimSpace(*req.AIExtractModel)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	ok(c, "saved", gin.H{
 		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
 		"uapiKey":                h.uapiKey(),
@@ -160,6 +213,10 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		"kookGuildId":            h.kookGuildID(),
 		"kookVerifyToken":        h.kookVerifyToken(),
 		"kookEncryptKey":         h.kookEncryptKey(),
+		"aiExtractEnabled":       h.aiExtractEnabled(),
+		"aiExtractApiKey":        h.aiExtractAPIKey(),
+		"aiExtractBaseUrl":       h.aiExtractBaseURL(),
+		"aiExtractModel":         h.aiExtractModel(),
 	})
 }
 

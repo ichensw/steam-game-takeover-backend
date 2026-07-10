@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS `ttw_takeover` (
   `end_date` date DEFAULT NULL COMMENT '缁撴潫鏃ユ湡',
   `play_time` time NOT NULL COMMENT '鍥哄畾鏃堕棿',
   `description` varchar(500) DEFAULT NULL COMMENT '鎺ラ緳浠嬬粛',
+  `summary_name` varchar(64) DEFAULT NULL COMMENT '接龙汇总展示词',
+  `summary_source` varchar(16) DEFAULT NULL COMMENT '汇总展示词来源: ai/manual/fallback',
+  `summary_title_hash` varchar(64) DEFAULT NULL COMMENT '汇总提取内容哈希',
+  `summary_error` varchar(255) DEFAULT NULL COMMENT '最近一次汇总提取错误',
+  `summary_updated_at` datetime DEFAULT NULL COMMENT '汇总展示词更新时间',
   `takeover_state` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '鎺ラ緳鐘舵€侊細1姝ｅ父锛?宸插叧闂?,
   `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '鏄惁鍒犻櫎锛?鍚︼紝1鏄?,
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
@@ -207,5 +212,10 @@ CREATE TABLE IF NOT EXISTS `ttw_app_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='搴旂敤閰嶇疆琛?;
 
 INSERT INTO `ttw_app_config` (`config_key`, `config_value`)
-VALUES ('publish_takeover_enabled', 'false')
+VALUES
+  ('publish_takeover_enabled', 'false'),
+  ('ai_extract_enabled', 'false'),
+  ('ai_extract_api_key', ''),
+  ('ai_extract_base_url', ''),
+  ('ai_extract_model', '')
 ON DUPLICATE KEY UPDATE `config_key` = `config_key`;
