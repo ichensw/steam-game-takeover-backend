@@ -60,6 +60,8 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.POST("/admin-users", h.AdminRequireSuperAdmin(), h.AdminCreateAdminUser)
 	adminAuthed.GET("/admin-users", h.AdminRequireSuperAdmin(), h.AdminListAdminUsers)
 	adminAuthed.PUT("/admin-users/:adminUserId", h.AdminRequireSuperAdmin(), h.AdminUpdateAdminUser)
+	adminAuthed.GET("/role-menus", h.AdminRequireSuperAdmin(), h.AdminListRoleMenus)
+	adminAuthed.PUT("/role-menus", h.AdminRequireSuperAdmin(), h.AdminUpdateRoleMenus)
 	adminAuthed.GET("/dashboard/summary", h.AdminDashboardSummary)
 	adminAuthed.GET("/settings", h.AdminGetSettings)
 	adminAuthed.PUT("/settings", h.AdminUpdateSettings)

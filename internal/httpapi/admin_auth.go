@@ -111,7 +111,7 @@ func (h *Handler) AdminLogin(c *gin.Context) {
 	ok(c, "logged in", gin.H{
 		"token":     tokenValue,
 		"expiresIn": int(h.cfg.AdminTokenTTL.Seconds()),
-		"admin":     toAdminUserDTO(admin),
+		"admin":     h.toAdminUserDTO(admin),
 	})
 }
 
@@ -131,7 +131,7 @@ func (h *Handler) AdminLogout(c *gin.Context) {
 
 func (h *Handler) AdminGetMe(c *gin.Context) {
 	admin, _ := currentAdmin(c)
-	ok(c, "success", toAdminUserDTO(admin))
+	ok(c, "success", h.toAdminUserDTO(admin))
 }
 
 func (h *Handler) AdminUpdateMe(c *gin.Context) {
@@ -160,7 +160,7 @@ func (h *Handler) AdminUpdateMe(c *gin.Context) {
 	}
 	admin.Nickname = nullableString(nickname)
 	admin.AvatarURL = nullableString(avatarURL)
-	ok(c, "saved", toAdminUserDTO(admin))
+	ok(c, "saved", h.toAdminUserDTO(admin))
 }
 
 func (h *Handler) AdminUpdateMePassword(c *gin.Context) {

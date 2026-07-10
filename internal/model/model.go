@@ -150,6 +150,15 @@ type AdminToken struct {
 
 func (AdminToken) TableName() string { return "ttw_admin_token" }
 
+type AdminRoleMenu struct {
+	Role        string    `gorm:"primaryKey;column:role;size:32"`
+	MenuKeys    string    `gorm:"column:menu_keys;type:json"`
+	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (AdminRoleMenu) TableName() string { return "ttw_admin_role_menu" }
+
 type Takeover struct {
 	ID               uint64     `gorm:"primaryKey;column:id"`
 	CreatorUserID    uint64     `gorm:"column:creator_user_id;index:idx_creator_user_id"`
