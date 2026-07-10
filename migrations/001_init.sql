@@ -23,21 +23,23 @@
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='鐢ㄦ埛琛?;
 
 CREATE TABLE IF NOT EXISTS `ttw_admin_user` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '涓婚敭',
-  `username` varchar(64) NOT NULL COMMENT '绠＄悊鍛樼敤鎴峰悕',
-  `password_hash` varchar(255) NOT NULL COMMENT '瀵嗙爜鍝堝笇',
-  `nickname` varchar(64) DEFAULT NULL COMMENT '绠＄悊鍛樻樀绉?,
-  `avatar_url` varchar(255) DEFAULT NULL COMMENT '绠＄悊鍛樺ご鍍忓湴鍧€',
-  `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '鏄惁鍚敤锛?鍚︼紝1鏄?,
-  `last_login_time` datetime DEFAULT NULL COMMENT '鏈€鍚庣櫥褰曟椂闂?,
-  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
-  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '淇敼鏃堕棿',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `username` varchar(64) NOT NULL COMMENT '管理员用户名',
+  `password_hash` varchar(255) NOT NULL COMMENT '密码哈希',
+  `nickname` varchar(64) DEFAULT NULL COMMENT '管理员昵称',
+  `avatar_url` varchar(255) DEFAULT NULL COMMENT '管理员头像地址',
+  `role` varchar(32) NOT NULL DEFAULT 'admin' COMMENT '管理员角色',
+  `permissions` json DEFAULT NULL COMMENT '管理员权限列表',
+  `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '是否启用：0否，1是',
+  `last_login_time` datetime DEFAULT NULL COMMENT '最后登录时间',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='鍚庡彴绠＄悊鍛樿〃';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台管理员表';
 
-INSERT INTO `ttw_admin_user` (`username`, `password_hash`, `nickname`, `enabled`)
-VALUES ('admin', '$2a$10$W3ZjxXFR./UByWLjZvs5z.OIrZcd30i9C2droloE7aTlPENPBRm7u', '瓒呯骇绠＄悊鍛?, 1)
+INSERT INTO `ttw_admin_user` (`username`, `password_hash`, `nickname`, `role`, `permissions`, `enabled`)
+VALUES ('admin', '$2a$10$W3ZjxXFR./UByWLjZvs5z.OIrZcd30i9C2droloE7aTlPENPBRm7u', '超级管理员', 'super_admin', JSON_ARRAY(), 1)
 ON DUPLICATE KEY UPDATE `username` = `username`;
 
 CREATE TABLE IF NOT EXISTS `ttw_admin_token` (

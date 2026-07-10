@@ -33,13 +33,16 @@ type adminWXUserDTO struct {
 }
 
 type adminUserDTO struct {
-	ID            uint64 `json:"id"`
-	Username      string `json:"username"`
-	Nickname      string `json:"nickname"`
-	AvatarURL     string `json:"avatarUrl"`
-	Enabled       bool   `json:"enabled"`
-	LastLoginTime string `json:"lastLoginTime"`
-	CreatedAt     string `json:"createdAt"`
+	ID            uint64   `json:"id"`
+	Username      string   `json:"username"`
+	Nickname      string   `json:"nickname"`
+	AvatarURL     string   `json:"avatarUrl"`
+	Role          string   `json:"role"`
+	Permissions   []string `json:"permissions"`
+	IsSuperAdmin  bool     `json:"isSuperAdmin"`
+	Enabled       bool     `json:"enabled"`
+	LastLoginTime string   `json:"lastLoginTime"`
+	CreatedAt     string   `json:"createdAt"`
 }
 
 type memberDTO struct {
@@ -175,6 +178,9 @@ func toAdminUserDTO(admin model.AdminUser) adminUserDTO {
 		Username:      admin.Username,
 		Nickname:      stringValue(admin.Nickname),
 		AvatarURL:     stringValue(admin.AvatarURL),
+		Role:          adminRole(admin),
+		Permissions:   adminPermissions(admin),
+		IsSuperAdmin:  isSuperAdmin(admin),
 		Enabled:       admin.Enabled,
 		LastLoginTime: timeString(admin.LastLoginTime),
 		CreatedAt:     admin.GmtCreate.Format("2006-01-02 15:04:05"),

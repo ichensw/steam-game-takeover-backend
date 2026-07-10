@@ -202,9 +202,11 @@ func (h *Handler) AdminUpdateMePassword(c *gin.Context) {
 
 func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Nickname string `json:"nickname"`
+		Username    string   `json:"username"`
+		Password    string   `json:"password"`
+		Nickname    string   `json:"nickname"`
+		Role        string   `json:"role"`
+		Permissions []string `json:"permissions"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
@@ -222,10 +224,17 @@ func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 		return
 	}
+	permissions, err := adminPermissionsJSON(req.Permissions)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin permissions")
+		return
+	}
 	admin := model.AdminUser{
 		Username:     username,
 		PasswordHash: string(hash),
 		Nickname:     nullableString(nickname),
+		Role:         normalizeAdminRole(strings.TrimSpace(req.Role)),
+		Permissions:  permissions,
 		Enabled:      true,
 	}
 	if err := h.db.Create(&admin).Error; err != nil {
@@ -233,6 +242,77 @@ func (h *Handler) AdminCreateAdminUser(c *gin.Context) {
 		return
 	}
 	ok(c, "created", toAdminUserDTO(admin))
+}
+
+func (h *Handler) AdminUpdateAdminUser(c *gin.Context) {
+	adminID, okParam := pathUint64(c, "adminUserId")
+	if !okParam {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin user")
+		return
+	}
+	var req struct {
+		Password    string   `json:"password"`
+		Nickname    string   `json:"nickname"`
+		Role        string   `json:"role"`
+		Permissions []string `json:"permissions"`
+		Enabled     *bool    `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	nickname := strings.TrimSpace(req.Nickname)
+	password := strings.TrimSpace(req.Password)
+	if len([]rune(nickname)) > 64 || (password != "" && (len([]rune(password)) < 6 || len([]rune(password)) > 64)) {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin user")
+		return
+	}
+
+	var admin model.AdminUser
+	if err := h.db.Where("id = ?", adminID).First(&admin).Error; err != nil {
+		fail(c, http.StatusNotFound, CodeParamInvalid, "admin user not found")
+		return
+	}
+	if admin.Username == "admin" {
+		req.Role = model.AdminRoleSuperAdmin
+		req.Permissions = []string{}
+		enabled := true
+		req.Enabled = &enabled
+	}
+
+	permissions, err := adminPermissionsJSON(req.Permissions)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid admin permissions")
+		return
+	}
+	updates := map[string]interface{}{
+		"nickname":    nullableString(nickname),
+		"role":        normalizeAdminRole(strings.TrimSpace(req.Role)),
+		"permissions": permissions,
+	}
+	if req.Enabled != nil {
+		updates["enabled"] = *req.Enabled
+	}
+	if password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+		updates["password_hash"] = string(hash)
+	}
+	if err := h.db.Model(&model.AdminUser{}).Where("id = ?", adminID).Updates(updates).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+		return
+	}
+	if password != "" || (req.Enabled != nil && !*req.Enabled) {
+		_ = h.db.Model(&model.AdminToken{}).Where("admin_user_id = ?", adminID).Update("is_revoked", true).Error
+	}
+	if err := h.db.Where("id = ?", adminID).First(&admin).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	ok(c, "saved", toAdminUserDTO(admin))
 }
 
 func (h *Handler) AdminListAdminUsers(c *gin.Context) {
