@@ -478,6 +478,18 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 			return
 		}
+	case "joined_channel":
+		if err := h.recordKookVoiceJoin(payload); err != nil {
+			log.Printf("kook voice join record failed: err=%v", err)
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	case "exited_channel":
+		if err := h.recordKookVoiceExit(payload); err != nil {
+			log.Printf("kook voice exit record failed: err=%v", err)
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
 	}
 	ok(c, "success", nil)
 }
@@ -496,6 +508,95 @@ func (h *Handler) decodeKookWebhookPayload(payload map[string]interface{}) (map[
 		return nil, err
 	}
 	return decoded, nil
+}
+
+func (h *Handler) recordKookVoiceJoin(payload map[string]interface{}) error {
+	guildID := kookPayloadGuildID(payload)
+	if guildID == "" {
+		guildID = h.kookGuildID()
+	}
+	channelID := kookPayloadChannelID(payload)
+	userID := kookPayloadUserID(payload)
+	joinedAt := kookPayloadEventTime(payload, "joined_at", "joinedAt")
+	if joinedAt == nil {
+		now := time.Now()
+		joinedAt = &now
+	}
+	if guildID == "" || channelID == "" || userID == "" {
+		return errKookMemberInvalid
+	}
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		var active model.KookVoiceSession
+		if err := tx.Where("guild_id = ? AND channel_id = ? AND kook_user_id = ? AND exited_at IS NULL", guildID, channelID, userID).
+			Order("joined_at DESC").
+			First(&active).Error; err != nil && !isNotFound(err) {
+			return err
+		}
+		if active.ID > 0 && joinedAt.After(active.JoinedAt) {
+			duration := uint(joinedAt.Sub(active.JoinedAt).Seconds())
+			if err := tx.Model(&model.KookVoiceSession{}).Where("id = ?", active.ID).Updates(map[string]interface{}{
+				"exited_at":        joinedAt,
+				"duration_seconds": duration,
+				"status":           model.KookVoiceSessionAbnormal,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&model.KookVoiceSession{
+			GuildID:    guildID,
+			ChannelID:  channelID,
+			KookUserID: userID,
+			JoinedAt:   *joinedAt,
+			Status:     model.KookVoiceSessionActive,
+			Source:     "event",
+		}).Error
+	})
+}
+
+func (h *Handler) recordKookVoiceExit(payload map[string]interface{}) error {
+	guildID := kookPayloadGuildID(payload)
+	if guildID == "" {
+		guildID = h.kookGuildID()
+	}
+	channelID := kookPayloadChannelID(payload)
+	userID := kookPayloadUserID(payload)
+	exitedAt := kookPayloadEventTime(payload, "exited_at", "exitedAt")
+	if exitedAt == nil {
+		now := time.Now()
+		exitedAt = &now
+	}
+	if guildID == "" || channelID == "" || userID == "" {
+		return errKookMemberInvalid
+	}
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		var active model.KookVoiceSession
+		err := tx.Where("guild_id = ? AND channel_id = ? AND kook_user_id = ? AND exited_at IS NULL", guildID, channelID, userID).
+			Order("joined_at DESC").
+			First(&active).Error
+		if err != nil {
+			if !isNotFound(err) {
+				return err
+			}
+			return tx.Create(&model.KookVoiceSession{
+				GuildID:    guildID,
+				ChannelID:  channelID,
+				KookUserID: userID,
+				JoinedAt:   *exitedAt,
+				ExitedAt:   exitedAt,
+				Status:     model.KookVoiceSessionAbnormal,
+				Source:     "event",
+			}).Error
+		}
+		duration := int64(0)
+		if exitedAt.After(active.JoinedAt) {
+			duration = int64(exitedAt.Sub(active.JoinedAt).Seconds())
+		}
+		return tx.Model(&model.KookVoiceSession{}).Where("id = ?", active.ID).Updates(map[string]interface{}{
+			"exited_at":        exitedAt,
+			"duration_seconds": uint(duration),
+			"status":           model.KookVoiceSessionClosed,
+		}).Error
+	})
 }
 
 func (h *Handler) adminKookMember(c *gin.Context) (model.KookMember, bool) {
@@ -888,7 +989,7 @@ func kookMemberFromWebhook(payload map[string]interface{}) model.KookMember {
 func kookEventType(payload map[string]interface{}) string {
 	for _, item := range kookPayloadMaps(payload) {
 		switch value := stringFromAny(item["type"]); value {
-		case "joined_guild", "exited_guild", "updated_guild_member":
+		case "joined_guild", "exited_guild", "updated_guild_member", "joined_channel", "exited_channel":
 			return value
 		}
 	}
@@ -901,6 +1002,18 @@ func kookPayloadGuildID(payload map[string]interface{}) string {
 	}
 	switch kookEventType(payload) {
 	case "joined_guild", "exited_guild", "updated_guild_member":
+		return kookPayloadString(payload, "target_id", "targetId")
+	default:
+		return ""
+	}
+}
+
+func kookPayloadChannelID(payload map[string]interface{}) string {
+	if value := kookPayloadString(payload, "channel_id", "channelId"); value != "" {
+		return value
+	}
+	switch kookEventType(payload) {
+	case "joined_channel", "exited_channel":
 		return kookPayloadString(payload, "target_id", "targetId")
 	default:
 		return ""
@@ -924,6 +1037,13 @@ func kookPayloadUserID(payload map[string]interface{}) string {
 		return value
 	}
 	return ""
+}
+
+func kookPayloadEventTime(payload map[string]interface{}, keys ...string) *time.Time {
+	if value := parseKookTimeValue(kookPayloadValue(payload, keys...)); value != nil {
+		return value
+	}
+	return parseKookTimeValue(kookPayloadValue(payload, "event_time", "eventTime", "msg_timestamp", "msgTimestamp", "timestamp"))
 }
 
 func kookPayloadString(payload map[string]interface{}, keys ...string) string {

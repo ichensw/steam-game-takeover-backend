@@ -34,6 +34,10 @@ const (
 	KookMemberStatusJoined = 1
 	KookMemberStatusExited = 2
 
+	KookVoiceSessionActive   = "active"
+	KookVoiceSessionClosed   = "closed"
+	KookVoiceSessionAbnormal = "abnormal"
+
 	AnnouncementStatusEnabled  = 1
 	AnnouncementStatusDisabled = 2
 
@@ -122,6 +126,22 @@ type KookMember struct {
 }
 
 func (KookMember) TableName() string { return "ttw_kook_member" }
+
+type KookVoiceSession struct {
+	ID              uint64     `gorm:"primaryKey;column:id"`
+	GuildID         string     `gorm:"column:guild_id;size:64;index:idx_guild_channel_joined"`
+	ChannelID       string     `gorm:"column:channel_id;size:64;index:idx_guild_channel_joined"`
+	KookUserID      string     `gorm:"column:kook_user_id;size:64;index:idx_user_joined"`
+	JoinedAt        time.Time  `gorm:"column:joined_at;index:idx_guild_channel_joined;index:idx_user_joined"`
+	ExitedAt        *time.Time `gorm:"column:exited_at;index:idx_exited_at"`
+	DurationSeconds uint       `gorm:"column:duration_seconds"`
+	Status          string     `gorm:"column:status;size:16;index:idx_status"`
+	Source          string     `gorm:"column:source;size:16"`
+	GmtCreate       time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified     time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (KookVoiceSession) TableName() string { return "ttw_kook_voice_session" }
 
 type AdminUser struct {
 	ID            uint64     `gorm:"primaryKey;column:id"`

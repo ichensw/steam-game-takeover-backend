@@ -126,6 +126,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	kookAdmin.POST("/kook-users/bot/offline", h.AdminOfflineKookBot)
 	kookAdmin.POST("/kook-users/bot/online", h.AdminOnlineKookBot)
 	kookAdmin.GET("/kook-users/bot/online-status", h.AdminGetKookBotOnlineStatus)
+	kookAdmin.GET("/kook-voice/stats", h.AdminKookVoiceStats)
 	adminAuthed.POST("/publish-whitelist/batch", h.AdminBatchPublishWhitelist)
 
 	return r

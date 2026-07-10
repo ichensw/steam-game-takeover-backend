@@ -12,7 +12,7 @@ import (
 var allAdminMenuKeys = []string{
 	"dashboard", "takeovers", "reports", "users", "admin-users",
 	"kook-channels", "kook-roles", "kook-members", "kook-users",
-	"feedbacks", "announcements", "settings",
+	"kook-voice-stats", "feedbacks", "announcements", "settings",
 }
 
 func defaultAdminMenuKeys(role string) []string {
@@ -20,7 +20,7 @@ func defaultAdminMenuKeys(role string) []string {
 	case model.AdminRoleSuperAdmin:
 		return allAdminMenuKeys
 	case model.AdminRoleKookAdmin:
-		return []string{"dashboard", "takeovers", "reports", "users", "kook-channels", "kook-roles", "kook-members", "kook-users", "feedbacks", "announcements", "settings"}
+		return []string{"dashboard", "takeovers", "reports", "users", "kook-channels", "kook-roles", "kook-members", "kook-users", "kook-voice-stats", "feedbacks", "announcements", "settings"}
 	default:
 		return []string{"dashboard", "takeovers", "reports", "users", "feedbacks", "announcements", "settings"}
 	}
@@ -76,6 +76,7 @@ func (h *Handler) AdminListRoleMenus(c *gin.Context) {
 			{"key": "kook-roles", "label": "KOOK 角色"},
 			{"key": "kook-members", "label": "KOOK 成员"},
 			{"key": "kook-users", "label": "KOOK 用户"},
+			{"key": "kook-voice-stats", "label": "KOOK 语音统计"},
 			{"key": "feedbacks", "label": "反馈管理"},
 			{"key": "announcements", "label": "公告管理"},
 			{"key": "settings", "label": "系统设置"},
