@@ -65,6 +65,17 @@ const (
 	AdminRoleAdmin      = "admin"
 )
 
+const (
+	KookChannelSortTriggerScheduled = "scheduled"
+	KookChannelSortTriggerManual    = "manual"
+
+	KookChannelSortStatusPlanning       = "planning"
+	KookChannelSortStatusRunning        = "running"
+	KookChannelSortStatusSucceeded      = "succeeded"
+	KookChannelSortStatusFailed         = "failed"
+	KookChannelSortStatusRollbackFailed = "rollback_failed"
+)
+
 type User struct {
 	ID                  uint64     `gorm:"primaryKey;column:id"`
 	OpenID              string     `gorm:"column:openid;size:64;uniqueIndex:uk_openid"`
@@ -142,6 +153,43 @@ type KookVoiceSession struct {
 }
 
 func (KookVoiceSession) TableName() string { return "ttw_kook_voice_session" }
+
+type KookChannelSortConfig struct {
+	ID           uint8      `gorm:"primaryKey;column:id"`
+	Enabled      bool       `gorm:"column:enabled"`
+	GroupIDs     string     `gorm:"column:group_ids;type:json"`
+	ScheduleType string     `gorm:"column:schedule_type;size:16"`
+	Weekday      *int       `gorm:"column:weekday"`
+	Monthday     *int       `gorm:"column:monthday"`
+	Hour         int        `gorm:"column:hour"`
+	NextRunAt    *time.Time `gorm:"column:next_run_at"`
+	LockToken    *string    `gorm:"column:lock_token;size:64"`
+	LockedUntil  *time.Time `gorm:"column:locked_until"`
+	GmtCreate    time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified  time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (KookChannelSortConfig) TableName() string { return "ttw_kook_channel_sort_config" }
+
+type KookChannelSortRun struct {
+	ID            uint64     `gorm:"primaryKey;column:id" json:"id"`
+	Trigger       string     `gorm:"column:trigger;size:16" json:"trigger"`
+	ExecutionKey  *string    `gorm:"column:execution_key;size:128;uniqueIndex:uk_execution_key" json:"-"`
+	RangeStart    time.Time  `gorm:"column:range_start" json:"rangeStart"`
+	RangeEnd      time.Time  `gorm:"column:range_end" json:"rangeEnd"`
+	GroupSnapshot string     `gorm:"column:group_snapshot;type:longtext" json:"-"`
+	PlanSnapshot  string     `gorm:"column:plan_snapshot;type:longtext" json:"-"`
+	Status        string     `gorm:"column:status;size:32;index:idx_status" json:"status"`
+	PlannedCount  int        `gorm:"column:planned_count" json:"plannedCount"`
+	MovedCount    int        `gorm:"column:moved_count" json:"movedCount"`
+	ErrorMessage  *string    `gorm:"column:error_message;type:text" json:"errorMessage"`
+	StartedAt     time.Time  `gorm:"column:started_at;index:idx_started_at" json:"startedAt"`
+	FinishedAt    *time.Time `gorm:"column:finished_at" json:"finishedAt"`
+	GmtCreate     time.Time  `gorm:"column:gmt_create;autoCreateTime" json:"-"`
+	GmtModified   time.Time  `gorm:"column:gmt_modified;autoUpdateTime" json:"-"`
+}
+
+func (KookChannelSortRun) TableName() string { return "ttw_kook_channel_sort_run" }
 
 type AdminUser struct {
 	ID            uint64     `gorm:"primaryKey;column:id"`
