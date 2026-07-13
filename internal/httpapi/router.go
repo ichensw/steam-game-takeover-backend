@@ -63,6 +63,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	adminAuthed.PUT("/admin-users/:adminUserId", h.AdminRequireSuperAdmin(), h.AdminUpdateAdminUser)
 	adminAuthed.GET("/role-menus", h.AdminRequireSuperAdmin(), h.AdminListRoleMenus)
 	adminAuthed.PUT("/role-menus", h.AdminRequireSuperAdmin(), h.AdminUpdateRoleMenus)
+	adminAuthed.Any("/wechat-bot/*path", h.AdminProxyWechatBot)
 	adminAuthed.GET("/dashboard/summary", h.AdminDashboardSummary)
 	adminAuthed.GET("/settings", h.AdminGetSettings)
 	adminAuthed.PUT("/settings", h.AdminUpdateSettings)

@@ -1704,3 +1704,17 @@ curl.exe -X POST "http://47.102.200.211:8081/api/uploads/image" `
   -H "Authorization: Bearer user-token" `
   -F "file=@C:\path\avatar.jpg"
 ```
+# 微信机器人后台网关
+
+以下接口均使用后台管理员 Bearer Token，并按角色菜单权限授权：
+
+| 方法 | 路径 | 菜单权限 |
+| --- | --- | --- |
+| GET | `/api/admin/wechat-bot/groups` | `wechat-messages` 或 `wechat-summary` |
+| GET | `/api/admin/wechat-bot/messages` | `wechat-messages` |
+| POST | `/api/admin/wechat-bot/messages/summary` | `wechat-summary` |
+| GET | `/api/admin/wechat-bot/tables` | `wechat-database` |
+| GET | `/api/admin/wechat-bot/tables/{table}` | `wechat-database` |
+| GET | `/api/admin/wechat-bot/tables/{table}/rows` | `wechat-database` |
+
+网关只转发上述方法和路径。机器人服务连接失败返回 502，超时返回 504。
