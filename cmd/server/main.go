@@ -24,6 +24,7 @@ func main() {
 	router := httpapi.NewRouter(handler)
 	handler.StartTakeoverReminderWorker(context.Background())
 	handler.StartDailyTakeoverExpirationWorker(context.Background())
+	handler.StartKookChannelSortWorker(context.Background())
 	log.Printf("server listening on %s", cfg.Addr)
 	if err := router.Run(cfg.Addr); err != nil {
 		log.Fatalf("run server: %v", err)
