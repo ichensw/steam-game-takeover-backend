@@ -31,6 +31,8 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 		return []string{"wechat-messages"}, true
 	case method == http.MethodPost && path == "/messages/summary":
 		return []string{"wechat-summary"}, true
+	case method == http.MethodGet && path == "/stats/daily":
+		return []string{"wechat-stats"}, true
 	case method == http.MethodGet && (path == "/tables" || tablePathPattern.MatchString(path)):
 		return []string{"wechat-database"}, true
 	default:
