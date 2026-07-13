@@ -126,4 +126,25 @@ func TestApplyKookChannelSortPlanRollsBackInReverseOrder(t *testing.T) {
 	}
 }
 
+func TestApplyKookChannelSortPlanRollsBackUncertainCurrentMove(t *testing.T) {
+	gateway := &fakeKookChannelGateway{update: func(position kookChannelPosition, _ int) error {
+		if position.ParentID == "new" {
+			return errors.New("connection reset")
+		}
+		return nil
+	}}
+	plan := kookChannelSortPlan{Moves: []kookChannelMove{{
+		ChannelID: "voice-1", FromParentID: "old", ToParentID: "new", FromLevel: 100, ToLevel: 200,
+	}}}
+
+	result := applyKookChannelSortPlan(context.Background(), gateway, plan, noKookChannelSortWait, nil)
+	if result.Err == nil || len(gateway.updates) != 4 {
+		t.Fatalf("result = %#v, updates = %#v", result, gateway.updates)
+	}
+	rollback := gateway.updates[len(gateway.updates)-1]
+	if rollback.ChannelID != "voice-1" || rollback.ParentID != "old" || rollback.Level != 100 {
+		t.Fatalf("rollback = %#v", rollback)
+	}
+}
+
 func noKookChannelSortWait(context.Context, time.Duration) error { return nil }

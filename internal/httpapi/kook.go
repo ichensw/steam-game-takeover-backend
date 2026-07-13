@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
@@ -107,7 +108,7 @@ func (h *Handler) fetchKookChannels() ([]kookChannelDTO, gin.H, error) {
 		return nil, nil, fmt.Errorf("kook not configured")
 	}
 
-	client := resty.New()
+	client := resty.New().SetTimeout(20 * time.Second)
 	var all []kookChannelDTO
 	var meta gin.H
 	for page := 1; ; page++ {

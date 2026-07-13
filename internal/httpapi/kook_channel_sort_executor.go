@@ -143,8 +143,13 @@ func applyKookChannelSortPlan(ctx context.Context, gateway kookChannelGateway, p
 		}
 		if err := updateKookChannelWithRetry(ctx, gateway, kookChannelPosition{ChannelID: move.ChannelID, ParentID: move.ToParentID, Level: move.ToLevel}, wait); err != nil {
 			result := kookChannelSortApplyResult{MovedCount: len(completed), Err: err}
-			for i := len(completed) - 1; i >= 0; i-- {
-				item := completed[i]
+			rollbackItems := completed
+			var gatewayErr *kookChannelGatewayError
+			if !errors.As(err, &gatewayErr) || gatewayErr.StatusCode == 429 || gatewayErr.StatusCode >= 500 {
+				rollbackItems = append(append([]kookChannelMove(nil), completed...), move)
+			}
+			for i := len(rollbackItems) - 1; i >= 0; i-- {
+				item := rollbackItems[i]
 				if rollbackErr := updateKookChannelWithRetry(ctx, gateway, kookChannelPosition{ChannelID: item.ChannelID, ParentID: item.FromParentID, Level: item.FromLevel}, wait); rollbackErr != nil {
 					result.RollbackFailedChannelIDs = append(result.RollbackFailedChannelIDs, item.ChannelID)
 				}
@@ -186,11 +191,41 @@ func (h *Handler) executeKookChannelSort(ctx context.Context, trigger string, ex
 		return model.KookChannelSortRun{}, err
 	}
 	defer h.releaseKookChannelSortLease(owner) //nolint:errcheck
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	defer stopHeartbeat()
+	leaseLost := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(kookChannelSortLeaseTTL / 3)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				ok, err := h.renewKookChannelSortLease(owner, kookChannelSortLeaseTTL)
+				if err != nil || !ok {
+					if err == nil {
+						err = fmt.Errorf("KOOK channel movement lease was lost")
+					}
+					select {
+					case leaseLost <- err:
+					default:
+					}
+					return
+				}
+			}
+		}
+	}()
 
 	gateway := kookHTTPGateway{h: h}
 	plan, start, end, err := h.planKookChannelSort(ctx, gateway)
 	if err != nil {
 		return model.KookChannelSortRun{}, err
+	}
+	select {
+	case lostErr := <-leaseLost:
+		return model.KookChannelSortRun{}, lostErr
+	default:
 	}
 	groupJSON, _ := json.Marshal(plan.Groups)
 	planJSON, _ := json.Marshal(plan)
@@ -201,6 +236,17 @@ func (h *Handler) executeKookChannelSort(ctx context.Context, trigger string, ex
 	}
 	if err := h.db.Create(&run).Error; err != nil {
 		return run, err
+	}
+	if ok, renewErr := h.renewKookChannelSortLease(owner, kookChannelSortLeaseTTL); renewErr != nil || !ok {
+		if renewErr == nil {
+			renewErr = fmt.Errorf("KOOK channel movement lease was lost")
+		}
+		now := time.Now()
+		run.Status, run.FinishedAt = "failed", &now
+		message := renewErr.Error()
+		run.ErrorMessage = &message
+		h.db.Save(&run)
+		return run, renewErr
 	}
 	moved, moveErr, rollbackErr := applyKookChannelMoves(ctx, gateway, plan.Moves, func() error {
 		ok, err := h.renewKookChannelSortLease(owner, kookChannelSortLeaseTTL)

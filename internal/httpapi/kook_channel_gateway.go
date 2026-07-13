@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -38,7 +39,7 @@ func (g kookHTTPGateway) ListChannels(context.Context) ([]kookChannelDTO, error)
 
 func (g kookHTTPGateway) UpdateChannel(ctx context.Context, position kookChannelPosition) error {
 	var result kookProxyResponse
-	resp, err := resty.New().R().
+	resp, err := resty.New().SetTimeout(20*time.Second).R().
 		SetContext(ctx).
 		SetHeader("Authorization", "Bot "+g.h.kookBotToken()).
 		SetHeader("Content-Type", "application/json").
