@@ -13,17 +13,39 @@ var allAdminMenuKeys = []string{
 	"dashboard", "takeovers", "reports", "users", "admin-users",
 	"kook-channels", "kook-roles", "kook-members", "kook-users",
 	"kook-voice-stats", "feedbacks", "announcements", "settings",
+	"wechat-messages", "wechat-summary", "wechat-database",
+}
+
+var superAdminRequiredMenuKeys = []string{
+	"admin-users", "wechat-messages", "wechat-summary", "wechat-database",
 }
 
 func defaultAdminMenuKeys(role string) []string {
 	switch role {
 	case model.AdminRoleSuperAdmin:
-		return allAdminMenuKeys
+		return append([]string(nil), allAdminMenuKeys...)
 	case model.AdminRoleKookAdmin:
 		return []string{"dashboard", "takeovers", "reports", "users", "kook-channels", "kook-roles", "kook-members", "kook-users", "kook-voice-stats", "feedbacks", "announcements", "settings"}
 	default:
 		return []string{"dashboard", "takeovers", "reports", "users", "feedbacks", "announcements", "settings"}
 	}
+}
+
+func ensureMenuKeys(keys []string, required ...string) []string {
+	result := append([]string(nil), keys...)
+	for _, key := range required {
+		if !containsString(result, key) {
+			result = append(result, key)
+		}
+	}
+	return result
+}
+
+func ensureRoleMenuKeys(role string, keys []string) []string {
+	if role == model.AdminRoleSuperAdmin {
+		return ensureMenuKeys(keys, superAdminRequiredMenuKeys...)
+	}
+	return keys
 }
 
 func normalizeAdminMenuKeys(keys []string) []string {
@@ -55,7 +77,7 @@ func (h *Handler) adminMenuKeys(role string) []string {
 	if err := json.Unmarshal([]byte(row.MenuKeys), &keys); err != nil {
 		return defaultAdminMenuKeys(role)
 	}
-	return normalizeAdminMenuKeys(keys)
+	return ensureRoleMenuKeys(role, normalizeAdminMenuKeys(keys))
 }
 
 func (h *Handler) toAdminUserDTO(admin model.AdminUser) adminUserDTO {
@@ -80,6 +102,9 @@ func (h *Handler) AdminListRoleMenus(c *gin.Context) {
 			{"key": "feedbacks", "label": "反馈管理"},
 			{"key": "announcements", "label": "公告管理"},
 			{"key": "settings", "label": "系统设置"},
+			{"key": "wechat-messages", "label": "微信消息查询"},
+			{"key": "wechat-summary", "label": "微信 AI 总结"},
+			{"key": "wechat-database", "label": "微信数据库浏览"},
 		},
 		"roles": []gin.H{
 			{"role": model.AdminRoleSuperAdmin, "label": "超级管理员", "menuKeys": h.adminMenuKeys(model.AdminRoleSuperAdmin)},
@@ -103,9 +128,7 @@ func (h *Handler) AdminUpdateRoleMenus(c *gin.Context) {
 	for _, item := range req.Roles {
 		role := normalizeAdminRole(item.Role)
 		keys := normalizeAdminMenuKeys(item.MenuKeys)
-		if role == model.AdminRoleSuperAdmin && !containsString(keys, "admin-users") {
-			keys = append(keys, "admin-users")
-		}
+		keys = ensureRoleMenuKeys(role, keys)
 		bytes, _ := json.Marshal(keys)
 		if err := h.db.Exec("INSERT INTO ttw_admin_role_menu (`role`, `menu_keys`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `menu_keys` = VALUES(`menu_keys`)", role, string(bytes)).Error; err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
