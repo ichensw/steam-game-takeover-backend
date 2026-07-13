@@ -1,13 +1,21 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"steam-game-takeover-backend/internal/model"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm/clause"
+)
+
+const (
+	defaultDailyTakeoverExpirationDays = 10
+	minDailyTakeoverExpirationDays     = 1
+	maxDailyTakeoverExpirationDays     = 365
 )
 
 func (h *Handler) publishTakeoverEnabled() bool {
@@ -68,6 +76,25 @@ func (h *Handler) aiExtractModel() string {
 	return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractModel))
 }
 
+func parseDailyTakeoverExpirationDays(raw string) int {
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days < minDailyTakeoverExpirationDays || days > maxDailyTakeoverExpirationDays {
+		return defaultDailyTakeoverExpirationDays
+	}
+	return days
+}
+
+func (h *Handler) dailyTakeoverExpirationDays() int {
+	return parseDailyTakeoverExpirationDays(h.appConfigValue(model.AppConfigDailyTakeoverExpirationDays))
+}
+
+func validateDailyTakeoverExpirationDays(days int) error {
+	if days < minDailyTakeoverExpirationDays || days > maxDailyTakeoverExpirationDays {
+		return errors.New("dailyTakeoverExpirationDays must be between 1 and 365")
+	}
+	return nil
+}
+
 func (h *Handler) GetAppConfig(c *gin.Context) {
 	ok(c, "success", gin.H{
 		"apiBaseUrl": h.apiBaseURL(),
@@ -103,41 +130,49 @@ func publishTakeoverAllowed(globalEnabled bool, whitelisted bool) bool {
 
 func (h *Handler) AdminGetSettings(c *gin.Context) {
 	ok(c, "success", gin.H{
-		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
-		"uapiKey":                h.uapiKey(),
-		"steamWebApiKey":         h.steamWebAPIKey(),
-		"kookBotToken":           h.kookBotToken(),
-		"kookGuildId":            h.kookGuildID(),
-		"kookVerifyToken":        h.kookVerifyToken(),
-		"kookEncryptKey":         h.kookEncryptKey(),
-		"aiExtractEnabled":       h.aiExtractEnabled(),
-		"aiExtractApiKey":        h.aiExtractAPIKey(),
-		"aiExtractBaseUrl":       h.aiExtractBaseURL(),
-		"aiExtractModel":         h.aiExtractModel(),
+		"publishTakeoverEnabled":      h.publishTakeoverEnabled(),
+		"uapiKey":                     h.uapiKey(),
+		"steamWebApiKey":              h.steamWebAPIKey(),
+		"kookBotToken":                h.kookBotToken(),
+		"kookGuildId":                 h.kookGuildID(),
+		"kookVerifyToken":             h.kookVerifyToken(),
+		"kookEncryptKey":              h.kookEncryptKey(),
+		"aiExtractEnabled":            h.aiExtractEnabled(),
+		"aiExtractApiKey":             h.aiExtractAPIKey(),
+		"aiExtractBaseUrl":            h.aiExtractBaseURL(),
+		"aiExtractModel":              h.aiExtractModel(),
+		"dailyTakeoverExpirationDays": h.dailyTakeoverExpirationDays(),
 	})
 }
 
 func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	var req struct {
-		PublishTakeoverEnabled *bool   `json:"publishTakeoverEnabled"`
-		UAPIKey                *string `json:"uapiKey"`
-		SteamWebAPIKey         *string `json:"steamWebApiKey"`
-		KookBotToken           *string `json:"kookBotToken"`
-		KookGuildID            *string `json:"kookGuildId"`
-		KookVerifyToken        *string `json:"kookVerifyToken"`
-		KookEncryptKey         *string `json:"kookEncryptKey"`
-		AIExtractEnabled       *bool   `json:"aiExtractEnabled"`
-		AIExtractAPIKey        *string `json:"aiExtractApiKey"`
-		AIExtractBaseURL       *string `json:"aiExtractBaseUrl"`
-		AIExtractModel         *string `json:"aiExtractModel"`
+		PublishTakeoverEnabled      *bool   `json:"publishTakeoverEnabled"`
+		UAPIKey                     *string `json:"uapiKey"`
+		SteamWebAPIKey              *string `json:"steamWebApiKey"`
+		KookBotToken                *string `json:"kookBotToken"`
+		KookGuildID                 *string `json:"kookGuildId"`
+		KookVerifyToken             *string `json:"kookVerifyToken"`
+		KookEncryptKey              *string `json:"kookEncryptKey"`
+		AIExtractEnabled            *bool   `json:"aiExtractEnabled"`
+		AIExtractAPIKey             *string `json:"aiExtractApiKey"`
+		AIExtractBaseURL            *string `json:"aiExtractBaseUrl"`
+		AIExtractModel              *string `json:"aiExtractModel"`
+		DailyTakeoverExpirationDays *int    `json:"dailyTakeoverExpirationDays"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
+	}
+	if req.DailyTakeoverExpirationDays != nil {
+		if err := validateDailyTakeoverExpirationDays(*req.DailyTakeoverExpirationDays); err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+			return
+		}
 	}
 	if req.PublishTakeoverEnabled != nil {
 		if err := h.saveAppConfig(model.AppConfigPublishTakeoverEnabled, boolString(*req.PublishTakeoverEnabled)); err != nil {
@@ -205,18 +240,25 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.DailyTakeoverExpirationDays != nil {
+		if err := h.saveAppConfig(model.AppConfigDailyTakeoverExpirationDays, strconv.Itoa(*req.DailyTakeoverExpirationDays)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	ok(c, "saved", gin.H{
-		"publishTakeoverEnabled": h.publishTakeoverEnabled(),
-		"uapiKey":                h.uapiKey(),
-		"steamWebApiKey":         h.steamWebAPIKey(),
-		"kookBotToken":           h.kookBotToken(),
-		"kookGuildId":            h.kookGuildID(),
-		"kookVerifyToken":        h.kookVerifyToken(),
-		"kookEncryptKey":         h.kookEncryptKey(),
-		"aiExtractEnabled":       h.aiExtractEnabled(),
-		"aiExtractApiKey":        h.aiExtractAPIKey(),
-		"aiExtractBaseUrl":       h.aiExtractBaseURL(),
-		"aiExtractModel":         h.aiExtractModel(),
+		"publishTakeoverEnabled":      h.publishTakeoverEnabled(),
+		"uapiKey":                     h.uapiKey(),
+		"steamWebApiKey":              h.steamWebAPIKey(),
+		"kookBotToken":                h.kookBotToken(),
+		"kookGuildId":                 h.kookGuildID(),
+		"kookVerifyToken":             h.kookVerifyToken(),
+		"kookEncryptKey":              h.kookEncryptKey(),
+		"aiExtractEnabled":            h.aiExtractEnabled(),
+		"aiExtractApiKey":             h.aiExtractAPIKey(),
+		"aiExtractBaseUrl":            h.aiExtractBaseURL(),
+		"aiExtractModel":              h.aiExtractModel(),
+		"dailyTakeoverExpirationDays": h.dailyTakeoverExpirationDays(),
 	})
 }
 

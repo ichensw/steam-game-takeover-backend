@@ -349,18 +349,19 @@ type PublishTakeoverWhitelist struct {
 func (PublishTakeoverWhitelist) TableName() string { return "ttw_publish_takeover_whitelist" }
 
 const (
-	AppConfigPublishTakeoverEnabled = "publish_takeover_enabled"
-	AppConfigUAPIKey                = "uapi_key"
-	AppConfigSteamWebAPIKey         = "steam_web_api_key"
-	AppConfigKookBotToken           = "kook_bot_token"
-	AppConfigKookGuildID            = "kook_guild_id"
-	AppConfigKookVerifyToken        = "kook_verify_token"
-	AppConfigKookEncryptKey         = "kook_encrypt_key"
-	AppConfigAPIBaseURL             = "api_base_url"
-	AppConfigAIExtractEnabled       = "ai_extract_enabled"
-	AppConfigAIExtractAPIKey        = "ai_extract_api_key"
-	AppConfigAIExtractBaseURL       = "ai_extract_base_url"
-	AppConfigAIExtractModel         = "ai_extract_model"
+	AppConfigPublishTakeoverEnabled      = "publish_takeover_enabled"
+	AppConfigUAPIKey                     = "uapi_key"
+	AppConfigSteamWebAPIKey              = "steam_web_api_key"
+	AppConfigKookBotToken                = "kook_bot_token"
+	AppConfigKookGuildID                 = "kook_guild_id"
+	AppConfigKookVerifyToken             = "kook_verify_token"
+	AppConfigKookEncryptKey              = "kook_encrypt_key"
+	AppConfigAPIBaseURL                  = "api_base_url"
+	AppConfigAIExtractEnabled            = "ai_extract_enabled"
+	AppConfigAIExtractAPIKey             = "ai_extract_api_key"
+	AppConfigAIExtractBaseURL            = "ai_extract_base_url"
+	AppConfigAIExtractModel              = "ai_extract_model"
+	AppConfigDailyTakeoverExpirationDays = "daily_takeover_expiration_days"
 )
 
 type AppConfig struct {
