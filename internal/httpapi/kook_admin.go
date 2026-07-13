@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"steam-game-takeover-backend/internal/model"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-resty/resty/v2"
 )
@@ -54,7 +56,12 @@ func (h *Handler) AdminKickoutKookChannelUser(c *gin.Context) {
 }
 
 func (h *Handler) AdminGetKookChannelRoles(c *gin.Context) {
-	h.proxyKookGET(c, "/channel-role/index", gin.H{"channel_id": c.Param("channelId")})
+	data, okData := h.kookProxyData(c, http.MethodGet, "/channel-role/index", kookGETParams(c, gin.H{"channel_id": c.Param("channelId")}))
+	if !okData {
+		return
+	}
+	h.fillKookChannelRoleUserNames(data)
+	ok(c, "success", data)
 }
 
 func (h *Handler) AdminCreateKookChannelRole(c *gin.Context) {
@@ -118,6 +125,10 @@ func (h *Handler) AdminGetKookBotOnlineStatus(c *gin.Context) {
 }
 
 func (h *Handler) proxyKookGET(c *gin.Context, path string, defaults gin.H) {
+	h.sendKookProxy(c, http.MethodGet, path, kookGETParams(c, defaults))
+}
+
+func kookGETParams(c *gin.Context, defaults gin.H) gin.H {
 	params := gin.H{}
 	for key, values := range c.Request.URL.Query() {
 		if len(values) > 0 {
@@ -129,7 +140,7 @@ func (h *Handler) proxyKookGET(c *gin.Context, path string, defaults gin.H) {
 			params[key] = value
 		}
 	}
-	h.sendKookProxy(c, http.MethodGet, path, params)
+	return params
 }
 
 func (h *Handler) proxyKookPOST(c *gin.Context, path string, defaults gin.H) {
@@ -150,10 +161,18 @@ func (h *Handler) proxyKookPOST(c *gin.Context, path string, defaults gin.H) {
 }
 
 func (h *Handler) sendKookProxy(c *gin.Context, method string, path string, payload gin.H) {
+	data, okData := h.kookProxyData(c, method, path, payload)
+	if !okData {
+		return
+	}
+	ok(c, "success", data)
+}
+
+func (h *Handler) kookProxyData(c *gin.Context, method string, path string, payload gin.H) (interface{}, bool) {
 	token := h.kookBotToken()
 	if token == "" {
 		fail(c, http.StatusBadGateway, CodeKookOperationFailed, "KOOK Bot Token is not configured")
-		return
+		return nil, false
 	}
 
 	var result kookProxyResponse
@@ -170,13 +189,88 @@ func (h *Handler) sendKookProxy(c *gin.Context, method string, path string, payl
 	}
 	if err != nil {
 		fail(c, http.StatusBadGateway, CodeKookOperationFailed, err.Error())
-		return
+		return nil, false
 	}
 	if resp.StatusCode() != http.StatusOK || result.Code != 0 {
 		fail(c, http.StatusBadGateway, CodeKookOperationFailed, kookProxyErrorMessage(resp.StatusCode(), result))
+		return nil, false
+	}
+	return result.Data, true
+}
+
+func (h *Handler) fillKookChannelRoleUserNames(data interface{}) {
+	rows := kookRoleRows(data)
+	userIDs := make([]string, 0, len(rows))
+	seen := map[string]struct{}{}
+	for _, row := range rows {
+		userID := kookRoleUserID(row)
+		if userID == "" {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		userIDs = append(userIDs, userID)
+	}
+	if len(userIDs) == 0 {
 		return
 	}
-	ok(c, "success", result.Data)
+
+	var members []model.KookMember
+	if err := h.db.Where("guild_id = ? AND kook_user_id IN ?", h.kookGuildID(), userIDs).Find(&members).Error; err != nil {
+		return
+	}
+	names := make(map[string]string, len(members))
+	for _, member := range members {
+		names[member.KookUserID] = firstNonEmpty(stringValue(member.Nickname), stringValue(member.Username), member.KookUserID)
+	}
+	for _, row := range rows {
+		userID := kookRoleUserID(row)
+		name := firstNonEmpty(names[userID], kookRoleInlineUserName(row))
+		if name == "" {
+			continue
+		}
+		row["displayName"] = name
+		row["objectName"] = name
+		if user, ok := row["user"].(map[string]interface{}); ok {
+			user["displayName"] = name
+		}
+	}
+}
+
+func kookRoleRows(data interface{}) []map[string]interface{} {
+	root, ok := data.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	var rows []map[string]interface{}
+	for _, key := range []string{"permission_users", "permission_overwrites"} {
+		items, _ := root[key].([]interface{})
+		for _, item := range items {
+			if row, ok := item.(map[string]interface{}); ok {
+				rows = append(rows, row)
+			}
+		}
+	}
+	return rows
+}
+
+func kookRoleUserID(row map[string]interface{}) string {
+	if value := stringFromAny(row["user_id"]); value != "" {
+		return value
+	}
+	if user, ok := row["user"].(map[string]interface{}); ok {
+		return stringFromAny(user["id"])
+	}
+	return ""
+}
+
+func kookRoleInlineUserName(row map[string]interface{}) string {
+	if user, ok := row["user"].(map[string]interface{}); ok {
+		return firstNonEmpty(stringFromAny(user["nickname"]), stringFromAny(user["username"]), stringFromAny(user["name"]))
+	}
+	return firstNonEmpty(stringFromAny(row["nickname"]), stringFromAny(row["username"]), stringFromAny(row["name"]))
 }
 
 func toKookBody(body gin.H) gin.H {
