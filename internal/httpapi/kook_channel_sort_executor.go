@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"time"
 
@@ -272,6 +273,11 @@ func (h *Handler) executeKookChannelSort(ctx context.Context, trigger string, ex
 		run.ErrorMessage = &message
 	}
 	h.db.Save(&run)
+	if moveErr == nil && run.MovedCount > 0 {
+		if notifyErr := h.notifyKookChannelSort(ctx, plan); notifyErr != nil {
+			log.Printf("notify KOOK channel sort: %v", notifyErr)
+		}
+	}
 	return run, moveErr
 }
 
