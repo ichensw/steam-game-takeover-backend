@@ -55,11 +55,13 @@ type kookVoiceSessionDTO struct {
 }
 
 type kookVoiceChannelUsageDTO struct {
-	ChannelID       string `json:"channelId"`
-	DurationSeconds int64  `json:"durationSeconds"`
-	DurationText    string `json:"durationText"`
-	SessionCount    int64  `json:"sessionCount"`
-	ActiveUserCount int64  `json:"activeUserCount"`
+	ChannelID               string `json:"channelId"`
+	DurationSeconds         int64  `json:"durationSeconds"`
+	DurationText            string `json:"durationText"`
+	OccupiedDurationSeconds int64  `json:"occupiedDurationSeconds"`
+	OccupiedDurationText    string `json:"occupiedDurationText"`
+	SessionCount            int64  `json:"sessionCount"`
+	ActiveUserCount         int64  `json:"activeUserCount"`
 }
 
 func (h *Handler) AdminKookVoiceStats(c *gin.Context) {
@@ -239,6 +241,18 @@ func (h *Handler) kookVoiceChannelUsageSummary(start, end time.Time) ([]kookVoic
 			ActiveUserCount: row.ActiveUserCount,
 		})
 	}
+	guildID := h.kookGuildID()
+	effectiveEnd := minTime(time.Now(), end)
+	intervals := []kookVoiceInterval{}
+	if guildID != "" && effectiveEnd.After(start) {
+		if err := h.db.Table("ttw_kook_voice_session").
+			Select("guild_id, channel_id, joined_at, exited_at").
+			Where("guild_id = ? AND joined_at < ? AND (exited_at IS NULL OR exited_at > ?)", guildID, effectiveEnd, start).
+			Scan(&intervals).Error; err != nil {
+			return nil, err
+		}
+	}
+	attachKookVoiceOccupancy(list, guildID, mergeKookVoiceIntervals(intervals, start, effectiveEnd))
 	sort.Slice(list, func(i, j int) bool {
 		if list[i].ActiveUserCount == list[j].ActiveUserCount {
 			return list[i].DurationSeconds > list[j].DurationSeconds
