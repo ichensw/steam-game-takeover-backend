@@ -77,7 +77,18 @@ func (h *Handler) AdminKookVoiceStats(c *gin.Context) {
 	channelID := strings.TrimSpace(c.Query("channelId"))
 	userID := strings.TrimSpace(c.Query("userId"))
 
-	sessions, err := h.kookVoiceSessions(start, end, channelID, userID, 50000)
+	channelNames := h.kookVoiceChannelNames()
+	userStats, err := h.kookVoiceUserStats(start, end, channelID, userID)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	channelStats, err := h.kookVoiceChannelStats(start, end, channelID, userID, channelNames)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	dailyRanking, err := h.kookVoiceDailyRanking(start, end, channelID, userID)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
@@ -87,16 +98,15 @@ func (h *Handler) AdminKookVoiceStats(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	channelNames := h.kookVoiceChannelNames()
 
 	ok(c, "success", gin.H{
 		"range": gin.H{
 			"startTime": start.Format("2006-01-02 15:04:05"),
 			"endTime":   end.Format("2006-01-02 15:04:05"),
 		},
-		"userStats":    kookVoiceUserStats(sessions, start, end, channelNames),
-		"channelStats": kookVoiceChannelStats(sessions, start, end, channelNames),
-		"dailyRanking": kookVoiceDailyRanking(sessions, start, end, channelNames),
+		"userStats":    userStats,
+		"channelStats": channelStats,
+		"dailyRanking": dailyRanking,
 		"sessions":     kookVoiceSessionDTOs(pageRows, start, end, channelNames),
 		"total":        total,
 		"page":         page,
@@ -166,7 +176,7 @@ func (h *Handler) kookVoiceSessions(start, end time.Time, channelID, userID stri
 }
 
 func (h *Handler) kookVoiceSessionPage(start, end time.Time, channelID, userID string, page, pageSize int) (int64, []kookVoiceSessionRow, error) {
-	base := h.db.Table("ttw_kook_voice_session s").Where("s.joined_at < ? AND COALESCE(s.exited_at, NOW()) > ?", end, start)
+	base := h.db.Table("ttw_kook_voice_session s").Where("s.joined_at < ? AND (s.exited_at IS NULL OR s.exited_at > ?)", end, start)
 	if channelID != "" {
 		base = base.Where("s.channel_id = ?", channelID)
 	}
@@ -187,6 +197,143 @@ func (h *Handler) kookVoiceSessionPage(start, end time.Time, channelID, userID s
 	return total, rows, err
 }
 
+func (h *Handler) kookVoiceUserStats(start, end time.Time, channelID, userID string) ([]kookVoiceUsageDTO, error) {
+	rows := []struct {
+		GuildID         string
+		KookUserID      string
+		Username        *string
+		Nickname        *string
+		DurationSeconds int64
+		SessionCount    int
+		LastJoinedAt    *time.Time
+	}{}
+	query := h.db.Table("ttw_kook_voice_session s").
+		Select("s.guild_id, s.kook_user_id, MAX(m.username) AS username, MAX(m.nickname) AS nickname, SUM(GREATEST(0, TIMESTAMPDIFF(SECOND, GREATEST(s.joined_at, ?), LEAST(IFNULL(s.exited_at, ?), ?)))) AS duration_seconds, COUNT(*) AS session_count, MAX(s.joined_at) AS last_joined_at", start, minTime(time.Now(), end), end).
+		Joins("LEFT JOIN ttw_kook_member m ON m.guild_id = s.guild_id AND m.kook_user_id = s.kook_user_id").
+		Where("s.joined_at < ? AND (s.exited_at IS NULL OR s.exited_at > ?)", end, start)
+	if channelID != "" {
+		query = query.Where("s.channel_id = ?", channelID)
+	}
+	if userID != "" {
+		query = query.Where("s.kook_user_id = ?", userID)
+	}
+	if err := query.Group("s.guild_id, s.kook_user_id").Order("duration_seconds DESC, session_count DESC").Limit(100).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	list := make([]kookVoiceUsageDTO, 0, len(rows))
+	for _, row := range rows {
+		var lastJoinedAt *string
+		if row.LastJoinedAt != nil {
+			text := row.LastJoinedAt.Format("2006-01-02 15:04:05")
+			lastJoinedAt = &text
+		}
+		list = append(list, kookVoiceUsageDTO{
+			GuildID:         row.GuildID,
+			KookUserID:      row.KookUserID,
+			Username:        stringValue(row.Username),
+			Nickname:        stringValue(row.Nickname),
+			DurationSeconds: row.DurationSeconds,
+			DurationText:    durationText(row.DurationSeconds),
+			SessionCount:    row.SessionCount,
+			LastJoinedAt:    lastJoinedAt,
+		})
+	}
+	return list, nil
+}
+
+func (h *Handler) kookVoiceChannelStats(start, end time.Time, channelID, userID string, channelNames map[string]string) ([]kookVoiceUsageDTO, error) {
+	rows := []struct {
+		GuildID         string
+		ChannelID       string
+		DurationSeconds int64
+		SessionCount    int
+	}{}
+	query := h.db.Table("ttw_kook_voice_session s").
+		Select("s.guild_id, s.channel_id, SUM(GREATEST(0, TIMESTAMPDIFF(SECOND, GREATEST(s.joined_at, ?), LEAST(IFNULL(s.exited_at, ?), ?)))) AS duration_seconds, COUNT(*) AS session_count", start, minTime(time.Now(), end), end).
+		Where("s.joined_at < ? AND (s.exited_at IS NULL OR s.exited_at > ?)", end, start)
+	if channelID != "" {
+		query = query.Where("s.channel_id = ?", channelID)
+	}
+	if userID != "" {
+		query = query.Where("s.kook_user_id = ?", userID)
+	}
+	if err := query.Group("s.guild_id, s.channel_id").Order("duration_seconds DESC, session_count DESC").Limit(100).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	list := make([]kookVoiceUsageDTO, 0, len(rows))
+	for _, row := range rows {
+		list = append(list, kookVoiceUsageDTO{
+			GuildID:         row.GuildID,
+			ChannelID:       row.ChannelID,
+			ChannelName:     channelNames[row.ChannelID],
+			DurationSeconds: row.DurationSeconds,
+			DurationText:    durationText(row.DurationSeconds),
+			SessionCount:    row.SessionCount,
+		})
+	}
+	return list, nil
+}
+
+func (h *Handler) kookVoiceDailyRanking(start, end time.Time, channelID, userID string) ([]kookVoiceUsageDTO, error) {
+	effectiveEnd := minTime(time.Now(), end)
+	if !effectiveEnd.After(start) {
+		return []kookVoiceUsageDTO{}, nil
+	}
+	sql := `WITH RECURSIVE days(day_start) AS (
+  SELECT TIMESTAMP(DATE(?))
+  UNION ALL
+  SELECT DATE_ADD(day_start, INTERVAL 1 DAY) FROM days WHERE DATE_ADD(day_start, INTERVAL 1 DAY) < ?
+)
+SELECT DATE_FORMAT(days.day_start, '%Y-%m-%d') AS date,
+       s.guild_id,
+       s.kook_user_id,
+       MAX(m.username) AS username,
+       MAX(m.nickname) AS nickname,
+       SUM(GREATEST(0, TIMESTAMPDIFF(SECOND, GREATEST(s.joined_at, ?, days.day_start), LEAST(IFNULL(s.exited_at, ?), ?, DATE_ADD(days.day_start, INTERVAL 1 DAY))))) AS duration_seconds,
+       COUNT(*) AS session_count
+FROM days
+JOIN ttw_kook_voice_session s ON s.joined_at < LEAST(DATE_ADD(days.day_start, INTERVAL 1 DAY), ?) AND (s.exited_at IS NULL OR s.exited_at > days.day_start)
+LEFT JOIN ttw_kook_member m ON m.guild_id = s.guild_id AND m.kook_user_id = s.kook_user_id
+WHERE s.joined_at < ? AND (s.exited_at IS NULL OR s.exited_at > ?)`
+	args := []any{start, effectiveEnd, start, effectiveEnd, effectiveEnd, effectiveEnd, end, start}
+	if channelID != "" {
+		sql += " AND s.channel_id = ?"
+		args = append(args, channelID)
+	}
+	if userID != "" {
+		sql += " AND s.kook_user_id = ?"
+		args = append(args, userID)
+	}
+	sql += " GROUP BY date, s.guild_id, s.kook_user_id ORDER BY duration_seconds DESC, session_count DESC LIMIT 100"
+
+	rows := []struct {
+		Date            string
+		GuildID         string
+		KookUserID      string
+		Username        *string
+		Nickname        *string
+		DurationSeconds int64
+		SessionCount    int
+	}{}
+	if err := h.db.Raw(sql, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	list := make([]kookVoiceUsageDTO, 0, len(rows))
+	for _, row := range rows {
+		list = append(list, kookVoiceUsageDTO{
+			Date:            row.Date,
+			GuildID:         row.GuildID,
+			KookUserID:      row.KookUserID,
+			Username:        stringValue(row.Username),
+			Nickname:        stringValue(row.Nickname),
+			DurationSeconds: row.DurationSeconds,
+			DurationText:    durationText(row.DurationSeconds),
+			SessionCount:    row.SessionCount,
+		})
+	}
+	return list, nil
+}
+
 func (h *Handler) kookVoiceChannelUsageSummary(start, end time.Time) ([]kookVoiceChannelUsageDTO, error) {
 	type usageRow struct {
 		ChannelID       string
@@ -196,7 +343,7 @@ func (h *Handler) kookVoiceChannelUsageSummary(start, end time.Time) ([]kookVoic
 	usageRows := []usageRow{}
 	if err := h.db.Table("ttw_kook_voice_session").
 		Select("channel_id, SUM(GREATEST(0, TIMESTAMPDIFF(SECOND, GREATEST(joined_at, ?), LEAST(COALESCE(exited_at, NOW()), ?)))) AS duration_seconds, COUNT(*) AS session_count", start, end).
-		Where("joined_at < ? AND COALESCE(exited_at, NOW()) > ?", end, start).
+		Where("joined_at < ? AND (exited_at IS NULL OR exited_at > ?)", end, start).
 		Group("channel_id").
 		Scan(&usageRows).Error; err != nil {
 		return nil, err
@@ -263,18 +410,41 @@ func (h *Handler) kookVoiceChannelUsageSummary(start, end time.Time) ([]kookVoic
 }
 
 func (h *Handler) kookVoiceChannelNames() map[string]string {
-	result := map[string]string{}
-	channels, _, err := h.fetchKookChannels()
-	if err != nil {
-		return result
+	h.kookChannelNamesMu.Lock()
+	result := make(map[string]string, len(h.kookChannelNames))
+	for id, name := range h.kookChannelNames {
+		result[id] = name
 	}
-	for _, channel := range channels {
-		result[channel.ID] = channel.Name
+	needsReload := time.Now().After(h.kookChannelNamesUntil) && !h.kookChannelNamesReload
+	if needsReload {
+		h.kookChannelNamesReload = true
+	}
+	h.kookChannelNamesMu.Unlock()
+	if needsReload {
+		go h.reloadKookVoiceChannelNames()
 	}
 	return result
 }
 
-func kookVoiceUserStats(rows []kookVoiceSessionRow, start, end time.Time, channelNames map[string]string) []kookVoiceUsageDTO {
+func (h *Handler) reloadKookVoiceChannelNames() {
+	result := map[string]string{}
+	channels, _, err := h.fetchKookChannels()
+	if err == nil {
+		for _, channel := range channels {
+			result[channel.ID] = channel.Name
+		}
+	}
+	h.kookChannelNamesMu.Lock()
+	defer h.kookChannelNamesMu.Unlock()
+	h.kookChannelNamesReload = false
+	if err != nil {
+		return
+	}
+	h.kookChannelNames = result
+	h.kookChannelNamesUntil = time.Now().Add(10 * time.Minute)
+}
+
+func kookVoiceUserStatsFromRows(rows []kookVoiceSessionRow, start, end time.Time, channelNames map[string]string) []kookVoiceUsageDTO {
 	stats := map[string]*kookVoiceUsageDTO{}
 	for _, row := range rows {
 		duration := kookVoiceOverlapSeconds(row, start, end)
@@ -303,7 +473,7 @@ func kookVoiceUserStats(rows []kookVoiceSessionRow, start, end time.Time, channe
 	return sortedUsage(stats)
 }
 
-func kookVoiceChannelStats(rows []kookVoiceSessionRow, start, end time.Time, channelNames map[string]string) []kookVoiceUsageDTO {
+func kookVoiceChannelStatsFromRows(rows []kookVoiceSessionRow, start, end time.Time, channelNames map[string]string) []kookVoiceUsageDTO {
 	stats := map[string]*kookVoiceUsageDTO{}
 	for _, row := range rows {
 		duration := kookVoiceOverlapSeconds(row, start, end)
@@ -326,7 +496,7 @@ func kookVoiceChannelStats(rows []kookVoiceSessionRow, start, end time.Time, cha
 	return sortedUsage(stats)
 }
 
-func kookVoiceDailyRanking(rows []kookVoiceSessionRow, start, end time.Time, channelNames map[string]string) []kookVoiceUsageDTO {
+func kookVoiceDailyRankingFromRows(rows []kookVoiceSessionRow, start, end time.Time, channelNames map[string]string) []kookVoiceUsageDTO {
 	stats := map[string]*kookVoiceUsageDTO{}
 	for _, row := range rows {
 		for dayStart := maxTime(row.JoinedAt, start); dayStart.Before(minTime(kookVoiceExitTime(row), end)); {

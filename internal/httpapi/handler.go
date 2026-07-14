@@ -16,6 +16,10 @@ type Handler struct {
 	tokenMu                sync.Mutex
 	wxToken                string
 	wxTokenUntil           time.Time
+	kookChannelNamesMu     sync.Mutex
+	kookChannelNames       map[string]string
+	kookChannelNamesUntil  time.Time
+	kookChannelNamesReload bool
 	wechatBotClient        *http.Client
 	wechatBotSummaryClient *http.Client
 }
