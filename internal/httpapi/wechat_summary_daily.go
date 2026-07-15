@@ -16,6 +16,12 @@ import (
 
 const wechatSummaryDailyInterval = time.Minute
 
+var defaultWechatSummaryDailySchedules = []wechatSummaryDailySchedule{
+	{Enabled: true, Time: "12:00", Period: "morning", Name: "上午总结"},
+	{Enabled: true, Time: "18:00", Period: "afternoon", Name: "下午总结"},
+	{Enabled: true, Time: "23:00", Period: "evening", Name: "晚上总结"},
+}
+
 type wechatSummaryDailySchedule struct {
 	Enabled bool   `json:"enabled"`
 	Time    string `json:"time"`
@@ -132,7 +138,7 @@ func normalizeWechatSummaryDailySchedule(schedule wechatSummaryDailySchedule) (w
 	if schedule.Period == "" {
 		schedule.Period = "day"
 	}
-	if schedule.Period != "day" && schedule.Period != "morning" && schedule.Period != "afternoon" {
+	if schedule.Period != "day" && schedule.Period != "morning" && schedule.Period != "afternoon" && schedule.Period != "evening" {
 		return wechatSummaryDailySchedule{}, false
 	}
 	schedule.RoomID = strings.TrimSpace(schedule.RoomID)

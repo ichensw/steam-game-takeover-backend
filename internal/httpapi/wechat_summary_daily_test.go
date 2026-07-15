@@ -29,12 +29,12 @@ func TestRunWechatSummaryDailyLoopStops(t *testing.T) {
 }
 
 func TestWechatSummaryDailySchedulesNormalize(t *testing.T) {
-	raw := `[{"enabled":true,"time":"12:00","period":"morning","roomId":" r1 "},{"enabled":true,"time":"25:00","period":"day"}]`
+	raw := `[{"enabled":true,"time":"23:00","period":"evening","roomId":" r1 "},{"enabled":true,"time":"25:00","period":"day"}]`
 	got := parseWechatSummaryDailySchedules(raw)
 	if len(got) != 1 {
 		t.Fatalf("len = %d, want 1", len(got))
 	}
-	if got[0].Time != "12:00" || got[0].Period != "morning" || got[0].RoomID != "r1" {
+	if got[0].Time != "23:00" || got[0].Period != "evening" || got[0].RoomID != "r1" {
 		t.Fatalf("unexpected schedule: %#v", got[0])
 	}
 }

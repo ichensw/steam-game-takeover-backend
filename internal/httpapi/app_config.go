@@ -128,7 +128,11 @@ func (h *Handler) wechatSummaryAutoDaily() bool {
 }
 
 func (h *Handler) wechatSummaryDailySchedules() []wechatSummaryDailySchedule {
-	return parseWechatSummaryDailySchedules(h.appConfigValue(model.AppConfigWechatSummaryDailySchedules))
+	schedules := parseWechatSummaryDailySchedules(h.appConfigValue(model.AppConfigWechatSummaryDailySchedules))
+	if len(schedules) == 0 {
+		return defaultWechatSummaryDailySchedules
+	}
+	return schedules
 }
 
 func parseConfigBool(value string) bool {
