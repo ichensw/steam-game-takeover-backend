@@ -19,6 +19,7 @@ const (
 	wechatBotSecretHeader        = "X-Wechat-Bot-Admin-Secret"
 	wechatBotAdminIDHeader       = "X-Wechat-Bot-Admin-ID"
 	wechatBotAdminUsernameHeader = "X-Wechat-Bot-Admin-Username"
+	wxbotTokenHeader             = "X-Wxbot-Token"
 	wechatBotSummaryMaxHeader    = "X-Wechat-Bot-Summary-Max-Messages"
 	wechatBotSummaryPromptHeader = "X-Wechat-Bot-Summary-Prompt"
 	wechatBotSummaryStyleHeader  = "X-Wechat-Bot-Summary-Style"
@@ -33,6 +34,19 @@ var (
 	summaryJobPathPattern = regexp.MustCompile(`^/messages/summary-jobs(?:/[0-9]+)?$`)
 	wxbotPathPattern      = regexp.MustCompile(`^/wxbots(?:/[A-Za-z0-9_-]+/config)?$`)
 )
+
+func wxbotControlAllowed(method, path string) bool {
+	switch path {
+	case "/heartbeat":
+		return method == http.MethodPost
+	case "/config":
+		return method == http.MethodGet
+	case "/config/applied":
+		return method == http.MethodPost
+	default:
+		return false
+	}
+}
 
 func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	switch {
@@ -64,6 +78,51 @@ func hasAnyMenu(menuKeys, required []string) bool {
 		}
 	}
 	return false
+}
+
+func (h *Handler) ProxyWechatBotControl(c *gin.Context) {
+	path := c.Param("path")
+	if !wxbotControlAllowed(c.Request.Method, path) {
+		fail(c, http.StatusNotFound, CodeParamInvalid, "wxbot endpoint not found")
+		return
+	}
+	if h.cfg.WechatBotAdminURL == "" {
+		fail(c, http.StatusServiceUnavailable, CodeSystemError, "wechat bot gateway is not configured")
+		return
+	}
+	target, err := url.JoinPath(h.cfg.WechatBotAdminURL, "/wxbot"+path)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "wechat bot gateway URL is invalid")
+		return
+	}
+	if c.Request.URL.RawQuery != "" {
+		target += "?" + c.Request.URL.RawQuery
+	}
+	request, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "create wxbot request failed")
+		return
+	}
+	for _, header := range []string{"Accept", "Content-Type", "Authorization", wxbotTokenHeader} {
+		if value := c.GetHeader(header); value != "" {
+			request.Header.Set(header, value)
+		}
+	}
+	response, err := h.wechatBotClient.Do(request)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {
+			fail(c, http.StatusGatewayTimeout, CodeSystemError, "wxbot request timed out")
+			return
+		}
+		fail(c, http.StatusBadGateway, CodeSystemError, "wxbot service unavailable")
+		return
+	}
+	defer response.Body.Close()
+	if contentType := response.Header.Get("Content-Type"); contentType != "" {
+		c.Header("Content-Type", contentType)
+	}
+	c.Status(response.StatusCode)
+	_, _ = io.Copy(c.Writer, response.Body)
 }
 
 func (h *Handler) wechatBotAdminAllowed(admin model.AdminUser, required []string) bool {

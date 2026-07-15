@@ -49,6 +49,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.GET("/kook/channels/all", h.UserAuth(), h.ListAllKookChannels)
 	api.GET("/kook/channel-tree", h.UserAuth(), h.ListKookChannelTree)
 	api.POST("/kook/webhook", h.KookWebhook)
+	api.Any("/wxbot/*path", h.ProxyWechatBotControl)
 
 	admin := api.Group("/admin")
 	admin.POST("/auth/login", h.AdminLogin)
