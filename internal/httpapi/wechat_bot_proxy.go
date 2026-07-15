@@ -21,7 +21,10 @@ const (
 	wechatBotAdminUsernameHeader = "X-Wechat-Bot-Admin-Username"
 )
 
-var tablePathPattern = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
+var (
+	tablePathPattern   = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
+	summaryPathPattern = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
+)
 
 func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	switch {
@@ -30,6 +33,8 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	case method == http.MethodGet && path == "/messages":
 		return []string{"wechat-messages"}, true
 	case method == http.MethodPost && path == "/messages/summary":
+		return []string{"wechat-summary"}, true
+	case method == http.MethodGet && (path == "/messages/summary/history" || summaryPathPattern.MatchString(path)):
 		return []string{"wechat-summary"}, true
 	case method == http.MethodGet && path == "/stats/daily":
 		return []string{"wechat-stats"}, true
