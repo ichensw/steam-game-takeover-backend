@@ -411,11 +411,20 @@ const (
 	AppConfigAIExtractModel              = "ai_extract_model"
 	AppConfigDailyTakeoverExpirationDays = "daily_takeover_expiration_days"
 	AppConfigWechatSummaryMaxMessages    = "wechat_summary_max_messages"
+	AppConfigWechatSummaryPrompt         = "wechat_summary_prompt"
+	AppConfigWechatSummaryStyle          = "wechat_summary_style"
+	AppConfigWechatSummaryModel          = "wechat_summary_model"
+	AppConfigWechatSummaryCompareModels  = "wechat_summary_compare_models"
+	AppConfigWechatSummaryAutoSend       = "wechat_summary_auto_send"
+	AppConfigWechatSummaryAutoDaily      = "wechat_summary_auto_daily"
+	AppConfigWechatSummaryDailyTime      = "wechat_summary_daily_time"
+	AppConfigWechatSummaryDailyRoomID    = "wechat_summary_daily_room_id"
+	AppConfigWechatSummaryLastRunDate    = "wechat_summary_last_run_date"
 )
 
 type AppConfig struct {
 	ConfigKey   string    `gorm:"primaryKey;column:config_key;size:64"`
-	ConfigValue string    `gorm:"column:config_value;size:255"`
+	ConfigValue string    `gorm:"column:config_value;type:longtext"`
 	GmtCreate   time.Time `gorm:"column:gmt_create;autoCreateTime"`
 	GmtModified time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
 }

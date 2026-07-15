@@ -25,6 +25,7 @@ func main() {
 	handler.StartTakeoverReminderWorker(context.Background())
 	handler.StartDailyTakeoverExpirationWorker(context.Background())
 	handler.StartKookChannelSortWorker(context.Background())
+	handler.StartWechatSummaryDailyWorker(context.Background())
 	log.Printf("server listening on %s", cfg.Addr)
 	if err := router.Run(cfg.Addr); err != nil {
 		log.Fatalf("run server: %v", err)

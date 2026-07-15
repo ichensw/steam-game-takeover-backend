@@ -22,6 +22,8 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		{http.MethodGet, "/groups", []string{"wechat-messages", "wechat-summary"}, true},
 		{http.MethodGet, "/messages", []string{"wechat-messages"}, true},
 		{http.MethodPost, "/messages/summary", []string{"wechat-summary"}, true},
+		{http.MethodPost, "/messages/summary-jobs", []string{"wechat-summary"}, true},
+		{http.MethodGet, "/messages/summary-jobs/12", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/messages/summary/history", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/messages/summary/12", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/messages/summary/12/messages", []string{"wechat-summary"}, true},

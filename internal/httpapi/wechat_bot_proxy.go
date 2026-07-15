@@ -20,11 +20,17 @@ const (
 	wechatBotAdminIDHeader       = "X-Wechat-Bot-Admin-ID"
 	wechatBotAdminUsernameHeader = "X-Wechat-Bot-Admin-Username"
 	wechatBotSummaryMaxHeader    = "X-Wechat-Bot-Summary-Max-Messages"
+	wechatBotSummaryPromptHeader = "X-Wechat-Bot-Summary-Prompt"
+	wechatBotSummaryStyleHeader  = "X-Wechat-Bot-Summary-Style"
+	wechatBotSummaryModelHeader  = "X-Wechat-Bot-Summary-Model"
+	wechatBotSummaryModelsHeader = "X-Wechat-Bot-Summary-Compare-Models"
+	wechatBotSummarySendHeader   = "X-Wechat-Bot-Summary-Auto-Send"
 )
 
 var (
-	tablePathPattern   = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
-	summaryPathPattern = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
+	tablePathPattern      = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
+	summaryPathPattern    = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
+	summaryJobPathPattern = regexp.MustCompile(`^/messages/summary-jobs(?:/[0-9]+)?$`)
 )
 
 func requiredWechatBotMenus(method, path string) ([]string, bool) {
@@ -33,7 +39,9 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 		return []string{"wechat-messages", "wechat-summary"}, true
 	case method == http.MethodGet && path == "/messages":
 		return []string{"wechat-messages"}, true
-	case method == http.MethodPost && path == "/messages/summary":
+	case method == http.MethodPost && (path == "/messages/summary" || path == "/messages/summary-jobs"):
+		return []string{"wechat-summary"}, true
+	case method == http.MethodGet && summaryJobPathPattern.MatchString(path):
 		return []string{"wechat-summary"}, true
 	case method == http.MethodGet && (path == "/messages/summary/history" || summaryPathPattern.MatchString(path)):
 		return []string{"wechat-summary"}, true
@@ -97,13 +105,10 @@ func (h *Handler) AdminProxyWechatBot(c *gin.Context) {
 			request.Header.Set(header, value)
 		}
 	}
-	request.Header.Set(wechatBotSecretHeader, h.cfg.WechatBotSharedSecret)
-	request.Header.Set(wechatBotAdminIDHeader, strconv.FormatUint(admin.ID, 10))
-	request.Header.Set(wechatBotAdminUsernameHeader, admin.Username)
-	request.Header.Set(wechatBotSummaryMaxHeader, strconv.Itoa(h.wechatSummaryMaxMessages()))
+	h.applyWechatBotHeaders(request, strconv.FormatUint(admin.ID, 10), admin.Username)
 
 	client := h.wechatBotClient
-	if c.Request.Method == http.MethodPost && path == "/messages/summary" {
+	if c.Request.Method == http.MethodPost && (path == "/messages/summary" || path == "/messages/summary-jobs") {
 		client = h.wechatBotSummaryClient
 	}
 	response, err := client.Do(request)
@@ -121,6 +126,24 @@ func (h *Handler) AdminProxyWechatBot(c *gin.Context) {
 	}
 	c.Status(response.StatusCode)
 	_, _ = io.Copy(c.Writer, response.Body)
+}
+
+func (h *Handler) applyWechatBotHeaders(request *http.Request, adminID, username string) {
+	request.Header.Set(wechatBotSecretHeader, h.cfg.WechatBotSharedSecret)
+	request.Header.Set(wechatBotAdminIDHeader, adminID)
+	request.Header.Set(wechatBotAdminUsernameHeader, username)
+	request.Header.Set(wechatBotSummaryMaxHeader, strconv.Itoa(h.wechatSummaryMaxMessages()))
+	setHeaderIfNotEmpty(request, wechatBotSummaryPromptHeader, h.wechatSummaryPrompt())
+	setHeaderIfNotEmpty(request, wechatBotSummaryStyleHeader, h.wechatSummaryStyle())
+	setHeaderIfNotEmpty(request, wechatBotSummaryModelHeader, h.wechatSummaryModel())
+	setHeaderIfNotEmpty(request, wechatBotSummaryModelsHeader, h.wechatSummaryCompareModels())
+	request.Header.Set(wechatBotSummarySendHeader, strconv.FormatBool(h.wechatSummaryAutoSend()))
+}
+
+func setHeaderIfNotEmpty(request *http.Request, header, value string) {
+	if value != "" {
+		request.Header.Set(header, value)
+	}
 }
 
 func isTimeoutError(err error) bool {

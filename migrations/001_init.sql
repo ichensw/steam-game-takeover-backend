@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS `ttw_admin_operate_log` (
 
 CREATE TABLE IF NOT EXISTS `ttw_app_config` (
   `config_key` varchar(64) NOT NULL COMMENT '閰嶇疆閿?,
-  `config_value` varchar(255) NOT NULL COMMENT '閰嶇疆鍊?,
+  `config_value` longtext NOT NULL COMMENT '閰嶇疆鍊?,
   `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '鍒涘缓鏃堕棿',
   `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '淇敼鏃堕棿',
   PRIMARY KEY (`config_key`)

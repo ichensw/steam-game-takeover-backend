@@ -92,3 +92,16 @@ func TestValidateWechatSummaryMaxMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateWechatSummaryDailyTime(t *testing.T) {
+	for _, value := range []string{"00:00", "09:30", "23:59"} {
+		if err := validateWechatSummaryDailyTime(value); err != nil {
+			t.Fatalf("validateWechatSummaryDailyTime(%q) returned %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "9:30", "24:00"} {
+		if err := validateWechatSummaryDailyTime(value); err == nil {
+			t.Fatalf("validateWechatSummaryDailyTime(%q) accepted invalid value", value)
+		}
+	}
+}
