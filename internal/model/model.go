@@ -417,9 +417,8 @@ const (
 	AppConfigWechatSummaryCompareModels  = "wechat_summary_compare_models"
 	AppConfigWechatSummaryAutoSend       = "wechat_summary_auto_send"
 	AppConfigWechatSummaryAutoDaily      = "wechat_summary_auto_daily"
-	AppConfigWechatSummaryDailyTime      = "wechat_summary_daily_time"
-	AppConfigWechatSummaryDailyRoomID    = "wechat_summary_daily_room_id"
-	AppConfigWechatSummaryLastRunDate    = "wechat_summary_last_run_date"
+	AppConfigWechatSummaryDailySchedules = "wechat_summary_daily_schedules"
+	AppConfigWechatSummaryLastRunKeys    = "wechat_summary_last_run_keys"
 )
 
 type AppConfig struct {

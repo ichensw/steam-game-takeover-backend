@@ -5,14 +5,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"steam-game-takeover-backend/internal/model"
 )
 
 const wechatSummaryDailyInterval = time.Minute
+
+type wechatSummaryDailySchedule struct {
+	Enabled bool   `json:"enabled"`
+	Time    string `json:"time"`
+	Period  string `json:"period"`
+	RoomID  string `json:"roomId,omitempty"`
+	Name    string `json:"name,omitempty"`
+}
 
 func (h *Handler) StartWechatSummaryDailyWorker(ctx context.Context) {
 	run := func(now time.Time) {
@@ -40,28 +50,38 @@ func (h *Handler) runWechatSummaryDaily(ctx context.Context, now time.Time) erro
 	if !h.wechatSummaryAutoDaily() {
 		return nil
 	}
-	scheduled, err := time.Parse("15:04", h.wechatSummaryDailyTime())
-	if err != nil {
-		return err
-	}
-	if now.Hour() != scheduled.Hour() || now.Minute() != scheduled.Minute() {
-		return nil
-	}
 	date := now.Format("2006-01-02")
-	if h.appConfigValue(model.AppConfigWechatSummaryLastRunDate) == date {
-		return nil
+	runs := parseWechatSummaryDailyRunKeys(h.appConfigValue(model.AppConfigWechatSummaryLastRunKeys))
+	var lastErr error
+	changed := false
+	for _, schedule := range h.wechatSummaryDailySchedules() {
+		if !schedule.Enabled || !wechatSummaryDailyScheduleDue(schedule, now) {
+			continue
+		}
+		key := wechatSummaryDailyRunKey(date, schedule)
+		if runs[key] {
+			continue
+		}
+		if err := h.createWechatSummaryDailyJob(ctx, date, schedule); err != nil {
+			lastErr = err
+			continue
+		}
+		runs[key] = true
+		changed = true
 	}
-	if err := h.createWechatSummaryDailyJob(ctx, date); err != nil {
-		return err
+	if changed {
+		if err := h.saveAppConfig(model.AppConfigWechatSummaryLastRunKeys, marshalWechatSummaryDailyRunKeys(runs)); err != nil {
+			return err
+		}
 	}
-	return h.saveAppConfig(model.AppConfigWechatSummaryLastRunDate, date)
+	return lastErr
 }
 
-func (h *Handler) createWechatSummaryDailyJob(ctx context.Context, date string) error {
+func (h *Handler) createWechatSummaryDailyJob(ctx context.Context, date string, schedule wechatSummaryDailySchedule) error {
 	body, _ := json.Marshal(map[string]interface{}{
-		"period":      "day",
+		"period":      schedule.Period,
 		"date":        date,
-		"roomId":      h.wechatSummaryDailyRoomID(),
+		"roomId":      schedule.RoomID,
 		"sendToGroup": h.wechatSummaryAutoSend(),
 	})
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, h.cfg.WechatBotAdminURL+"/messages/summary-jobs", bytes.NewReader(body))
@@ -79,4 +99,68 @@ func (h *Handler) createWechatSummaryDailyJob(ctx context.Context, date string) 
 		return errors.New("wechat summary job create failed")
 	}
 	return nil
+}
+
+func parseWechatSummaryDailySchedules(raw string) []wechatSummaryDailySchedule {
+	if strings.TrimSpace(raw) == "" {
+		return []wechatSummaryDailySchedule{}
+	}
+	var input []wechatSummaryDailySchedule
+	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+		return []wechatSummaryDailySchedule{}
+	}
+	result := make([]wechatSummaryDailySchedule, 0, len(input))
+	for _, schedule := range input {
+		if item, ok := normalizeWechatSummaryDailySchedule(schedule); ok {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func marshalWechatSummaryDailySchedules(schedules []wechatSummaryDailySchedule) (string, error) {
+	data, err := json.Marshal(schedules)
+	return string(data), err
+}
+
+func normalizeWechatSummaryDailySchedule(schedule wechatSummaryDailySchedule) (wechatSummaryDailySchedule, bool) {
+	schedule.Time = strings.TrimSpace(schedule.Time)
+	if _, err := time.Parse("15:04", schedule.Time); err != nil || len(schedule.Time) != 5 {
+		return wechatSummaryDailySchedule{}, false
+	}
+	schedule.Period = strings.TrimSpace(schedule.Period)
+	if schedule.Period == "" {
+		schedule.Period = "day"
+	}
+	if schedule.Period != "day" && schedule.Period != "morning" && schedule.Period != "afternoon" {
+		return wechatSummaryDailySchedule{}, false
+	}
+	schedule.RoomID = strings.TrimSpace(schedule.RoomID)
+	schedule.Name = strings.TrimSpace(schedule.Name)
+	return schedule, true
+}
+
+func wechatSummaryDailyScheduleDue(schedule wechatSummaryDailySchedule, now time.Time) bool {
+	scheduled, err := time.Parse("15:04", schedule.Time)
+	if err != nil {
+		return false
+	}
+	return now.Hour() == scheduled.Hour() && now.Minute() == scheduled.Minute()
+}
+
+func wechatSummaryDailyRunKey(date string, schedule wechatSummaryDailySchedule) string {
+	return fmt.Sprintf("%s|%s|%s|%s", date, schedule.Time, schedule.Period, schedule.RoomID)
+}
+
+func parseWechatSummaryDailyRunKeys(raw string) map[string]bool {
+	var runs map[string]bool
+	if err := json.Unmarshal([]byte(raw), &runs); err != nil || runs == nil {
+		return map[string]bool{}
+	}
+	return runs
+}
+
+func marshalWechatSummaryDailyRunKeys(runs map[string]bool) string {
+	data, _ := json.Marshal(runs)
+	return string(data)
 }

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"steam-game-takeover-backend/internal/model"
 
@@ -128,16 +127,8 @@ func (h *Handler) wechatSummaryAutoDaily() bool {
 	return parseConfigBool(h.appConfigValue(model.AppConfigWechatSummaryAutoDaily))
 }
 
-func (h *Handler) wechatSummaryDailyTime() string {
-	value := strings.TrimSpace(h.appConfigValue(model.AppConfigWechatSummaryDailyTime))
-	if value == "" {
-		return "09:00"
-	}
-	return value
-}
-
-func (h *Handler) wechatSummaryDailyRoomID() string {
-	return strings.TrimSpace(h.appConfigValue(model.AppConfigWechatSummaryDailyRoomID))
+func (h *Handler) wechatSummaryDailySchedules() []wechatSummaryDailySchedule {
+	return parseWechatSummaryDailySchedules(h.appConfigValue(model.AppConfigWechatSummaryDailySchedules))
 }
 
 func parseConfigBool(value string) bool {
@@ -163,15 +154,16 @@ func validateWechatSummaryMaxMessages(messages int) error {
 	return nil
 }
 
-func validateWechatSummaryDailyTime(value string) error {
-	value = strings.TrimSpace(value)
-	if len(value) != 5 || value[2] != ':' {
-		return errors.New("wechatSummaryDailyTime must be HH:mm")
+func validateWechatSummaryDailySchedules(schedules []wechatSummaryDailySchedule) ([]wechatSummaryDailySchedule, error) {
+	normalized := make([]wechatSummaryDailySchedule, 0, len(schedules))
+	for _, schedule := range schedules {
+		item, ok := normalizeWechatSummaryDailySchedule(schedule)
+		if !ok {
+			return nil, errors.New("wechatSummaryDailySchedules is invalid")
+		}
+		normalized = append(normalized, item)
 	}
-	if _, err := time.Parse("15:04", value); err != nil {
-		return errors.New("wechatSummaryDailyTime must be HH:mm")
-	}
-	return nil
+	return normalized, nil
 }
 
 func (h *Handler) GetAppConfig(c *gin.Context) {
@@ -231,40 +223,38 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 		"wechatSummaryCompareModels":  h.wechatSummaryCompareModels(),
 		"wechatSummaryAutoSend":       h.wechatSummaryAutoSend(),
 		"wechatSummaryAutoDaily":      h.wechatSummaryAutoDaily(),
-		"wechatSummaryDailyTime":      h.wechatSummaryDailyTime(),
-		"wechatSummaryDailyRoomId":    h.wechatSummaryDailyRoomID(),
+		"wechatSummaryDailySchedules": h.wechatSummaryDailySchedules(),
 	})
 }
 
 func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 	var req struct {
-		PublishTakeoverEnabled      *bool   `json:"publishTakeoverEnabled"`
-		UAPIKey                     *string `json:"uapiKey"`
-		SteamWebAPIKey              *string `json:"steamWebApiKey"`
-		KookBotToken                *string `json:"kookBotToken"`
-		KookGuildID                 *string `json:"kookGuildId"`
-		KookVerifyToken             *string `json:"kookVerifyToken"`
-		KookEncryptKey              *string `json:"kookEncryptKey"`
-		AIExtractEnabled            *bool   `json:"aiExtractEnabled"`
-		AIExtractAPIKey             *string `json:"aiExtractApiKey"`
-		AIExtractBaseURL            *string `json:"aiExtractBaseUrl"`
-		AIExtractModel              *string `json:"aiExtractModel"`
-		DailyTakeoverExpirationDays *int    `json:"dailyTakeoverExpirationDays"`
-		WechatSummaryMaxMessages    *int    `json:"wechatSummaryMaxMessages"`
-		WechatSummaryPrompt         *string `json:"wechatSummaryPrompt"`
-		WechatSummaryStyle          *string `json:"wechatSummaryStyle"`
-		WechatSummaryModel          *string `json:"wechatSummaryModel"`
-		WechatSummaryCompareModels  *string `json:"wechatSummaryCompareModels"`
-		WechatSummaryAutoSend       *bool   `json:"wechatSummaryAutoSend"`
-		WechatSummaryAutoDaily      *bool   `json:"wechatSummaryAutoDaily"`
-		WechatSummaryDailyTime      *string `json:"wechatSummaryDailyTime"`
-		WechatSummaryDailyRoomID    *string `json:"wechatSummaryDailyRoomId"`
+		PublishTakeoverEnabled      *bool                         `json:"publishTakeoverEnabled"`
+		UAPIKey                     *string                       `json:"uapiKey"`
+		SteamWebAPIKey              *string                       `json:"steamWebApiKey"`
+		KookBotToken                *string                       `json:"kookBotToken"`
+		KookGuildID                 *string                       `json:"kookGuildId"`
+		KookVerifyToken             *string                       `json:"kookVerifyToken"`
+		KookEncryptKey              *string                       `json:"kookEncryptKey"`
+		AIExtractEnabled            *bool                         `json:"aiExtractEnabled"`
+		AIExtractAPIKey             *string                       `json:"aiExtractApiKey"`
+		AIExtractBaseURL            *string                       `json:"aiExtractBaseUrl"`
+		AIExtractModel              *string                       `json:"aiExtractModel"`
+		DailyTakeoverExpirationDays *int                          `json:"dailyTakeoverExpirationDays"`
+		WechatSummaryMaxMessages    *int                          `json:"wechatSummaryMaxMessages"`
+		WechatSummaryPrompt         *string                       `json:"wechatSummaryPrompt"`
+		WechatSummaryStyle          *string                       `json:"wechatSummaryStyle"`
+		WechatSummaryModel          *string                       `json:"wechatSummaryModel"`
+		WechatSummaryCompareModels  *string                       `json:"wechatSummaryCompareModels"`
+		WechatSummaryAutoSend       *bool                         `json:"wechatSummaryAutoSend"`
+		WechatSummaryAutoDaily      *bool                         `json:"wechatSummaryAutoDaily"`
+		WechatSummaryDailySchedules *[]wechatSummaryDailySchedule `json:"wechatSummaryDailySchedules"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil && req.WechatSummaryMaxMessages == nil && req.WechatSummaryPrompt == nil && req.WechatSummaryStyle == nil && req.WechatSummaryModel == nil && req.WechatSummaryCompareModels == nil && req.WechatSummaryAutoSend == nil && req.WechatSummaryAutoDaily == nil && req.WechatSummaryDailyTime == nil && req.WechatSummaryDailyRoomID == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil && req.WechatSummaryMaxMessages == nil && req.WechatSummaryPrompt == nil && req.WechatSummaryStyle == nil && req.WechatSummaryModel == nil && req.WechatSummaryCompareModels == nil && req.WechatSummaryAutoSend == nil && req.WechatSummaryAutoDaily == nil && req.WechatSummaryDailySchedules == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -280,8 +270,11 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	if req.WechatSummaryDailyTime != nil {
-		if err := validateWechatSummaryDailyTime(*req.WechatSummaryDailyTime); err != nil {
+	var normalizedSchedules []wechatSummaryDailySchedule
+	if req.WechatSummaryDailySchedules != nil {
+		var err error
+		normalizedSchedules, err = validateWechatSummaryDailySchedules(*req.WechatSummaryDailySchedules)
+		if err != nil {
 			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 			return
 		}
@@ -400,14 +393,13 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
-	if req.WechatSummaryDailyTime != nil {
-		if err := h.saveAppConfig(model.AppConfigWechatSummaryDailyTime, strings.TrimSpace(*req.WechatSummaryDailyTime)); err != nil {
-			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+	if req.WechatSummaryDailySchedules != nil {
+		value, err := marshalWechatSummaryDailySchedules(normalizedSchedules)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 			return
 		}
-	}
-	if req.WechatSummaryDailyRoomID != nil {
-		if err := h.saveAppConfig(model.AppConfigWechatSummaryDailyRoomID, strings.TrimSpace(*req.WechatSummaryDailyRoomID)); err != nil {
+		if err := h.saveAppConfig(model.AppConfigWechatSummaryDailySchedules, value); err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 			return
 		}
@@ -432,8 +424,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		"wechatSummaryCompareModels":  h.wechatSummaryCompareModels(),
 		"wechatSummaryAutoSend":       h.wechatSummaryAutoSend(),
 		"wechatSummaryAutoDaily":      h.wechatSummaryAutoDaily(),
-		"wechatSummaryDailyTime":      h.wechatSummaryDailyTime(),
-		"wechatSummaryDailyRoomId":    h.wechatSummaryDailyRoomID(),
+		"wechatSummaryDailySchedules": h.wechatSummaryDailySchedules(),
 	})
 }
 
