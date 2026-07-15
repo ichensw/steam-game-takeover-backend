@@ -48,7 +48,7 @@ func TestWechatBotProxyForwardsVerifiedIdentityAndQuery(t *testing.T) {
 		if r.URL.Path != "/api/messages" || r.URL.RawQuery != "page=2&keyword=steam" {
 			t.Fatalf("unexpected upstream URL: %s", r.URL.String())
 		}
-		if r.Header.Get(wechatBotSecretHeader) != "shared-secret" || r.Header.Get(wechatBotAdminIDHeader) != "42" || r.Header.Get(wechatBotAdminUsernameHeader) != "ops" {
+		if r.Header.Get(wechatBotSecretHeader) != "shared-secret" || r.Header.Get(wechatBotAdminIDHeader) != "42" || r.Header.Get(wechatBotAdminUsernameHeader) != "ops" || r.Header.Get(wechatBotSummaryMaxHeader) != "1000" {
 			t.Fatalf("unexpected trusted headers: %#v", r.Header)
 		}
 		w.Header().Set("Content-Type", "application/json")

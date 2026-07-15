@@ -16,6 +16,9 @@ const (
 	defaultDailyTakeoverExpirationDays = 10
 	minDailyTakeoverExpirationDays     = 1
 	maxDailyTakeoverExpirationDays     = 365
+	defaultWechatSummaryMaxMessages    = 1000
+	minWechatSummaryMaxMessages        = 1
+	maxWechatSummaryMaxMessages        = 10000
 )
 
 func (h *Handler) publishTakeoverEnabled() bool {
@@ -88,9 +91,28 @@ func (h *Handler) dailyTakeoverExpirationDays() int {
 	return parseDailyTakeoverExpirationDays(h.appConfigValue(model.AppConfigDailyTakeoverExpirationDays))
 }
 
+func parseWechatSummaryMaxMessages(raw string) int {
+	messages, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || messages < minWechatSummaryMaxMessages || messages > maxWechatSummaryMaxMessages {
+		return defaultWechatSummaryMaxMessages
+	}
+	return messages
+}
+
+func (h *Handler) wechatSummaryMaxMessages() int {
+	return parseWechatSummaryMaxMessages(h.appConfigValue(model.AppConfigWechatSummaryMaxMessages))
+}
+
 func validateDailyTakeoverExpirationDays(days int) error {
 	if days < minDailyTakeoverExpirationDays || days > maxDailyTakeoverExpirationDays {
 		return errors.New("dailyTakeoverExpirationDays must be between 1 and 365")
+	}
+	return nil
+}
+
+func validateWechatSummaryMaxMessages(messages int) error {
+	if messages < minWechatSummaryMaxMessages || messages > maxWechatSummaryMaxMessages {
+		return errors.New("wechatSummaryMaxMessages must be between 1 and 10000")
 	}
 	return nil
 }
@@ -102,6 +124,9 @@ func (h *Handler) GetAppConfig(c *gin.Context) {
 }
 
 func (h *Handler) appConfigValue(key string) string {
+	if h.db == nil {
+		return ""
+	}
 	var config model.AppConfig
 	if err := h.db.Where("config_key = ?", key).First(&config).Error; err != nil {
 		return ""
@@ -142,6 +167,7 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 		"aiExtractBaseUrl":            h.aiExtractBaseURL(),
 		"aiExtractModel":              h.aiExtractModel(),
 		"dailyTakeoverExpirationDays": h.dailyTakeoverExpirationDays(),
+		"wechatSummaryMaxMessages":    h.wechatSummaryMaxMessages(),
 	})
 }
 
@@ -159,17 +185,24 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		AIExtractBaseURL            *string `json:"aiExtractBaseUrl"`
 		AIExtractModel              *string `json:"aiExtractModel"`
 		DailyTakeoverExpirationDays *int    `json:"dailyTakeoverExpirationDays"`
+		WechatSummaryMaxMessages    *int    `json:"wechatSummaryMaxMessages"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil && req.WechatSummaryMaxMessages == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
 	if req.DailyTakeoverExpirationDays != nil {
 		if err := validateDailyTakeoverExpirationDays(*req.DailyTakeoverExpirationDays); err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+			return
+		}
+	}
+	if req.WechatSummaryMaxMessages != nil {
+		if err := validateWechatSummaryMaxMessages(*req.WechatSummaryMaxMessages); err != nil {
 			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 			return
 		}
@@ -246,6 +279,12 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.WechatSummaryMaxMessages != nil {
+		if err := h.saveAppConfig(model.AppConfigWechatSummaryMaxMessages, strconv.Itoa(*req.WechatSummaryMaxMessages)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	ok(c, "saved", gin.H{
 		"publishTakeoverEnabled":      h.publishTakeoverEnabled(),
 		"uapiKey":                     h.uapiKey(),
@@ -259,6 +298,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		"aiExtractBaseUrl":            h.aiExtractBaseURL(),
 		"aiExtractModel":              h.aiExtractModel(),
 		"dailyTakeoverExpirationDays": h.dailyTakeoverExpirationDays(),
+		"wechatSummaryMaxMessages":    h.wechatSummaryMaxMessages(),
 	})
 }
 

@@ -19,6 +19,7 @@ const (
 	wechatBotSecretHeader        = "X-Wechat-Bot-Admin-Secret"
 	wechatBotAdminIDHeader       = "X-Wechat-Bot-Admin-ID"
 	wechatBotAdminUsernameHeader = "X-Wechat-Bot-Admin-Username"
+	wechatBotSummaryMaxHeader    = "X-Wechat-Bot-Summary-Max-Messages"
 )
 
 var (
@@ -99,6 +100,7 @@ func (h *Handler) AdminProxyWechatBot(c *gin.Context) {
 	request.Header.Set(wechatBotSecretHeader, h.cfg.WechatBotSharedSecret)
 	request.Header.Set(wechatBotAdminIDHeader, strconv.FormatUint(admin.ID, 10))
 	request.Header.Set(wechatBotAdminUsernameHeader, admin.Username)
+	request.Header.Set(wechatBotSummaryMaxHeader, strconv.Itoa(h.wechatSummaryMaxMessages()))
 
 	client := h.wechatBotClient
 	if c.Request.Method == http.MethodPost && path == "/messages/summary" {

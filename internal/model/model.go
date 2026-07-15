@@ -410,6 +410,7 @@ const (
 	AppConfigAIExtractBaseURL            = "ai_extract_base_url"
 	AppConfigAIExtractModel              = "ai_extract_model"
 	AppConfigDailyTakeoverExpirationDays = "daily_takeover_expiration_days"
+	AppConfigWechatSummaryMaxMessages    = "wechat_summary_max_messages"
 )
 
 type AppConfig struct {
