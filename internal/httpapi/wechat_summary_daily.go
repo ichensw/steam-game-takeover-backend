@@ -102,6 +102,9 @@ func (h *Handler) createWechatSummaryDailyJob(ctx context.Context, date string, 
 		return err
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusConflict {
+		return nil
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return errors.New("wechat summary job create failed")
 	}

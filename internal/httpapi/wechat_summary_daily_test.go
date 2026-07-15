@@ -3,8 +3,12 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"steam-game-takeover-backend/internal/config"
 )
 
 func TestRunWechatSummaryDailyLoopStops(t *testing.T) {
@@ -58,5 +62,21 @@ func TestWechatSummaryDailyRunKeyRoundTrip(t *testing.T) {
 	}
 	if !decoded[key] {
 		t.Fatalf("run key %q was not preserved", key)
+	}
+}
+
+func TestCreateWechatSummaryDailyJobTreatsDuplicateAsSuccess(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/messages/summary-jobs" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusConflict)
+	}))
+	defer upstream.Close()
+
+	h := NewHandler(config.Config{WechatBotAdminURL: upstream.URL}, nil)
+	err := h.createWechatSummaryDailyJob(context.Background(), "2026-07-15", wechatSummaryDailySchedule{Period: "day"})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
