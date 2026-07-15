@@ -34,6 +34,11 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		{http.MethodGet, "/tables/group_messages/rows", []string{"wechat-database"}, true},
 		{http.MethodDelete, "/tables/group_messages", nil, false},
 		{http.MethodGet, "/tables/group-messages", nil, false},
+		{http.MethodGet, "/wxbots", []string{"wechat-wxbot-control"}, true},
+		{http.MethodGet, "/wxbots/wxbot-01/config", []string{"wechat-wxbot-control"}, true},
+		{http.MethodPut, "/wxbots/wxbot-01/config", []string{"wechat-wxbot-control"}, true},
+		{http.MethodPost, "/wxbots/wxbot-01/config", nil, false},
+		{http.MethodGet, "/wxbot/config", nil, false},
 		{http.MethodGet, "/auth/me", nil, false},
 	}
 

@@ -31,6 +31,7 @@ var (
 	tablePathPattern      = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
 	summaryPathPattern    = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
 	summaryJobPathPattern = regexp.MustCompile(`^/messages/summary-jobs(?:/[0-9]+)?$`)
+	wxbotPathPattern      = regexp.MustCompile(`^/wxbots(?:/[A-Za-z0-9_-]+/config)?$`)
 )
 
 func requiredWechatBotMenus(method, path string) ([]string, bool) {
@@ -49,6 +50,8 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 		return []string{"wechat-stats"}, true
 	case method == http.MethodGet && (path == "/tables" || tablePathPattern.MatchString(path)):
 		return []string{"wechat-database"}, true
+	case (method == http.MethodGet || method == http.MethodPut) && wxbotPathPattern.MatchString(path):
+		return []string{"wechat-wxbot-control"}, true
 	default:
 		return nil, false
 	}
