@@ -17,17 +17,18 @@ import (
 const wechatSummaryDailyInterval = time.Minute
 
 var defaultWechatSummaryDailySchedules = []wechatSummaryDailySchedule{
-	{Enabled: true, Time: "12:00", Period: "morning", Name: "上午总结"},
-	{Enabled: true, Time: "18:00", Period: "afternoon", Name: "下午总结"},
-	{Enabled: true, Time: "23:00", Period: "evening", Name: "晚上总结"},
+	{Enabled: true, Time: "12:00", DateMode: "today", Period: "morning", Name: "上午总结"},
+	{Enabled: true, Time: "18:00", DateMode: "today", Period: "afternoon", Name: "下午总结"},
+	{Enabled: true, Time: "23:00", DateMode: "today", Period: "evening", Name: "晚上总结"},
 }
 
 type wechatSummaryDailySchedule struct {
-	Enabled bool   `json:"enabled"`
-	Time    string `json:"time"`
-	Period  string `json:"period"`
-	RoomID  string `json:"roomId,omitempty"`
-	Name    string `json:"name,omitempty"`
+	Enabled  bool   `json:"enabled"`
+	Time     string `json:"time"`
+	DateMode string `json:"dateMode,omitempty"`
+	Period   string `json:"period"`
+	RoomID   string `json:"roomId,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 func (h *Handler) StartWechatSummaryDailyWorker(ctx context.Context) {
@@ -56,7 +57,6 @@ func (h *Handler) runWechatSummaryDaily(ctx context.Context, now time.Time) erro
 	if !h.wechatSummaryAutoDaily() {
 		return nil
 	}
-	date := now.Format("2006-01-02")
 	runs := parseWechatSummaryDailyRunKeys(h.appConfigValue(model.AppConfigWechatSummaryLastRunKeys))
 	var lastErr error
 	changed := false
@@ -64,6 +64,7 @@ func (h *Handler) runWechatSummaryDaily(ctx context.Context, now time.Time) erro
 		if !schedule.Enabled || !wechatSummaryDailyScheduleDue(schedule, now) {
 			continue
 		}
+		date := wechatSummaryDailyDate(now, schedule)
 		key := wechatSummaryDailyRunKey(date, schedule)
 		if runs[key] {
 			continue
@@ -141,6 +142,13 @@ func normalizeWechatSummaryDailySchedule(schedule wechatSummaryDailySchedule) (w
 	if schedule.Period != "day" && schedule.Period != "morning" && schedule.Period != "afternoon" && schedule.Period != "evening" {
 		return wechatSummaryDailySchedule{}, false
 	}
+	schedule.DateMode = strings.TrimSpace(schedule.DateMode)
+	if schedule.DateMode == "" {
+		schedule.DateMode = "today"
+	}
+	if schedule.DateMode != "today" && schedule.DateMode != "yesterday" {
+		return wechatSummaryDailySchedule{}, false
+	}
 	schedule.RoomID = strings.TrimSpace(schedule.RoomID)
 	schedule.Name = strings.TrimSpace(schedule.Name)
 	return schedule, true
@@ -154,8 +162,15 @@ func wechatSummaryDailyScheduleDue(schedule wechatSummaryDailySchedule, now time
 	return now.Hour() == scheduled.Hour() && now.Minute() == scheduled.Minute()
 }
 
+func wechatSummaryDailyDate(now time.Time, schedule wechatSummaryDailySchedule) string {
+	if schedule.DateMode == "yesterday" {
+		return now.AddDate(0, 0, -1).Format("2006-01-02")
+	}
+	return now.Format("2006-01-02")
+}
+
 func wechatSummaryDailyRunKey(date string, schedule wechatSummaryDailySchedule) string {
-	return fmt.Sprintf("%s|%s|%s|%s", date, schedule.Time, schedule.Period, schedule.RoomID)
+	return fmt.Sprintf("%s|%s|%s|%s|%s", date, schedule.Time, schedule.DateMode, schedule.Period, schedule.RoomID)
 }
 
 func parseWechatSummaryDailyRunKeys(raw string) map[string]bool {
