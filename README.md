@@ -241,11 +241,10 @@ steam_web_api_key
 
 ## 部署说明
 
-生产部署的最小流程：
+查看线上状态：
 
 ```bash
-go test -count=1 ./...
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/steam-game-takeover-backend ./cmd/server
+./scripts/deploy_backend.sh status
 ```
 
 服务器侧通常放置在：
@@ -260,12 +259,24 @@ systemd 服务名：
 steam-game-takeover-backend.service
 ```
 
-部署后检查：
+发布后端：
 
 ```bash
-systemctl is-active steam-game-takeover-backend.service
-curl http://127.0.0.1:8081/api/health
-curl -k https://www.rabbits.ink/miniprogram-api/api/health
+./scripts/deploy_backend.sh deploy
+```
+
+脚本会按顺序执行测试、Linux 构建、上传二进制、备份旧二进制、重启 systemd 服务、检查本机和公网健康接口。脚本不保存服务器密码、数据库密码或密钥，SSH/SCP/MySQL 认证走本机或服务器已有配置。
+
+如需随发布执行增量 SQL，必须显式指定 migration，避免误把历史 migration 重跑：
+
+```bash
+MIGRATIONS="migrations/043_xxx.sql" ./scripts/deploy_backend.sh deploy
+```
+
+可按需覆盖服务器配置：
+
+```bash
+DEPLOY_HOST=47.102.200.211 APP_DIR=/opt/steam-game-takeover-backend ./scripts/deploy_backend.sh status
 ```
 
 ## 开发约定
