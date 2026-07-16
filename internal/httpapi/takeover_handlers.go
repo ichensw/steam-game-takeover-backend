@@ -415,6 +415,11 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
+	currentMemberState, err := currentTakeoverMemberState(h.db, takeover.ID, user.ID)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
 	if takeover.TakeoverState == model.TakeoverStateClosed && !hasJoined && !isTakeoverCreator(user, takeover) && !canManageTakeover(user, takeover) && !canViewAllTakeovers(user) {
 		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		return
@@ -447,6 +452,7 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 	dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
 	dto.IsCreator = isTakeoverCreator(user, takeover)
 	dto.CanManage = canManageTakeover(user, takeover)
+	dto.CurrentMemberState = currentMemberState
 	dto.Members = members
 	dto.MemberActivities = activities
 	ok(c, "success", dto)
@@ -521,6 +527,10 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 	}
 	if err := h.fillKookInviteURL(&parsed); err != nil {
 		fail(c, http.StatusBadGateway, CodeSystemError, "kook invite create failed")
+		return
+	}
+	if err := h.ensureTakeoverContactReady(takeover.CreatorUserID, parsed); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		return
 	}
 
@@ -660,6 +670,9 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		if freshUser.CreditScore < model.MinCreateCreditScore {
 			return errCreditTooLowForCreate
 		}
+		if err := ensureTakeoverContactReadyForUser(freshUser, parsed); err != nil {
+			return err
+		}
 		if err := syncExpiredTakeovers(tx, time.Now()); err != nil {
 			return err
 		}
@@ -717,6 +730,10 @@ func (h *Handler) CreateTakeover(c *gin.Context) {
 		}
 		if errors.Is(err, errCreditTooLowForCreate) {
 			fail(c, http.StatusForbidden, CodeParamInvalid, "credit too low for create")
+			return
+		}
+		if errors.Is(err, errTakeoverContactRequired) {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 			return
 		}
 		if errors.Is(err, errTakeoverTimeConflict) {
@@ -823,6 +840,11 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		if takeover.TakeoverState == model.TakeoverStateClosed {
 			return errTakeoverEnded
 		}
+		if blocked, err := isUserBlockedBy(tx, takeover.CreatorUserID, freshUser.ID); err != nil {
+			return err
+		} else if blocked {
+			return errUserBlockedByCreator
+		}
 
 		var member model.TakeoverMember
 		err = tx.Where("takeover_id = ? AND user_id = ?", takeoverID, freshUser.ID).First(&member).Error
@@ -874,6 +896,8 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		case errors.Is(err, errAlreadyJoined):
 			fail(c, http.StatusConflict, CodeAlreadyJoined, "already joined")
+		case errors.Is(err, errUserBlockedByCreator):
+			fail(c, http.StatusForbidden, CodeUserBlockedByCreator, errUserBlockedByCreator.Error())
 		case errors.Is(err, errTakeoverTimeConflict):
 			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
 		case errors.Is(err, errTakeoverEnded):
@@ -1003,16 +1027,35 @@ func (h *Handler) LeaveTakeover(c *gin.Context) {
 }
 
 var (
-	errAlreadyJoined         = errors.New("already joined")
-	errTakeoverTimeConflict  = errors.New("takeover time conflict")
-	errTakeoverEnded         = errors.New("ended takeover cannot be joined")
-	errTakeoverFull          = errors.New("takeover full")
-	errNotJoined             = errors.New("not joined")
-	errProfileRequired       = errors.New("profile required")
-	errCreditTooLowForCreate = errors.New("credit too low for create")
-	errCreditTooLowForJoin   = errors.New("credit too low for join")
-	errRemarkTooLong         = errors.New("remark too long")
+	errAlreadyJoined           = errors.New("already joined")
+	errTakeoverTimeConflict    = errors.New("takeover time conflict")
+	errTakeoverEnded           = errors.New("ended takeover cannot be joined")
+	errTakeoverFull            = errors.New("takeover full")
+	errNotJoined               = errors.New("not joined")
+	errProfileRequired         = errors.New("profile required")
+	errCreditTooLowForCreate   = errors.New("credit too low for create")
+	errCreditTooLowForJoin     = errors.New("credit too low for join")
+	errRemarkTooLong           = errors.New("remark too long")
+	errTakeoverContactRequired = errors.New("takeover contact required")
 )
+
+func (h *Handler) ensureTakeoverContactReady(creatorUserID uint64, parsed parsedTakeoverInput) error {
+	if parsed.KookChannelID != nil {
+		return nil
+	}
+	var creator model.User
+	if err := h.db.Where("id = ? AND is_deleted = ?", creatorUserID, false).First(&creator).Error; err != nil {
+		return err
+	}
+	return ensureTakeoverContactReadyForUser(creator, parsed)
+}
+
+func ensureTakeoverContactReadyForUser(user model.User, parsed parsedTakeoverInput) error {
+	if parsed.KookChannelID != nil || strings.TrimSpace(stringValue(user.SteamID)) != "" {
+		return nil
+	}
+	return errTakeoverContactRequired
+}
 
 func (h *Handler) hasActiveScheduleConflict(tx *gorm.DB, userID uint64, target model.Takeover) (bool, error) {
 	var takeovers []model.Takeover
@@ -1273,6 +1316,9 @@ func memberActivityActionFilters(keyword string) []uint8 {
 	}
 	if strings.Contains(keyword, "leave") || strings.Contains(keyword, "退出") || strings.Contains(keyword, "跳车") || strings.Contains(keyword, "下车") {
 		actions = append(actions, model.MemberActionLeave)
+	}
+	if strings.Contains(keyword, "kick") || strings.Contains(keyword, "踢") || strings.Contains(keyword, "移出") {
+		actions = append(actions, model.MemberActionKick)
 	}
 	return actions
 }

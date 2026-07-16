@@ -49,6 +49,9 @@ func (h *Handler) AdminCreateTakeover(c *gin.Context) {
 		if err := h.fillKookInviteURL(&parsed); err != nil {
 			return err
 		}
+		if err := ensureTakeoverContactReadyForUser(creator, parsed); err != nil {
+			return err
+		}
 		if err := syncExpiredTakeovers(tx, time.Now()); err != nil {
 			return err
 		}
@@ -96,6 +99,8 @@ func (h *Handler) AdminCreateTakeover(c *gin.Context) {
 			fail(c, http.StatusBadRequest, CodeProfileIncomplete, "creator profile incomplete")
 		case errors.Is(err, errContentSecurityReject):
 			fail(c, http.StatusBadRequest, CodeParamInvalid, "content security reject")
+		case errors.Is(err, errTakeoverContactRequired):
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		case errors.Is(err, errTakeoverTimeConflict):
 			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
 		default:
@@ -166,6 +171,10 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 	}
 	if err := h.fillKookInviteURL(&parsed); err != nil {
 		fail(c, http.StatusBadGateway, CodeSystemError, "kook invite create failed")
+		return
+	}
+	if err := h.ensureTakeoverContactReady(takeover.CreatorUserID, parsed); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 		return
 	}
 

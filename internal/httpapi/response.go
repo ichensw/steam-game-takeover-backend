@@ -15,6 +15,7 @@ const (
 	CodeTakeoverNotFound          = "TAKEOVER_NOT_FOUND"
 	CodeTakeoverFull              = "TAKEOVER_FULL"
 	CodeAlreadyJoined             = "ALREADY_JOINED"
+	CodeUserBlockedByCreator      = "USER_BLOCKED_BY_CREATOR"
 	CodeTakeoverTimeConflict      = "TAKEOVER_TIME_CONFLICT"
 	CodeReportAlreadyExists       = "REPORT_ALREADY_EXISTS"
 	CodeCannotReportSelf          = "CANNOT_REPORT_SELF"
@@ -62,6 +63,7 @@ var codeTranslations = map[string]string{
 	CodeTakeoverNotFound:          "接龙不存在或已被删除",
 	CodeTakeoverFull:              "接龙人数已满",
 	CodeAlreadyJoined:             "您已经加入过这个接龙",
+	CodeUserBlockedByCreator:      "队长暂时不接受你的加入申请，可以换一辆车试试。",
 	CodeTakeoverTimeConflict:      "同一时间你已经加入了其他接龙",
 	CodeReportAlreadyExists:       "已举报过该用户",
 	CodeCannotReportSelf:          "不能举报自己",
@@ -77,13 +79,16 @@ var messageTranslations = map[string]string{
 	"already joined":                             "您已经加入过这个接龙",
 	"avatarUrl must be at most 255 characters":   "头像地址过长，请重新上传",
 	"cannot report yourself":                     "不能举报自己",
+	"cannot block yourself":                      "不能拉黑自己",
 	"content security reject":                    "内容包含不合规信息，请修改后再提交",
+	"cannot kick yourself":                       "不能踢出自己",
 	"code is required":                           "登录凭证缺失，请重新进入小程序",
 	"create failed":                              "创建接龙失败，请稍后再试",
 	"credit restore failed":                      "信誉分恢复失败，请稍后再试",
 	"credit too low for create":                  "当前信誉分过低，暂无法发起接龙，请联系管理员处理",
 	"credit too low for join":                    "当前信誉分低于 70，暂无法参与接龙，请联系管理员处理",
 	"creator cannot leave takeover":              "创建人不能退出自己创建的接龙",
+	"creator cannot be kicked":                   "不能踢出队长",
 	"delete failed":                              "删除失败，请稍后再试",
 	"file is required":                           "请选择要上传的图片",
 	"gender must be 1 or 2":                      "请选择性别",
@@ -134,6 +139,7 @@ var messageTranslations = map[string]string{
 	"steamId must contain digits only":                              "SteamID 只能填写数字",
 	"steam friend code invalid":                                     "Steam好友码错误，请填写正确的好友码。",
 	"steam friend code check failed":                                "Steam好友码校验失败，请稍后再试",
+	"takeover contact required":                                     "未选择 KOOK 频道时，请先填写 SteamID，方便队友找到你。",
 	"takeover full":                                                 "接龙人数已满",
 	"takeover time conflict":                                        "同一时间你已经加入了其他接龙",
 	"takeover not found":                                            "接龙不存在或已被删除",
@@ -141,6 +147,7 @@ var messageTranslations = map[string]string{
 	"unauthorized":                                                  "登录状态已失效，请重新进入小程序",
 	"upload failed":                                                 "图片上传失败，请稍后再试",
 	"user banned":                                                   "账号已被封禁，如有疑问请联系管理员",
+	"user blocked by creator":                                       "队长暂时不接受你的加入申请，可以换一辆车试试。",
 	"user not found":                                                "用户不存在",
 	"wechat login failed":                                           "微信登录失败，请稍后再试",
 }

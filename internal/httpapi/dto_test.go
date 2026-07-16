@@ -208,6 +208,9 @@ func TestMemberActionText(t *testing.T) {
 	if got := memberActionText(model.MemberActionLeave); got != "退出" {
 		t.Fatalf("leave text = %q", got)
 	}
+	if got := memberActionText(model.MemberActionKick); got != "被踢出" {
+		t.Fatalf("kick text = %q", got)
+	}
 }
 
 func TestMemberActivityActionFilters(t *testing.T) {
@@ -216,6 +219,25 @@ func TestMemberActivityActionFilters(t *testing.T) {
 	}
 	if got := memberActivityActionFilters("leave"); len(got) != 1 || got[0] != model.MemberActionLeave {
 		t.Fatalf("leave filter = %v", got)
+	}
+	if got := memberActivityActionFilters("踢出"); len(got) != 1 || got[0] != model.MemberActionKick {
+		t.Fatalf("kick filter = %v", got)
+	}
+}
+
+func TestEnsureTakeoverContactReadyForUser(t *testing.T) {
+	if err := ensureTakeoverContactReadyForUser(model.User{}, parsedTakeoverInput{}); !errors.Is(err, errTakeoverContactRequired) {
+		t.Fatalf("missing contact error = %v", err)
+	}
+
+	steamID := "123456"
+	if err := ensureTakeoverContactReadyForUser(model.User{SteamID: &steamID}, parsedTakeoverInput{}); err != nil {
+		t.Fatalf("steam id contact error = %v", err)
+	}
+
+	kookChannelID := "channel-1"
+	if err := ensureTakeoverContactReadyForUser(model.User{}, parsedTakeoverInput{KookChannelID: &kookChannelID}); err != nil {
+		t.Fatalf("kook contact error = %v", err)
 	}
 }
 

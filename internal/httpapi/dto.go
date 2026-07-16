@@ -108,6 +108,7 @@ type takeoverDTO struct {
 	HasJoined           bool                `json:"hasJoined"`
 	IsCreator           bool                `json:"isCreator"`
 	CanManage           bool                `json:"canManage"`
+	CurrentMemberState  uint8               `json:"currentMemberState,omitempty"`
 	RecommendTags       []recommendTagDTO   `json:"recommendTags,omitempty"`
 	PreviewMembers      []memberDTO         `json:"previewMembers,omitempty"`
 	Members             []memberDTO         `json:"members,omitempty"`
@@ -264,6 +265,9 @@ func toMemberActivityDTO(row memberActivityRow, includeOpenID bool) memberActivi
 }
 
 func memberActionText(action uint8) string {
+	if action == model.MemberActionKick {
+		return "被踢出"
+	}
 	if action == model.MemberActionLeave {
 		return "退出"
 	}

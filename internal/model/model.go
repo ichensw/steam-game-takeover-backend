@@ -15,9 +15,9 @@ const (
 
 	MemberStateJoined = 1
 	MemberStateExited = 2
-
 	MemberActionJoin  = 1
 	MemberActionLeave = 2
+	MemberActionKick  = 3
 
 	ReminderSendPending = 1
 	ReminderSendSent    = 2
@@ -275,6 +275,16 @@ type TakeoverMemberActivity struct {
 }
 
 func (TakeoverMemberActivity) TableName() string { return "ttw_takeover_member_activity" }
+
+type UserBlock struct {
+	ID            uint64    `gorm:"primaryKey;column:id"`
+	OwnerUserID   uint64    `gorm:"column:owner_user_id;uniqueIndex:uk_owner_blocked;index:idx_owner_user_id"`
+	BlockedUserID uint64    `gorm:"column:blocked_user_id;uniqueIndex:uk_owner_blocked;index:idx_blocked_user_id"`
+	GmtCreate     time.Time `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified   time.Time `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (UserBlock) TableName() string { return "ttw_user_block" }
 
 type TakeoverReminderSubscription struct {
 	ID          uint64     `gorm:"primaryKey;column:id"`
