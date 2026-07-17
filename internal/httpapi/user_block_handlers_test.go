@@ -26,6 +26,10 @@ func TestUserBlockRoutesAreRegistered(t *testing.T) {
 		"GET /api/me/blocked-users":                             "",
 		"POST /api/users/:userId/unblock":                       "",
 		"POST /api/takeovers/:takeoverId/members/:userId/block": "",
+		"GET /api/admin/user-blocks":                            "",
+		"POST /api/admin/user-blocks":                           "",
+		"PUT /api/admin/user-blocks/:blockId":                   "",
+		"DELETE /api/admin/user-blocks/:blockId":                "",
 	}
 	for _, route := range routes {
 		delete(want, route.Method+" "+route.Path)
@@ -66,5 +70,11 @@ func TestActiveTakeoverMemberBlockQueryOnlyMatchesJoinedMembers(t *testing.T) {
 func TestTakeoverJoinUnavailableMessageIsGeneric(t *testing.T) {
 	if got := friendlyMessage(CodeTakeoverJoinUnavailable, ""); got != "当前接龙暂时无法加入，请稍后重试。" {
 		t.Fatalf("friendlyMessage() = %q", got)
+	}
+}
+
+func TestValidateUserBlockPairRejectsSelf(t *testing.T) {
+	if err := validateUserBlockPair(12, 12); err == nil {
+		t.Fatal("same owner and blocked user should be rejected")
 	}
 }

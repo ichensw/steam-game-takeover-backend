@@ -118,6 +118,7 @@ var messageTranslations = map[string]string{
 	"penalty score must be 0, 5, 10, or 20":                         "扣分只能选择 0、5、10 或 20",
 	"profile incomplete":                                            "请先完善个人资料",
 	"publish takeover disabled":                                     "暂未开放发起接龙",
+	"user block already exists":                                     "该拉黑关系已存在",
 	"query failed":                                                  "获取数据失败，请稍后再试",
 	"ended takeover cannot be deleted":                              "已结束的接龙不可删除",
 	"ended takeover cannot be joined":                               "已结束的接龙不可加入",

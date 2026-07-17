@@ -10,7 +10,7 @@ import (
 )
 
 var allAdminMenuKeys = []string{
-	"dashboard", "takeovers", "reports", "users", "admin-users",
+	"dashboard", "takeovers", "reports", "users", "user-blocks", "admin-users",
 	"kook-channels", "kook-roles", "kook-members", "kook-users",
 	"kook-voice-stats", "feedbacks", "announcements", "settings",
 	"wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control",
@@ -25,9 +25,9 @@ func defaultAdminMenuKeys(role string) []string {
 	case model.AdminRoleSuperAdmin:
 		return append([]string(nil), allAdminMenuKeys...)
 	case model.AdminRoleKookAdmin:
-		return []string{"dashboard", "takeovers", "reports", "users", "kook-channels", "kook-roles", "kook-members", "kook-users", "kook-voice-stats", "feedbacks", "announcements", "settings"}
+		return []string{"dashboard", "takeovers", "reports", "users", "user-blocks", "kook-channels", "kook-roles", "kook-members", "kook-users", "kook-voice-stats", "feedbacks", "announcements", "settings"}
 	default:
-		return []string{"dashboard", "takeovers", "reports", "users", "feedbacks", "announcements", "settings"}
+		return []string{"dashboard", "takeovers", "reports", "users", "user-blocks", "feedbacks", "announcements", "settings"}
 	}
 }
 
@@ -93,6 +93,7 @@ func (h *Handler) AdminListRoleMenus(c *gin.Context) {
 			{"key": "takeovers", "label": "接龙管理"},
 			{"key": "reports", "label": "举报审核"},
 			{"key": "users", "label": "用户管理"},
+			{"key": "user-blocks", "label": "用户拉黑关系"},
 			{"key": "admin-users", "label": "管理员账号"},
 			{"key": "kook-channels", "label": "KOOK 频道"},
 			{"key": "kook-roles", "label": "KOOK 角色"},

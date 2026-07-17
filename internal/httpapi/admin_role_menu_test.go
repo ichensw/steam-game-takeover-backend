@@ -19,8 +19,8 @@ func TestDefaultAdminMenuKeysIncludeWechatForSuperAdminOnly(t *testing.T) {
 }
 
 func TestNormalizeAdminMenuKeysAcceptsWechatKeys(t *testing.T) {
-	got := normalizeAdminMenuKeys([]string{"wechat-messages", "invalid", "wechat-summary", "wechat-stats", "wechat-wxbot-control", "wechat-messages"})
-	want := []string{"wechat-messages", "wechat-summary", "wechat-stats", "wechat-wxbot-control"}
+	got := normalizeAdminMenuKeys([]string{"users", "user-blocks", "invalid", "wechat-summary", "user-blocks"})
+	want := []string{"users", "user-blocks", "wechat-summary"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
