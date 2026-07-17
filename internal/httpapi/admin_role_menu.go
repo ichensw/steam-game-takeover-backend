@@ -17,7 +17,7 @@ var allAdminMenuKeys = []string{
 }
 
 var superAdminRequiredMenuKeys = []string{
-	"admin-users", "wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control",
+	"user-blocks", "admin-users", "wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control",
 }
 
 func defaultAdminMenuKeys(role string) []string {
