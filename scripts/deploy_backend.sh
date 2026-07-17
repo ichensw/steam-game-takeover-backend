@@ -11,6 +11,7 @@ PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://rabbits.ink/miniprogram-api/api/
 REMOTE_MYSQL_CMD="${REMOTE_MYSQL_CMD:-mysql -uroot steam_takeover}"
 MIGRATIONS="${MIGRATIONS:-}"
 DEPLOY_SSH_OPTS="${DEPLOY_SSH_OPTS:-}"
+DEPLOY_PASSWORD_FILE="${DEPLOY_PASSWORD_FILE:-$HOME/.config/steam-game-takeover-backend/deploy-password}"
 
 REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
 BINARY_NAME="steam-game-takeover-backend"
@@ -20,6 +21,10 @@ if [[ -n "$DEPLOY_SSH_OPTS" ]]; then
   SSH_ARGS=($DEPLOY_SSH_OPTS)
 else
   SSH_ARGS=(-o StrictHostKeyChecking=accept-new)
+fi
+
+if [[ -s "$DEPLOY_PASSWORD_FILE" ]]; then
+  SSH_ARGS+=(-o PreferredAuthentications=password -o PubkeyAuthentication=no)
 fi
 
 log() {
@@ -34,11 +39,30 @@ need() {
 }
 
 ssh_remote() {
-  ssh "${SSH_ARGS[@]}" "$REMOTE" "$@"
+  run_remote ssh "${SSH_ARGS[@]}" "$REMOTE" "$@"
 }
 
 scp_remote() {
-  scp "${SSH_ARGS[@]}" "$@"
+  run_remote scp "${SSH_ARGS[@]}" "$@"
+}
+
+run_remote() {
+  if [[ ! -s "$DEPLOY_PASSWORD_FILE" ]]; then
+    "$@"
+    return
+  fi
+
+  local askpass exit_code
+  askpass="$(mktemp "${TMPDIR:-/tmp}/steam-takeover-askpass.XXXXXX")"
+  chmod 700 "$askpass"
+  printf '#!/usr/bin/env bash\nexec cat %q\n' "$DEPLOY_PASSWORD_FILE" > "$askpass"
+
+  set +e
+  DISPLAY=:0 SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force "$@"
+  exit_code=$?
+  set -e
+  rm -f "$askpass"
+  return "$exit_code"
 }
 
 status() {
@@ -90,7 +114,7 @@ deploy() {
   remote_binary="/tmp/$BINARY_NAME.$stamp"
   remote_migration_dir="/tmp/${BINARY_NAME}-migrations.$stamp"
   mysql_cmd_b64="$(printf '%s' "$REMOTE_MYSQL_CMD" | base64 | tr -d '\n')"
-  migration_names=()
+  migration_arg="${MIGRATIONS:--}"
 
   log INFO "Uploading binary..."
   scp_remote "dist/$BINARY_NAME" "$REMOTE:$remote_binary"
@@ -104,25 +128,27 @@ deploy() {
         exit 1
       fi
       migration_name="$(basename "$migration")"
-      migration_names+=("$migration_name")
       scp_remote "$migration" "$REMOTE:$remote_migration_dir/$migration_name"
     done
   fi
 
   log INFO "Installing and restarting service..."
-  ssh_remote bash -s -- "$APP_DIR" "$SERVICE_NAME" "$remote_binary" "$remote_migration_dir" "$mysql_cmd_b64" "${migration_names[@]}" <<'REMOTE_SCRIPT'
+  ssh_remote bash -s -- "$APP_DIR" "$SERVICE_NAME" "$remote_binary" "$remote_migration_dir" "$mysql_cmd_b64" "$migration_arg" <<'REMOTE_SCRIPT'
 set -euo pipefail
 APP_DIR="$1"
 SERVICE_NAME="$2"
 REMOTE_BINARY="$3"
 MIGRATION_DIR="$4"
 REMOTE_MYSQL_CMD="$(printf '%s' "$5" | base64 -d)"
-shift 5
+MIGRATIONS="$6"
+if [[ "$MIGRATIONS" == "-" ]]; then
+  MIGRATIONS=""
+fi
 
 cd "$APP_DIR"
 
-if [[ "$#" -gt 0 ]]; then
-  for migration_name in "$@"; do
+if [[ -n "$MIGRATIONS" ]]; then
+  for migration_name in $MIGRATIONS; do
     migration_path="$MIGRATION_DIR/$migration_name"
     echo "[INFO] Applying migration: $migration_name"
     eval "$REMOTE_MYSQL_CMD < \"\$migration_path\""
@@ -163,10 +189,11 @@ Options by environment variable:
   SERVICE_NAME         default: $SERVICE_NAME
   PUBLIC_HEALTH_URL    default: $PUBLIC_HEALTH_URL
   DEPLOY_SSH_OPTS      optional ssh/scp options, for example "-i ~/.ssh/id_rsa"
+  DEPLOY_PASSWORD_FILE local password file, default: $DEPLOY_PASSWORD_FILE
   MIGRATIONS           optional SQL files to apply, for example "migrations/043_x.sql"
   REMOTE_MYSQL_CMD     default: $REMOTE_MYSQL_CMD
 
-No password is stored in this script. ssh/scp/mysql use your machine or server config.
+The password is read from the local private file, never from this repository.
 EOF
 }
 
