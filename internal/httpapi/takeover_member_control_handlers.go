@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	errAdminUnauthorized    = errors.New("admin unauthorized")
-	errCannotKickCreator    = errors.New("creator cannot be kicked")
-	errCannotKickSelf       = errors.New("cannot kick yourself")
-	errUserBlockedByCreator = errors.New("user blocked by creator")
+	errAdminUnauthorized       = errors.New("admin unauthorized")
+	errCannotKickCreator       = errors.New("creator cannot be kicked")
+	errCannotKickSelf          = errors.New("cannot kick yourself")
+	errTakeoverJoinUnavailable = errors.New("takeover join unavailable")
 )
 
 func (h *Handler) KickTakeoverMember(c *gin.Context) {
@@ -138,6 +138,18 @@ func isUserBlockedBy(db *gorm.DB, ownerUserID, blockedUserID uint64) (bool, erro
 	err := db.Model(&model.UserBlock{}).
 		Where("owner_user_id = ? AND blocked_user_id = ?", ownerUserID, blockedUserID).
 		Count(&count).Error
+	return count > 0, err
+}
+
+func activeTakeoverMemberBlockQuery(db *gorm.DB, takeoverID, blockedUserID uint64) *gorm.DB {
+	return db.Table("ttw_takeover_member AS m").
+		Joins("JOIN ttw_user_block AS b ON b.owner_user_id = m.user_id").
+		Where("m.takeover_id = ? AND m.member_state = ? AND b.blocked_user_id = ?", takeoverID, model.MemberStateJoined, blockedUserID)
+}
+
+func isUserBlockedByActiveTakeoverMember(db *gorm.DB, takeoverID, blockedUserID uint64) (bool, error) {
+	var count int64
+	err := activeTakeoverMemberBlockQuery(db, takeoverID, blockedUserID).Limit(1).Count(&count).Error
 	return count > 0, err
 }
 

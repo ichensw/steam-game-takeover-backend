@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"strings"
 	"testing"
 
 	"steam-game-takeover-backend/internal/model"
+
+	"gorm.io/gorm"
 )
 
 func TestCanBlockTakeoverMemberOnlyAllowsCreator(t *testing.T) {
@@ -39,5 +42,29 @@ func TestJoinRequestRoutesAreNotRegistered(t *testing.T) {
 			route.Path == "/api/takeovers/:takeoverId/join-requests/:requestId/reject" {
 			t.Fatalf("join request route should not be registered: %s %s", route.Method, route.Path)
 		}
+	}
+}
+
+func TestActiveTakeoverMemberBlockQueryOnlyMatchesJoinedMembers(t *testing.T) {
+	db := newTakeoverExpirationDryRunDB(t)
+	sqlText := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+		return activeTakeoverMemberBlockQuery(tx, 12, 34).Limit(1).Count(new(int64))
+	})
+	for _, clause := range []string{
+		"FROM ttw_takeover_member AS m",
+		"JOIN ttw_user_block AS b ON b.owner_user_id = m.user_id",
+		"m.takeover_id = 12",
+		"m.member_state = 1",
+		"b.blocked_user_id = 34",
+	} {
+		if !strings.Contains(sqlText, clause) {
+			t.Fatalf("member block SQL missing %q: %s", clause, sqlText)
+		}
+	}
+}
+
+func TestTakeoverJoinUnavailableMessageIsGeneric(t *testing.T) {
+	if got := friendlyMessage(CodeTakeoverJoinUnavailable, ""); got != "当前接龙暂时无法加入，请稍后重试。" {
+		t.Fatalf("friendlyMessage() = %q", got)
 	}
 }

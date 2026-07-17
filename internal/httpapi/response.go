@@ -15,7 +15,7 @@ const (
 	CodeTakeoverNotFound          = "TAKEOVER_NOT_FOUND"
 	CodeTakeoverFull              = "TAKEOVER_FULL"
 	CodeAlreadyJoined             = "ALREADY_JOINED"
-	CodeUserBlockedByCreator      = "USER_BLOCKED_BY_CREATOR"
+	CodeTakeoverJoinUnavailable   = "TAKEOVER_JOIN_UNAVAILABLE"
 	CodeTakeoverTimeConflict      = "TAKEOVER_TIME_CONFLICT"
 	CodeReportAlreadyExists       = "REPORT_ALREADY_EXISTS"
 	CodeCannotReportSelf          = "CANNOT_REPORT_SELF"
@@ -63,7 +63,7 @@ var codeTranslations = map[string]string{
 	CodeTakeoverNotFound:          "接龙不存在或已被删除",
 	CodeTakeoverFull:              "接龙人数已满",
 	CodeAlreadyJoined:             "您已经加入过这个接龙",
-	CodeUserBlockedByCreator:      "队长暂时不接受你的加入申请，可以换一辆车试试。",
+	CodeTakeoverJoinUnavailable:   "当前接龙暂时无法加入，请稍后重试。",
 	CodeTakeoverTimeConflict:      "同一时间你已经加入了其他接龙",
 	CodeReportAlreadyExists:       "已举报过该用户",
 	CodeCannotReportSelf:          "不能举报自己",
@@ -147,7 +147,6 @@ var messageTranslations = map[string]string{
 	"unauthorized":                                                  "登录状态已失效，请重新进入小程序",
 	"upload failed":                                                 "图片上传失败，请稍后再试",
 	"user banned":                                                   "账号已被封禁，如有疑问请联系管理员",
-	"user blocked by creator":                                       "队长暂时不接受你的加入申请，可以换一辆车试试。",
 	"user not found":                                                "用户不存在",
 	"wechat login failed":                                           "微信登录失败，请稍后再试",
 }

@@ -843,7 +843,12 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 		if blocked, err := isUserBlockedBy(tx, takeover.CreatorUserID, freshUser.ID); err != nil {
 			return err
 		} else if blocked {
-			return errUserBlockedByCreator
+			return errTakeoverJoinUnavailable
+		}
+		if blocked, err := isUserBlockedByActiveTakeoverMember(tx, takeoverID, freshUser.ID); err != nil {
+			return err
+		} else if blocked {
+			return errTakeoverJoinUnavailable
 		}
 
 		var member model.TakeoverMember
@@ -896,8 +901,8 @@ func (h *Handler) JoinTakeover(c *gin.Context) {
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		case errors.Is(err, errAlreadyJoined):
 			fail(c, http.StatusConflict, CodeAlreadyJoined, "already joined")
-		case errors.Is(err, errUserBlockedByCreator):
-			fail(c, http.StatusForbidden, CodeUserBlockedByCreator, errUserBlockedByCreator.Error())
+		case errors.Is(err, errTakeoverJoinUnavailable):
+			fail(c, http.StatusForbidden, CodeTakeoverJoinUnavailable, errTakeoverJoinUnavailable.Error())
 		case errors.Is(err, errTakeoverTimeConflict):
 			fail(c, http.StatusConflict, CodeTakeoverTimeConflict, "takeover time conflict")
 		case errors.Is(err, errTakeoverEnded):
