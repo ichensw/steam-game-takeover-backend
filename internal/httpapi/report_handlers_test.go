@@ -116,3 +116,26 @@ func TestNormalizeReportType(t *testing.T) {
 		t.Fatal("normalizeReportType(bad) error = nil, want error")
 	}
 }
+
+func TestCreditScoreAfterPenaltyFloorsAtZero(t *testing.T) {
+	if got := creditScoreAfterPenalty(8, 10); got != 0 {
+		t.Fatalf("creditScoreAfterPenalty() = %d, want 0", got)
+	}
+	if got := creditScoreAfterPenalty(20, 5); got != 15 {
+		t.Fatalf("creditScoreAfterPenalty() = %d, want 15", got)
+	}
+}
+
+func TestAdminReportAndCreditPenaltyRoutesAreRegistered(t *testing.T) {
+	routes := NewRouter(&Handler{}).Routes()
+	want := map[string]string{
+		"POST /api/admin/reports":                      "",
+		"POST /api/admin/users/:userId/credit/penalty": "",
+	}
+	for _, route := range routes {
+		delete(want, route.Method+" "+route.Path)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing routes: %#v", want)
+	}
+}

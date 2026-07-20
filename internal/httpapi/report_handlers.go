@@ -131,6 +131,113 @@ func (h *Handler) ReportTakeoverMember(c *gin.Context) {
 	ok(c, "reported", nil)
 }
 
+func (h *Handler) AdminCreateReport(c *gin.Context) {
+	var req struct {
+		TakeoverID     uint64 `json:"takeoverId"`
+		ReporterUserID uint64 `json:"reporterUserId"`
+		takeoverReportInput
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+
+	content := strings.TrimSpace(req.Content)
+	reportType, reportTypeErr := normalizeReportType(req.ReportType)
+	imageURLs, imageErr := normalizeReportImageURLs(req.ImageURLs)
+	if req.TakeoverID == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+	if req.ReporterUserID == 0 || req.ReportedUserID == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
+		return
+	}
+	if req.ReporterUserID == req.ReportedUserID {
+		fail(c, http.StatusBadRequest, CodeCannotReportSelf, "不能举报自己")
+		return
+	}
+	if content == "" || len([]rune(content)) > 500 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "report content is required and must be at most 500 characters")
+		return
+	}
+	if reportTypeErr != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, reportTypeErr.Error())
+		return
+	}
+	if imageErr != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, imageErr.Error())
+		return
+	}
+
+	report := model.TakeoverReport{
+		TakeoverID:     req.TakeoverID,
+		ReporterUserID: req.ReporterUserID,
+		ReportedUserID: req.ReportedUserID,
+		ReportType:     reportType,
+		ReportContent:  content,
+		ImageURLs:      reportImageURLsJSON(imageURLs),
+		ReportState:    model.ReportStatePending,
+	}
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var takeoverCount int64
+		if err := tx.Model(&model.Takeover{}).Where("id = ? AND is_deleted = ?", req.TakeoverID, false).Count(&takeoverCount).Error; err != nil {
+			return err
+		}
+		if takeoverCount == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		var memberCount int64
+		if err := tx.Table("ttw_takeover_member AS m").
+			Joins("JOIN ttw_user AS u ON u.id = m.user_id").
+			Where("m.takeover_id = ? AND m.user_id IN ? AND u.is_deleted = ?", req.TakeoverID, []uint64{req.ReporterUserID, req.ReportedUserID}, false).
+			Distinct("m.user_id").
+			Count(&memberCount).Error; err != nil {
+			return err
+		}
+		if memberCount != 2 {
+			return errReportedUserNotInTakeover
+		}
+		var reportCount int64
+		if err := tx.Model(&model.TakeoverReport{}).
+			Where("takeover_id = ? AND reporter_user_id = ? AND reported_user_id = ?", req.TakeoverID, req.ReporterUserID, req.ReportedUserID).
+			Count(&reportCount).Error; err != nil {
+			return err
+		}
+		if reportCount > 0 {
+			return errReportAlreadyExists
+		}
+		if err := tx.Create(&report).Error; err != nil {
+			if strings.Contains(err.Error(), "Duplicate entry") {
+				return errReportAlreadyExists
+			}
+			return err
+		}
+		content := "create report"
+		return tx.Create(&model.AdminOperateLog{
+			OperateType:    "REPORT_CREATE",
+			TargetType:     "report",
+			TargetID:       report.ID,
+			OperateContent: &content,
+		}).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, errReportAlreadyExists):
+			fail(c, http.StatusConflict, CodeReportAlreadyExists, "已举报过该用户")
+		case errors.Is(err, errReportedUserNotInTakeover):
+			fail(c, http.StatusBadRequest, CodeReportedUserNotInTakeover, "举报人和被举报用户必须都在该接龙中")
+		case isNotFound(err):
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+		default:
+			fail(c, http.StatusInternalServerError, CodeSystemError, "report failed")
+		}
+		return
+	}
+
+	ok(c, "created", gin.H{"id": report.ID})
+}
+
 func (h *Handler) AdminListReports(c *gin.Context) {
 	page := positiveInt(c.Query("page"), 1)
 	pageSize := positiveInt(c.Query("pageSize"), 20)
@@ -449,10 +556,7 @@ func (h *Handler) handleReport(c *gin.Context, reportID uint64, state uint8, pen
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", report.ReportedUserID, false).First(&user).Error; err != nil {
 				return err
 			}
-			score := uint(0)
-			if user.CreditScore > penaltyScore {
-				score = user.CreditScore - penaltyScore
-			}
+			score := creditScoreAfterPenalty(user.CreditScore, penaltyScore)
 			if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("credit_score", score).Error; err != nil {
 				return err
 			}
@@ -480,7 +584,18 @@ func (h *Handler) handleReport(c *gin.Context, reportID uint64, state uint8, pen
 	})
 }
 
-var errReportHandled = errors.New("report already handled")
+var (
+	errReportHandled             = errors.New("report already handled")
+	errReportAlreadyExists       = errors.New("report already exists")
+	errReportedUserNotInTakeover = errors.New("reported user not in takeover")
+)
+
+func creditScoreAfterPenalty(score, penaltyScore uint) uint {
+	if score > penaltyScore {
+		return score - penaltyScore
+	}
+	return 0
+}
 
 func normalizeReportImageURLs(imageURLs []string) ([]string, error) {
 	if len(imageURLs) > 9 {

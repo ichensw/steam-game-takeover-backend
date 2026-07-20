@@ -303,6 +303,62 @@ func (h *Handler) AdminRestoreUserCredit(c *gin.Context) {
 	ok(c, "restored", nil)
 }
 
+func (h *Handler) AdminPenalizeUserCredit(c *gin.Context) {
+	userID, okID := pathUint64(c, "userId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid user id")
+		return
+	}
+	admin, _ := currentAdmin(c)
+	var req struct {
+		PenaltyScore uint   `json:"penaltyScore"`
+		Reason       string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if req.PenaltyScore == 0 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "penalty score is required")
+		return
+	}
+	if len([]rune(reason)) > 255 {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "reason must be at most 255 characters")
+		return
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var user model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_deleted = ?", userID, false).First(&user).Error; err != nil {
+			return err
+		}
+		score := creditScoreAfterPenalty(user.CreditScore, req.PenaltyScore)
+		if err := tx.Model(&model.User{}).Where("id = ?", userID).Update("credit_score", score).Error; err != nil {
+			return err
+		}
+		if err := recordCreditLog(tx, user.ID, user.CreditScore, score, "admin_penalty", firstNonEmpty(reason, "管理员扣除信誉分"), nullableUint64(admin.ID), nil); err != nil {
+			return err
+		}
+		content := firstNonEmpty(reason, "penalize credit")
+		return tx.Create(&model.AdminOperateLog{
+			OperateType:    "USER_CREDIT_PENALTY",
+			TargetType:     "user",
+			TargetID:       user.ID,
+			OperateContent: &content,
+		}).Error
+	})
+	if err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeParamInvalid, "user not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "credit penalty failed")
+		return
+	}
+	ok(c, "penalized", nil)
+}
+
 func (h *Handler) AdminDashboardSummary(c *gin.Context) {
 	var takeoverTotal int64
 	if err := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false).Count(&takeoverTotal).Error; err != nil {
