@@ -143,6 +143,8 @@ curl http://127.0.0.1:8081/api/health
 | `go run ./cmd/server` | 本地启动服务 |
 | `go test -count=1 ./...` | 运行全部测试 |
 | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/steam-game-takeover-backend ./cmd/server` | 构建 Linux 生产二进制 |
+| `./scripts/deploy_backend.sh deploy` | 构建、上传并发布线上后端 |
+| `./scripts/deploy_backend.sh status` | 查看线上后端服务状态和健康检查 |
 | `go test -count=1 ./internal/httpapi` | 只运行 HTTP API 测试 |
 
 ## 接口文档

@@ -7,7 +7,7 @@ DEPLOY_HOST="${DEPLOY_HOST:-47.102.200.211}"
 DEPLOY_USER="${DEPLOY_USER:-root}"
 APP_DIR="${APP_DIR:-/opt/steam-game-takeover-backend}"
 SERVICE_NAME="${SERVICE_NAME:-steam-game-takeover-backend.service}"
-PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://rabbits.ink/miniprogram-api/api/health}"
+PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-https://www.rabbits.ink/miniprogram-api/api/health}"
 REMOTE_MYSQL_CMD="${REMOTE_MYSQL_CMD:-mysql -uroot steam_takeover}"
 MIGRATIONS="${MIGRATIONS:-}"
 DEPLOY_SSH_OPTS="${DEPLOY_SSH_OPTS:-}"
@@ -23,7 +23,7 @@ else
   SSH_ARGS=(-o StrictHostKeyChecking=accept-new)
 fi
 
-if [[ -s "$DEPLOY_PASSWORD_FILE" ]]; then
+if [[ -n "${DEPLOY_PASSWORD:-}" || -s "$DEPLOY_PASSWORD_FILE" ]]; then
   SSH_ARGS+=(-o PreferredAuthentications=password -o PubkeyAuthentication=no)
 fi
 
@@ -47,7 +47,7 @@ scp_remote() {
 }
 
 run_remote() {
-  if [[ ! -s "$DEPLOY_PASSWORD_FILE" ]]; then
+  if [[ -z "${DEPLOY_PASSWORD:-}" && ! -s "$DEPLOY_PASSWORD_FILE" ]]; then
     "$@"
     return
   fi
@@ -55,7 +55,14 @@ run_remote() {
   local askpass exit_code
   askpass="$(mktemp "${TMPDIR:-/tmp}/steam-takeover-askpass.XXXXXX")"
   chmod 700 "$askpass"
-  printf '#!/usr/bin/env bash\nexec cat %q\n' "$DEPLOY_PASSWORD_FILE" > "$askpass"
+  if [[ -n "${DEPLOY_PASSWORD:-}" ]]; then
+    cat > "$askpass" <<'ASKPASS_SCRIPT'
+#!/usr/bin/env bash
+printf '%s\n' "$DEPLOY_PASSWORD"
+ASKPASS_SCRIPT
+  else
+    printf '#!/usr/bin/env bash\nexec cat %q\n' "$DEPLOY_PASSWORD_FILE" > "$askpass"
+  fi
 
   set +e
   DISPLAY=:0 SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force "$@"
@@ -190,6 +197,7 @@ Options by environment variable:
   PUBLIC_HEALTH_URL    default: $PUBLIC_HEALTH_URL
   DEPLOY_SSH_OPTS      optional ssh/scp options, for example "-i ~/.ssh/id_rsa"
   DEPLOY_PASSWORD_FILE local password file, default: $DEPLOY_PASSWORD_FILE
+  DEPLOY_PASSWORD      optional SSH password from environment
   MIGRATIONS           optional SQL files to apply, for example "migrations/043_x.sql"
   REMOTE_MYSQL_CMD     default: $REMOTE_MYSQL_CMD
 
