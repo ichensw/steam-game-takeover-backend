@@ -187,16 +187,15 @@ func (h *Handler) AdminCreateReport(c *gin.Context) {
 		if takeoverCount == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		var memberCount int64
-		if err := tx.Table("ttw_takeover_member AS m").
-			Joins("JOIN ttw_user AS u ON u.id = m.user_id").
-			Where("m.takeover_id = ? AND m.user_id IN ? AND u.is_deleted = ?", req.TakeoverID, []uint64{req.ReporterUserID, req.ReportedUserID}, false).
-			Distinct("m.user_id").
-			Count(&memberCount).Error; err != nil {
+		var userCount int64
+		if err := tx.Model(&model.User{}).
+			Where("id IN ? AND is_deleted = ?", []uint64{req.ReporterUserID, req.ReportedUserID}, false).
+			Distinct("id").
+			Count(&userCount).Error; err != nil {
 			return err
 		}
-		if memberCount != 2 {
-			return errReportedUserNotInTakeover
+		if userCount != 2 {
+			return errReportUserNotFound
 		}
 		var reportCount int64
 		if err := tx.Model(&model.TakeoverReport{}).
@@ -225,8 +224,8 @@ func (h *Handler) AdminCreateReport(c *gin.Context) {
 		switch {
 		case errors.Is(err, errReportAlreadyExists):
 			fail(c, http.StatusConflict, CodeReportAlreadyExists, "已举报过该用户")
-		case errors.Is(err, errReportedUserNotInTakeover):
-			fail(c, http.StatusBadRequest, CodeReportedUserNotInTakeover, "举报人和被举报用户必须都在该接龙中")
+		case errors.Is(err, errReportUserNotFound):
+			fail(c, http.StatusBadRequest, CodeParamInvalid, "举报人或被举报用户不存在")
 		case isNotFound(err):
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		default:
@@ -587,6 +586,7 @@ func (h *Handler) handleReport(c *gin.Context, reportID uint64, state uint8, pen
 var (
 	errReportHandled             = errors.New("report already handled")
 	errReportAlreadyExists       = errors.New("report already exists")
+	errReportUserNotFound        = errors.New("report user not found")
 	errReportedUserNotInTakeover = errors.New("reported user not in takeover")
 )
 

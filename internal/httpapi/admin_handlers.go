@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -424,7 +425,13 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	if keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("nickname LIKE ? OR steam_id LIKE ? OR openid LIKE ?", like, like, like)
+		condition := "nickname LIKE ? OR steam_id LIKE ? OR openid LIKE ?"
+		args := []any{like, like, like}
+		if id, err := strconv.ParseUint(keyword, 10, 64); err == nil {
+			condition = "id = ? OR " + condition
+			args = append([]any{id}, args...)
+		}
+		query = query.Where(condition, args...)
 	}
 
 	var total int64

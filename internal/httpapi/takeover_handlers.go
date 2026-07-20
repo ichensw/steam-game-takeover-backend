@@ -1288,8 +1288,8 @@ func applyKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
 		return query
 	}
 	like := "%" + keyword + "%"
-	return query.Where(
-		"title LIKE ? OR description LIKE ? OR EXISTS (SELECT 1 FROM ttw_user cu WHERE cu.id = ttw_takeover.creator_user_id AND cu.is_deleted = ? AND cu.nickname LIKE ?) OR EXISTS (SELECT 1 FROM ttw_takeover_member km JOIN ttw_user ku ON ku.id = km.user_id WHERE km.takeover_id = ttw_takeover.id AND km.member_state = ? AND ku.is_deleted = ? AND ku.nickname LIKE ?)",
+	condition := "title LIKE ? OR description LIKE ? OR EXISTS (SELECT 1 FROM ttw_user cu WHERE cu.id = ttw_takeover.creator_user_id AND cu.is_deleted = ? AND cu.nickname LIKE ?) OR EXISTS (SELECT 1 FROM ttw_takeover_member km JOIN ttw_user ku ON ku.id = km.user_id WHERE km.takeover_id = ttw_takeover.id AND km.member_state = ? AND ku.is_deleted = ? AND ku.nickname LIKE ?)"
+	args := []any{
 		like,
 		like,
 		false,
@@ -1297,7 +1297,12 @@ func applyKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
 		model.MemberStateJoined,
 		false,
 		like,
-	)
+	}
+	if id, err := strconv.ParseUint(keyword, 10, 64); err == nil {
+		condition = "ttw_takeover.id = ? OR " + condition
+		args = append([]any{id}, args...)
+	}
+	return query.Where(condition, args...)
 }
 
 func applyMemberActivityKeywordFilter(query *gorm.DB, keyword string) *gorm.DB {
