@@ -25,17 +25,21 @@ type kookVoiceSessionRow struct {
 }
 
 type kookVoiceUsageDTO struct {
-	GuildID         string  `json:"guildId"`
-	ChannelID       string  `json:"channelId"`
-	ChannelName     string  `json:"channelName,omitempty"`
-	KookUserID      string  `json:"kookUserId"`
-	Username        string  `json:"username,omitempty"`
-	Nickname        string  `json:"nickname,omitempty"`
-	Date            string  `json:"date,omitempty"`
-	DurationSeconds int64   `json:"durationSeconds"`
-	DurationText    string  `json:"durationText"`
-	SessionCount    int     `json:"sessionCount"`
-	LastJoinedAt    *string `json:"lastJoinedAt,omitempty"`
+	GuildID                 string  `json:"guildId"`
+	ChannelID               string  `json:"channelId"`
+	ChannelName             string  `json:"channelName,omitempty"`
+	KookUserID              string  `json:"kookUserId"`
+	Username                string  `json:"username,omitempty"`
+	Nickname                string  `json:"nickname,omitempty"`
+	Date                    string  `json:"date,omitempty"`
+	DurationSeconds         int64   `json:"durationSeconds"`
+	DurationText            string  `json:"durationText"`
+	OccupiedDurationSeconds int64   `json:"occupiedDurationSeconds,omitempty"`
+	OccupiedDurationText    string  `json:"occupiedDurationText,omitempty"`
+	IdleDurationSeconds     int64   `json:"idleDurationSeconds,omitempty"`
+	IdleDurationText        string  `json:"idleDurationText,omitempty"`
+	SessionCount            int     `json:"sessionCount"`
+	LastJoinedAt            *string `json:"lastJoinedAt,omitempty"`
 }
 
 type kookVoiceSessionDTO struct {
@@ -60,6 +64,8 @@ type kookVoiceChannelUsageDTO struct {
 	DurationText            string `json:"durationText"`
 	OccupiedDurationSeconds int64  `json:"occupiedDurationSeconds"`
 	OccupiedDurationText    string `json:"occupiedDurationText"`
+	IdleDurationSeconds     int64  `json:"idleDurationSeconds"`
+	IdleDurationText        string `json:"idleDurationText"`
 	SessionCount            int64  `json:"sessionCount"`
 	ActiveUserCount         int64  `json:"activeUserCount"`
 }
@@ -271,6 +277,26 @@ func (h *Handler) kookVoiceChannelStats(start, end time.Time, channelID, userID 
 			SessionCount:    row.SessionCount,
 		})
 	}
+	effectiveEnd := minTime(time.Now(), end)
+	if effectiveEnd.After(start) && len(list) > 0 {
+		channelIDs := make([]string, 0, len(list))
+		seen := make(map[string]struct{}, len(list))
+		for _, item := range list {
+			if _, ok := seen[item.ChannelID]; ok {
+				continue
+			}
+			seen[item.ChannelID] = struct{}{}
+			channelIDs = append(channelIDs, item.ChannelID)
+		}
+		intervals := []kookVoiceInterval{}
+		intervalQuery := h.db.Table("ttw_kook_voice_session").
+			Select("guild_id, channel_id, joined_at, exited_at").
+			Where("channel_id IN ? AND joined_at < ? AND (exited_at IS NULL OR exited_at > ?)", channelIDs, effectiveEnd, start)
+		if err := intervalQuery.Scan(&intervals).Error; err != nil {
+			return nil, err
+		}
+		attachKookVoiceUsageOccupancy(list, mergeKookVoiceIntervals(intervals, start, effectiveEnd), int64(effectiveEnd.Sub(start).Seconds()))
+	}
 	return list, nil
 }
 
@@ -399,7 +425,7 @@ func (h *Handler) kookVoiceChannelUsageSummary(start, end time.Time) ([]kookVoic
 			return nil, err
 		}
 	}
-	attachKookVoiceOccupancy(list, guildID, mergeKookVoiceIntervals(intervals, start, effectiveEnd))
+	attachKookVoiceOccupancy(list, guildID, mergeKookVoiceIntervals(intervals, start, effectiveEnd), int64(effectiveEnd.Sub(start).Seconds()))
 	sort.Slice(list, func(i, j int) bool {
 		if list[i].ActiveUserCount == list[j].ActiveUserCount {
 			return list[i].DurationSeconds > list[j].DurationSeconds

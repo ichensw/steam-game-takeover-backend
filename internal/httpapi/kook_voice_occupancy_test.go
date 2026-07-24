@@ -112,7 +112,7 @@ func TestKookVoiceUsageKeepsSummedDurationAlongsideOccupancy(t *testing.T) {
 		}
 	}
 	list := []kookVoiceChannelUsageDTO{{ChannelID: "voice-1", DurationSeconds: 300}}
-	attachKookVoiceOccupancy(list, "guild-1", mergeKookVoiceIntervals(intervals, start, start.Add(time.Hour)))
+	attachKookVoiceOccupancy(list, "guild-1", mergeKookVoiceIntervals(intervals, start, start.Add(time.Hour)), int64(time.Hour.Seconds()))
 
 	if list[0].DurationSeconds != 300 {
 		t.Fatalf("usage duration = %d, want 300", list[0].DurationSeconds)
@@ -122,5 +122,34 @@ func TestKookVoiceUsageKeepsSummedDurationAlongsideOccupancy(t *testing.T) {
 	}
 	if list[0].OccupiedDurationText != "1分钟0秒" {
 		t.Fatalf("occupied duration text = %q, want %q", list[0].OccupiedDurationText, "1分钟0秒")
+	}
+	if list[0].IdleDurationSeconds != 3540 {
+		t.Fatalf("idle duration = %d, want 3540", list[0].IdleDurationSeconds)
+	}
+}
+
+func TestKookVoiceStatsChannelUsageShowsOccupancyAndIdle(t *testing.T) {
+	start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	exited := start.Add(time.Minute)
+	intervals := make([]kookVoiceInterval, 5)
+	for i := range intervals {
+		intervals[i] = kookVoiceInterval{
+			GuildID:   "guild-1",
+			ChannelID: "voice-1",
+			JoinedAt:  start,
+			ExitedAt:  &exited,
+		}
+	}
+	list := []kookVoiceUsageDTO{{GuildID: "guild-1", ChannelID: "voice-1", DurationSeconds: 300}}
+	attachKookVoiceUsageOccupancy(list, mergeKookVoiceIntervals(intervals, start, start.Add(time.Hour)), int64(time.Hour.Seconds()))
+
+	if list[0].DurationSeconds != 300 {
+		t.Fatalf("summed duration = %d, want 300", list[0].DurationSeconds)
+	}
+	if list[0].OccupiedDurationSeconds != 60 {
+		t.Fatalf("occupied duration = %d, want 60", list[0].OccupiedDurationSeconds)
+	}
+	if list[0].IdleDurationSeconds != 3540 {
+		t.Fatalf("idle duration = %d, want 3540", list[0].IdleDurationSeconds)
 	}
 }

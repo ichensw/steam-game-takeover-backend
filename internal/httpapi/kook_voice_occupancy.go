@@ -63,10 +63,22 @@ func mergeKookVoiceIntervals(intervals []kookVoiceInterval, rangeStart, rangeEnd
 	return result
 }
 
-func attachKookVoiceOccupancy(list []kookVoiceChannelUsageDTO, guildID string, occupied map[kookVoiceChannelKey]int64) {
+func attachKookVoiceOccupancy(list []kookVoiceChannelUsageDTO, guildID string, occupied map[kookVoiceChannelKey]int64, rangeSeconds int64) {
 	for i := range list {
 		seconds := occupied[kookVoiceChannelKey{GuildID: guildID, ChannelID: list[i].ChannelID}]
 		list[i].OccupiedDurationSeconds = seconds
 		list[i].OccupiedDurationText = durationText(seconds)
+		list[i].IdleDurationSeconds = max(0, rangeSeconds-seconds)
+		list[i].IdleDurationText = durationText(list[i].IdleDurationSeconds)
+	}
+}
+
+func attachKookVoiceUsageOccupancy(list []kookVoiceUsageDTO, occupied map[kookVoiceChannelKey]int64, rangeSeconds int64) {
+	for i := range list {
+		seconds := occupied[kookVoiceChannelKey{GuildID: list[i].GuildID, ChannelID: list[i].ChannelID}]
+		list[i].OccupiedDurationSeconds = seconds
+		list[i].OccupiedDurationText = durationText(seconds)
+		list[i].IdleDurationSeconds = max(0, rangeSeconds-seconds)
+		list[i].IdleDurationText = durationText(list[i].IdleDurationSeconds)
 	}
 }
