@@ -79,13 +79,13 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 func aiWechatBotPathAllowed(method, path string) bool {
 	if method == http.MethodGet {
 		switch path {
-		case "/ai/status", "/ai/jobs", "/ai/errors", "/ai/memory/runs", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates":
+		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/memory/runs", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates":
 			return true
 		}
 		return aiJobPathPattern.MatchString(path)
 	}
 	if method == http.MethodPost {
-		return path == "/ai/jobs" || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path)
+		return path == "/ai/jobs" || path == "/ai/history-learning" || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path)
 	}
 	return false
 }

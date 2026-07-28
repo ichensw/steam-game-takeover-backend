@@ -28,6 +28,8 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		{http.MethodGet, "/ai/status", []string{"wechat-ai-memory"}, true},
 		{http.MethodPost, "/ai/jobs", []string{"wechat-ai-memory"}, true},
 		{http.MethodGet, "/ai/jobs/12", []string{"wechat-ai-memory"}, true},
+		{http.MethodGet, "/ai/history-learning", []string{"wechat-ai-memory"}, true},
+		{http.MethodPost, "/ai/history-learning", []string{"wechat-ai-memory"}, true},
 		{http.MethodPost, "/ai/errors/12/retry", []string{"wechat-ai-memory"}, true},
 		{http.MethodGet, "/ai/memory/persona-candidates", []string{"wechat-ai-memory"}, true},
 		{http.MethodPost, "/ai/memory/persona-candidates/12/promote", []string{"wechat-ai-memory"}, true},
