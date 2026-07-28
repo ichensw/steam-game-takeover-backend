@@ -436,11 +436,17 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 	stringSpec := wxbotConfigFieldSpec{kind: "string"}
 	stringListSpec := wxbotConfigFieldSpec{kind: "stringList"}
 	summaryJobsSpec := wxbotConfigFieldSpec{kind: "summaryJobs", defaultValue: []map[string]string{}}
+	stringDefaultSpec := func(defaultValue string) wxbotConfigFieldSpec {
+		return wxbotConfigFieldSpec{kind: "stringDefault", defaultValue: defaultValue}
+	}
 	boolSpec := func(defaultValue bool) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "bool", defaultValue: defaultValue}
 	}
 	intSpec := func(defaultValue int) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "int", defaultValue: defaultValue}
+	}
+	positiveIntSpec := func(defaultValue int) wxbotConfigFieldSpec {
+		return wxbotConfigFieldSpec{kind: "positiveInt", defaultValue: defaultValue}
 	}
 	return map[string]map[string]wxbotConfigFieldSpec{
 		"bot": {
@@ -512,6 +518,28 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"enabled": boolSpec(true),
 			"jobs":    summaryJobsSpec,
 		},
+		"ai": {
+			"enabled":                 boolSpec(false),
+			"auto_memory_enabled":     boolSpec(true),
+			"reply_enabled":           boolSpec(true),
+			"api_base_url":            stringSpec,
+			"api_key":                 stringSpec,
+			"reply_model":             stringDefaultSpec("5.4 Mini"),
+			"summary_model":           stringDefaultSpec("5.4 Mini"),
+			"merge_model":             stringDefaultSpec("5.5"),
+			"manual_deep_model":       stringDefaultSpec("5.6 Luna"),
+			"scan_interval_seconds":   positiveIntSpec(300),
+			"segment_min_messages":    positiveIntSpec(30),
+			"segment_quiet_seconds":   positiveIntSpec(600),
+			"segment_stale_seconds":   positiveIntSpec(21600),
+			"profile_min_segments":    positiveIntSpec(3),
+			"max_segment_messages":    positiveIntSpec(800),
+			"reply_context_messages":  positiveIntSpec(100),
+			"worker_queue_size":       positiveIntSpec(200),
+			"reply_timeout_seconds":   positiveIntSpec(20),
+			"summary_timeout_seconds": positiveIntSpec(180),
+			"merge_timeout_seconds":   positiveIntSpec(300),
+		},
 		"wxbot_control": {
 			"enabled":              boolSpec(true),
 			"base_url":             stringSpec,
@@ -543,10 +571,28 @@ func normalizeWxbotConfigValue(value interface{}, spec wxbotConfigFieldSpec) (in
 			return nil, errors.New("config string field must be a string")
 		}
 		return text, nil
+	case "stringDefault":
+		text, ok := value.(string)
+		if !ok {
+			return nil, errors.New("config string field must be a string")
+		}
+		if strings.TrimSpace(text) == "" {
+			return spec.defaultValue, nil
+		}
+		return text, nil
 	case "bool":
 		return normalizeWxbotBool(value, spec.defaultValue.(bool))
 	case "int":
 		return normalizeWxbotInt(value, spec.defaultValue.(int))
+	case "positiveInt":
+		next, err := normalizeWxbotInt(value, spec.defaultValue.(int))
+		if err != nil {
+			return nil, err
+		}
+		if next <= 0 {
+			return spec.defaultValue, nil
+		}
+		return next, nil
 	case "stringList":
 		return normalizeWxbotStringList(value)
 	case "summaryJobs":
@@ -746,6 +792,36 @@ func validateWxbotConfig(cfg map[string]interface{}) error {
 		}
 		if err := requireWxbotInt(section, "timeout", "接龙网站请求超时"); err != nil {
 			return err
+		}
+	}
+	if section := wxbotSection(cfg, "ai"); wxbotEnabled(section) {
+		for _, item := range []struct{ key, label string }{
+			{"api_base_url", "AI API Base URL"},
+			{"reply_model", "回复模型"},
+			{"summary_model", "总结模型"},
+			{"merge_model", "画像与文化模型"},
+			{"manual_deep_model", "手动深度模型"},
+		} {
+			if err := requireWxbotText(section, item.key, item.label); err != nil {
+				return err
+			}
+		}
+		for _, item := range []struct{ key, label string }{
+			{"scan_interval_seconds", "AI 扫描间隔"},
+			{"segment_min_messages", "AI 分段最少消息数"},
+			{"segment_quiet_seconds", "AI 安静阈值"},
+			{"segment_stale_seconds", "AI 最长未总结时间"},
+			{"profile_min_segments", "AI 画像最少片段数"},
+			{"max_segment_messages", "AI 分段消息上限"},
+			{"reply_context_messages", "AI 回复上下文消息数"},
+			{"worker_queue_size", "AI 任务队列容量"},
+			{"reply_timeout_seconds", "AI 回复超时"},
+			{"summary_timeout_seconds", "AI 总结超时"},
+			{"merge_timeout_seconds", "AI 画像与人格超时"},
+		} {
+			if err := requireWxbotInt(section, item.key, item.label); err != nil {
+				return err
+			}
 		}
 	}
 	if section := wxbotSection(cfg, "wxbot_control"); wxbotEnabled(section) {

@@ -91,7 +91,14 @@ func (s *Server) dailyStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseStatsRange(startRaw, endRaw string, loc *time.Location) (time.Time, time.Time, error) {
-	if strings.TrimSpace(startRaw) == "" || strings.TrimSpace(endRaw) == "" {
+	startRaw = strings.TrimSpace(startRaw)
+	endRaw = strings.TrimSpace(endRaw)
+	if startRaw == "" && endRaw == "" {
+		now := time.Now().In(loc)
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+		return start, start.AddDate(0, 0, 1), nil
+	}
+	if startRaw == "" || endRaw == "" {
 		return time.Time{}, time.Time{}, errors.New("start and end must be YYYY-MM-DD")
 	}
 	start, err := time.ParseInLocation(statsDateLayout, startRaw, loc)
