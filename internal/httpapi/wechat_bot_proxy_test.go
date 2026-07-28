@@ -25,6 +25,13 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		{http.MethodGet, "/messages", []string{"wechat-messages"}, true},
 		{http.MethodPost, "/messages/summary", []string{"wechat-summary"}, true},
 		{http.MethodPost, "/messages/summary-jobs", []string{"wechat-summary"}, true},
+		{http.MethodGet, "/ai/status", []string{"wechat-ai-memory"}, true},
+		{http.MethodPost, "/ai/jobs", []string{"wechat-ai-memory"}, true},
+		{http.MethodGet, "/ai/jobs/12", []string{"wechat-ai-memory"}, true},
+		{http.MethodPost, "/ai/errors/12/retry", []string{"wechat-ai-memory"}, true},
+		{http.MethodGet, "/ai/memory/persona-candidates", []string{"wechat-ai-memory"}, true},
+		{http.MethodPost, "/ai/memory/persona-candidates/12/promote", []string{"wechat-ai-memory"}, true},
+		{http.MethodDelete, "/ai/jobs/12", nil, false},
 		{http.MethodGet, "/messages/summary-jobs/12", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/messages/summary/history", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/messages/summary/12", []string{"wechat-summary"}, true},
@@ -57,7 +64,7 @@ func TestWechatBotProxyForwardsVerifiedIdentityAndQuery(t *testing.T) {
 		if r.URL.Path != "/api/messages" || r.URL.RawQuery != "page=2&keyword=steam" {
 			t.Fatalf("unexpected upstream URL: %s", r.URL.String())
 		}
-		if r.Header.Get(wechatBotSecretHeader) != "shared-secret" || r.Header.Get(wechatBotAdminIDHeader) != "42" || r.Header.Get(wechatBotAdminUsernameHeader) != "ops" || r.Header.Get(wechatBotSummaryMaxHeader) != "1000" {
+		if r.Header.Get(wechatBotSecretHeader) != "shared-secret" || r.Header.Get("Authorization") != "Bearer shared-secret" || r.Header.Get(wechatBotAdminIDHeader) != "42" || r.Header.Get(wechatBotAdminUsernameHeader) != "ops" || r.Header.Get(wechatBotSummaryMaxHeader) != "1000" {
 			t.Fatalf("unexpected trusted headers: %#v", r.Header)
 		}
 		w.Header().Set("Content-Type", "application/json")

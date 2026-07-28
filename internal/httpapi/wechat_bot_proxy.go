@@ -29,10 +29,13 @@ const (
 )
 
 var (
-	tablePathPattern      = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
-	summaryPathPattern    = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
-	summaryJobPathPattern = regexp.MustCompile(`^/messages/summary-jobs(?:/[0-9]+)?$`)
-	wxbotPathPattern      = regexp.MustCompile(`^/wxbots(?:/[A-Za-z0-9_-]+/config)?$`)
+	tablePathPattern         = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
+	summaryPathPattern       = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
+	summaryJobPathPattern    = regexp.MustCompile(`^/messages/summary-jobs(?:/[0-9]+)?$`)
+	wxbotPathPattern         = regexp.MustCompile(`^/wxbots(?:/[A-Za-z0-9_-]+/config)?$`)
+	aiJobPathPattern         = regexp.MustCompile(`^/ai/jobs/[0-9]+$`)
+	aiErrorActionPattern     = regexp.MustCompile(`^/ai/errors/[0-9]+/(retry|resolve)$`)
+	aiCandidateActionPattern = regexp.MustCompile(`^/ai/memory/persona-candidates/[0-9]+/(promote|reject)$`)
 )
 
 func wxbotControlAllowed(method, path string) bool {
@@ -50,6 +53,8 @@ func wxbotControlAllowed(method, path string) bool {
 
 func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	switch {
+	case aiWechatBotPathAllowed(method, path):
+		return []string{"wechat-ai-memory"}, true
 	case method == http.MethodGet && path == "/groups":
 		return []string{"wechat-messages", "wechat-summary"}, true
 	case method == http.MethodGet && path == "/messages":
@@ -69,6 +74,20 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func aiWechatBotPathAllowed(method, path string) bool {
+	if method == http.MethodGet {
+		switch path {
+		case "/ai/status", "/ai/jobs", "/ai/errors", "/ai/memory/runs", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates":
+			return true
+		}
+		return aiJobPathPattern.MatchString(path)
+	}
+	if method == http.MethodPost {
+		return path == "/ai/jobs" || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path)
+	}
+	return false
 }
 
 func hasAnyMenu(menuKeys, required []string) bool {
@@ -192,6 +211,7 @@ func (h *Handler) AdminProxyWechatBot(c *gin.Context) {
 
 func (h *Handler) applyWechatBotHeaders(request *http.Request, adminID, username string) {
 	request.Header.Set(wechatBotSecretHeader, h.cfg.WechatBotSharedSecret)
+	request.Header.Set("Authorization", "Bearer "+h.cfg.WechatBotSharedSecret)
 	request.Header.Set(wechatBotAdminIDHeader, adminID)
 	request.Header.Set(wechatBotAdminUsernameHeader, username)
 	request.Header.Set(wechatBotSummaryMaxHeader, strconv.Itoa(h.wechatSummaryMaxMessages()))

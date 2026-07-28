@@ -13,11 +13,11 @@ var allAdminMenuKeys = []string{
 	"dashboard", "takeovers", "reports", "users", "user-blocks", "admin-users",
 	"kook-channels", "kook-roles", "kook-members", "kook-users",
 	"kook-voice-stats", "feedbacks", "announcements", "settings",
-	"wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control",
+	"wechat-messages", "wechat-summary", "wechat-ai-memory", "wechat-stats", "wechat-database", "wechat-wxbot-control",
 }
 
 var superAdminRequiredMenuKeys = []string{
-	"user-blocks", "admin-users", "wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control",
+	"user-blocks", "admin-users", "wechat-messages", "wechat-summary", "wechat-ai-memory", "wechat-stats", "wechat-database", "wechat-wxbot-control",
 }
 
 func defaultAdminMenuKeys(role string) []string {
@@ -105,6 +105,7 @@ func (h *Handler) AdminListRoleMenus(c *gin.Context) {
 			{"key": "settings", "label": "系统设置"},
 			{"key": "wechat-messages", "label": "微信消息查询"},
 			{"key": "wechat-summary", "label": "微信 AI 总结"},
+			{"key": "wechat-ai-memory", "label": "微信 AI 记忆"},
 			{"key": "wechat-stats", "label": "微信聊天统计"},
 			{"key": "wechat-database", "label": "微信数据库浏览"},
 			{"key": "wechat-wxbot-control", "label": "微信机器人控制"},

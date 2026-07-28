@@ -8,7 +8,7 @@ import (
 )
 
 func TestDefaultAdminMenuKeysIncludeWechatForSuperAdminOnly(t *testing.T) {
-	for _, key := range []string{"wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control"} {
+	for _, key := range []string{"wechat-messages", "wechat-summary", "wechat-ai-memory", "wechat-stats", "wechat-database", "wechat-wxbot-control"} {
 		if !containsString(defaultAdminMenuKeys(model.AdminRoleSuperAdmin), key) {
 			t.Fatalf("super admin missing %s", key)
 		}
@@ -28,7 +28,7 @@ func TestNormalizeAdminMenuKeysAcceptsWechatKeys(t *testing.T) {
 
 func TestEnsureRoleMenuKeysBackfillsStoredSuperAdminMenus(t *testing.T) {
 	got := ensureRoleMenuKeys(model.AdminRoleSuperAdmin, []string{"dashboard"})
-	for _, key := range []string{"user-blocks", "admin-users", "wechat-messages", "wechat-summary", "wechat-stats", "wechat-database", "wechat-wxbot-control"} {
+	for _, key := range []string{"user-blocks", "admin-users", "wechat-messages", "wechat-summary", "wechat-ai-memory", "wechat-stats", "wechat-database", "wechat-wxbot-control"} {
 		if !containsString(got, key) {
 			t.Fatalf("stored super admin menus missing %s", key)
 		}
