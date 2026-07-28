@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +69,9 @@ type aiHistoryLearningRow struct {
 
 func (h *Handler) requireWxbotToken(c *gin.Context) bool {
 	expected := strings.TrimSpace(h.cfg.WechatBotSharedSecret)
+	if expected == "" {
+		expected = strings.TrimSpace(os.Getenv("WECHAT_BOT_GATEWAY_SHARED_SECRET"))
+	}
 	if expected == "" {
 		fail(c, http.StatusServiceUnavailable, CodeSystemError, "wxbot control token is not configured")
 		return false
