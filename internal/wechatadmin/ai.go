@@ -227,7 +227,7 @@ func (s *Server) createAIHistoryLearningTask(w http.ResponseWriter, r *http.Requ
 	var active int
 	if err := s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(*) FROM ai_history_learning_tasks
-		WHERE room_id = ? AND status IN ('queued', 'running')
+		WHERE room_id = ? AND status IN ('queued', 'running', 'paused')
 	`, roomID).Scan(&active); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query history learning failed")
 		return
@@ -264,6 +264,71 @@ func (s *Server) createAIHistoryLearningTask(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	id, _ := result.LastInsertId()
+	row, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_history_learning_tasks WHERE id = ?", id)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query history learning failed")
+		return
+	}
+	ok(w, row)
+}
+
+func (s *Server) updateAIHistoryLearningTask(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	action := strings.TrimSpace(r.PathValue("action"))
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid history learning id")
+		return
+	}
+	task, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_history_learning_tasks WHERE id = ?", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "history learning not found")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query history learning failed")
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	status := stringValue(task["status"])
+	switch action {
+	case "pause":
+		if status != "queued" && status != "running" {
+			fail(w, http.StatusConflict, "PARAM_INVALID", "history learning cannot be paused")
+			return
+		}
+		_, err = s.db.ExecContext(r.Context(), "UPDATE ai_history_learning_tasks SET status = 'paused', updated_at = ? WHERE id = ?", now, id)
+	case "resume":
+		if status != "paused" {
+			fail(w, http.StatusConflict, "PARAM_INVALID", "history learning is not paused")
+			return
+		}
+		_, err = s.db.ExecContext(r.Context(), "UPDATE ai_history_learning_tasks SET status = 'queued', updated_at = ? WHERE id = ?", now, id)
+	case "cancel":
+		if status == "succeeded" || status == "canceled" {
+			fail(w, http.StatusConflict, "PARAM_INVALID", "history learning cannot be canceled")
+			return
+		}
+		_, err = s.db.ExecContext(r.Context(), "UPDATE ai_history_learning_tasks SET status = 'canceled', current_job_id = NULL, finished_at = ?, updated_at = ? WHERE id = ?", now, now, id)
+	case "retry":
+		if status != "failed" {
+			fail(w, http.StatusConflict, "PARAM_INVALID", "history learning is not failed")
+			return
+		}
+		if jobID := int64Value(task["currentJobId"]); jobID > 0 {
+			if _, err = s.db.ExecContext(r.Context(), "UPDATE ai_jobs SET status = 'queued', started_at = NULL, finished_at = NULL, error_id = NULL WHERE id = ? AND status = 'failed'", jobID); err != nil {
+				fail(w, http.StatusInternalServerError, "SAVE_FAILED", "retry history learning job failed")
+				return
+			}
+		}
+		_, err = s.db.ExecContext(r.Context(), "UPDATE ai_history_learning_tasks SET status = 'queued', error_message = NULL, finished_at = NULL, updated_at = ? WHERE id = ?", now, id)
+	default:
+		fail(w, http.StatusNotFound, "NOT_FOUND", "history learning action not found")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "update history learning failed")
+		return
+	}
 	row, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_history_learning_tasks WHERE id = ?", id)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query history learning failed")
@@ -421,6 +486,34 @@ func (s *Server) aiPersonaCandidates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiPersonaCandidateEvidence(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid candidate id")
+		return
+	}
+	candidate, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_persona_candidates WHERE id = ?", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "persona candidate not found")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query persona candidate failed")
+		return
+	}
+	runs, err := s.aiMemoryRunsByIDs(r.Context(), int64Slice(candidate["evidenceRunIds"]))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query persona evidence runs failed")
+		return
+	}
+	messages, err := s.messagesByIDs(r.Context(), evidenceMessageIDs(runs))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query persona evidence messages failed")
+		return
+	}
+	ok(w, map[string]interface{}{"candidate": candidate, "runs": runs, "messages": messages})
 }
 
 func (s *Server) promoteAIPersonaCandidate(w http.ResponseWriter, r *http.Request) {
@@ -728,6 +821,21 @@ func (s *Server) countTextMessages(ctx context.Context, roomID string, start, en
 	return total, err
 }
 
+func (s *Server) aiMemoryRunsByIDs(ctx context.Context, ids []int64) ([]map[string]interface{}, error) {
+	if len(ids) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]interface{}, 0, len(ids)*2)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	return s.listAIMaps(ctx, "SELECT * FROM ai_memory_runs WHERE id IN ("+placeholders+") ORDER BY FIELD(id, "+placeholders+")", args...)
+}
+
 func (s *Server) jobForError(ctx context.Context, errorID int64) (map[string]interface{}, error) {
 	return s.oneAIMap(ctx, `
 		SELECT j.*
@@ -834,6 +942,85 @@ func stringValue(value interface{}) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
 	}
+}
+
+func int64Value(value interface{}) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case json.Number:
+		next, _ := typed.Int64()
+		return next
+	case []byte:
+		return int64Value(string(typed))
+	case string:
+		next, _ := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		return next
+	default:
+		return 0
+	}
+}
+
+func int64Slice(value interface{}) []int64 {
+	values, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]int64, 0, len(values))
+	seen := map[int64]struct{}{}
+	for _, item := range values {
+		id := int64Value(item)
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
+func evidenceMessageIDs(runs []map[string]interface{}) []string {
+	result := []string{}
+	seen := map[string]struct{}{}
+	var walk func(interface{})
+	walk = func(value interface{}) {
+		switch typed := value.(type) {
+		case map[string]interface{}:
+			for _, key := range []string{"evidence_msg_ids", "evidenceMsgIds"} {
+				if raw, ok := typed[key].([]interface{}); ok {
+					for _, item := range raw {
+						id := strings.TrimSpace(stringValue(item))
+						if id == "" {
+							continue
+						}
+						if _, exists := seen[id]; exists {
+							continue
+						}
+						seen[id] = struct{}{}
+						result = append(result, id)
+					}
+				}
+			}
+			for _, child := range typed {
+				walk(child)
+			}
+		case []interface{}:
+			for _, child := range typed {
+				walk(child)
+			}
+		}
+	}
+	for _, run := range runs {
+		walk(run["resultJson"])
+	}
+	return result
 }
 
 func boolValue(value interface{}) bool {

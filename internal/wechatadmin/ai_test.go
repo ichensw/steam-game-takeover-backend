@@ -15,3 +15,24 @@ func TestAIDedupeKeyMatchesWxbotRepository(t *testing.T) {
 		t.Fatalf("dedupe key = %s, want %s", got, want)
 	}
 }
+
+func TestEvidenceMessageIDsCollectsNestedUniqueIDs(t *testing.T) {
+	runs := []map[string]interface{}{
+		{"resultJson": map[string]interface{}{
+			"member_deltas": []interface{}{
+				map[string]interface{}{"evidence_msg_ids": []interface{}{"m1", "m2"}},
+				map[string]interface{}{"evidenceMsgIds": []interface{}{"m2", "m3"}},
+			},
+		}},
+	}
+	got := evidenceMessageIDs(runs)
+	want := []string{"m1", "m2", "m3"}
+	if len(got) != len(want) {
+		t.Fatalf("ids = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ids = %#v, want %#v", got, want)
+		}
+	}
+}
