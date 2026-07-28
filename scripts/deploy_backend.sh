@@ -156,7 +156,7 @@ cd "$APP_DIR"
 
 if [[ -n "$MIGRATIONS" ]]; then
   for migration_name in $MIGRATIONS; do
-    migration_path="$MIGRATION_DIR/$migration_name"
+    migration_path="$MIGRATION_DIR/$(basename "$migration_name")"
     echo "[INFO] Applying migration: $migration_name"
     eval "$REMOTE_MYSQL_CMD < \"\$migration_path\""
   done
