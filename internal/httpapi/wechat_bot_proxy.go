@@ -180,7 +180,7 @@ func (h *Handler) wechatBotAdminConfig() wechatadmin.Config {
 		SummaryMaxMessages:  h.wechatSummaryMaxMessages(),
 		WechatHookAPIURL:    h.cfg.WechatHookAPIURL,
 		WechatHookAPIToken:  h.cfg.WechatHookAPIToken,
-		WxbotAPIToken:       strings.TrimSpace(h.cfg.WechatBotSharedSecret),
+		WxbotAPIToken:       firstNonEmptyString(h.cfg.WxbotAPIToken, h.cfg.WechatBotSharedSecret),
 		Location:            h.cfg.Location,
 	}
 }

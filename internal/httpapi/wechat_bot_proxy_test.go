@@ -90,6 +90,18 @@ func TestWxbotControlProxyRequiresWechatDB(t *testing.T) {
 	}
 }
 
+func TestWechatBotAdminConfigUsesWxbotAPIToken(t *testing.T) {
+	h := NewHandler(config.Config{WechatBotSharedSecret: "gateway", WxbotAPIToken: "wxbot"}, nil)
+	if got := h.wechatBotAdminConfig().WxbotAPIToken; got != "wxbot" {
+		t.Fatalf("wxbot api token = %q, want wxbot", got)
+	}
+
+	h = NewHandler(config.Config{WechatBotSharedSecret: "gateway"}, nil)
+	if got := h.wechatBotAdminConfig().WxbotAPIToken; got != "gateway" {
+		t.Fatalf("fallback wxbot api token = %q, want gateway", got)
+	}
+}
+
 func proxyRequest(h *Handler, method, path, query string, admin model.AdminUser) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

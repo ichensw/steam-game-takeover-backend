@@ -35,6 +35,7 @@ type Config struct {
 	OSSAccessKeySecret      string
 	OSSBaseURL              string
 	WechatBotSharedSecret   string
+	WxbotAPIToken           string
 	WechatHookAPIURL        string
 	WechatHookAPIToken      string
 	AIBaseURL               string
@@ -77,6 +78,7 @@ func Load() Config {
 		OSSAccessKeySecret:      env("OSS_ACCESS_KEY_SECRET", ""),
 		OSSBaseURL:              env("OSS_BASE_URL", ""),
 		WechatBotSharedSecret:   os.Getenv("WECHAT_BOT_GATEWAY_SHARED_SECRET"),
+		WxbotAPIToken:           os.Getenv("WXBOT_API_TOKEN"),
 		WechatHookAPIURL:        strings.TrimRight(os.Getenv("WECHAT_HOOK_API_URL"), "/"),
 		WechatHookAPIToken:      os.Getenv("WECHAT_HOOK_API_TOKEN"),
 		AIBaseURL:               strings.TrimRight(env("AI_BASE_URL", "https://api.openai.com/v1"), "/"),
