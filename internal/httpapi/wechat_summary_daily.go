@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
 	"steam-game-takeover-backend/internal/model"
+	"steam-game-takeover-backend/internal/wechatadmin"
 )
 
 const wechatSummaryDailyInterval = time.Minute
@@ -85,27 +87,24 @@ func (h *Handler) runWechatSummaryDaily(ctx context.Context, now time.Time) erro
 }
 
 func (h *Handler) createWechatSummaryDailyJob(ctx context.Context, date string, schedule wechatSummaryDailySchedule) error {
+	if h.wechatBotDB == nil {
+		return errors.New("wechat bot database is not configured")
+	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"period":      schedule.Period,
 		"date":        date,
 		"roomId":      schedule.RoomID,
 		"sendToGroup": h.wechatSummaryAutoSend(),
 	})
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, h.cfg.WechatBotAdminURL+"/messages/summary-jobs", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
+	request := httptest.NewRequest(http.MethodPost, "/api/messages/summary-jobs", bytes.NewReader(body)).WithContext(ctx)
 	request.Header.Set("Content-Type", "application/json")
 	h.applyWechatBotHeaders(request, "0", "system")
-	response, err := h.wechatBotSummaryClient.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusConflict {
+	response := httptest.NewRecorder()
+	wechatadmin.NewServer(h.wechatBotAdminConfig(), h.wechatBotDB).ServeHTTP(response, request)
+	if response.Code == http.StatusConflict {
 		return nil
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if response.Code < 200 || response.Code >= 300 {
 		return errors.New("wechat summary job create failed")
 	}
 	return nil

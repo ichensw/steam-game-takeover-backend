@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Addr                    string
 	DBDSN                   string
+	WechatBotDBDSN          string
 	JWTSecret               string
 	UserTokenTTL            time.Duration
 	AdminTokenSecret        string
@@ -33,20 +34,28 @@ type Config struct {
 	OSSAccessKeyID          string
 	OSSAccessKeySecret      string
 	OSSBaseURL              string
-	WechatBotAdminURL       string
 	WechatBotSharedSecret   string
-	WechatBotProxyTimeout   time.Duration
+	WechatHookAPIURL        string
+	WechatHookAPIToken      string
+	AIBaseURL               string
+	AIAPIKey                string
 	WechatBotSummaryTimeout time.Duration
+	Location                *time.Location
 }
 
 func Load() Config {
 	loadEnv()
 
 	wxLoginMock := envBool("WX_LOGIN_MOCK", false)
+	loc, err := time.LoadLocation(env("APP_TIMEZONE", "Asia/Shanghai"))
+	if err != nil {
+		loc = time.Local
+	}
 
 	return Config{
 		Addr:                    env("APP_ADDR", ":8081"),
 		DBDSN:                   env("DB_DSN", "root:password@tcp(127.0.0.1:3306)/steam_takeover?charset=utf8mb4&parseTime=True&loc=Local"),
+		WechatBotDBDSN:          env("WECHAT_BOT_DB_DSN", ""),
 		JWTSecret:               env("JWT_SECRET", "change-me-user-token-secret"),
 		UserTokenTTL:            durationHours("USER_TOKEN_TTL_HOURS", 24*30),
 		AdminTokenSecret:        env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
@@ -67,10 +76,13 @@ func Load() Config {
 		OSSAccessKeyID:          env("OSS_ACCESS_KEY_ID", ""),
 		OSSAccessKeySecret:      env("OSS_ACCESS_KEY_SECRET", ""),
 		OSSBaseURL:              env("OSS_BASE_URL", ""),
-		WechatBotAdminURL:       strings.TrimRight(env("WECHAT_BOT_ADMIN_URL", "http://127.0.0.1:8091/api"), "/"),
 		WechatBotSharedSecret:   os.Getenv("WECHAT_BOT_GATEWAY_SHARED_SECRET"),
-		WechatBotProxyTimeout:   time.Duration(intValue("WECHAT_BOT_PROXY_TIMEOUT_SECONDS", 20)) * time.Second,
+		WechatHookAPIURL:        strings.TrimRight(os.Getenv("WECHAT_HOOK_API_URL"), "/"),
+		WechatHookAPIToken:      os.Getenv("WECHAT_HOOK_API_TOKEN"),
+		AIBaseURL:               strings.TrimRight(env("AI_BASE_URL", "https://api.openai.com/v1"), "/"),
+		AIAPIKey:                os.Getenv("AI_API_KEY"),
 		WechatBotSummaryTimeout: time.Duration(intValue("WECHAT_BOT_SUMMARY_TIMEOUT_SECONDS", 75)) * time.Second,
+		Location:                loc,
 	}
 }
 

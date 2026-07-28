@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"net/http"
+	"database/sql"
 	"sync"
 	"time"
 
@@ -13,6 +13,7 @@ import (
 type Handler struct {
 	cfg                    config.Config
 	db                     *gorm.DB
+	wechatBotDB            *sql.DB
 	tokenMu                sync.Mutex
 	wxToken                string
 	wxTokenUntil           time.Time
@@ -20,23 +21,16 @@ type Handler struct {
 	kookChannelNames       map[string]string
 	kookChannelNamesUntil  time.Time
 	kookChannelNamesReload bool
-	wechatBotClient        *http.Client
-	wechatBotSummaryClient *http.Client
 }
 
-func NewHandler(cfg config.Config, db *gorm.DB) *Handler {
-	proxyTimeout := cfg.WechatBotProxyTimeout
-	if proxyTimeout <= 0 {
-		proxyTimeout = 20 * time.Second
-	}
-	summaryTimeout := cfg.WechatBotSummaryTimeout
-	if summaryTimeout <= 0 {
-		summaryTimeout = 75 * time.Second
+func NewHandler(cfg config.Config, db *gorm.DB, wechatBotDB ...*sql.DB) *Handler {
+	var wxDB *sql.DB
+	if len(wechatBotDB) > 0 {
+		wxDB = wechatBotDB[0]
 	}
 	return &Handler{
-		cfg:                    cfg,
-		db:                     db,
-		wechatBotClient:        &http.Client{Timeout: proxyTimeout},
-		wechatBotSummaryClient: &http.Client{Timeout: summaryTimeout},
+		cfg:         cfg,
+		db:          db,
+		wechatBotDB: wxDB,
 	}
 }

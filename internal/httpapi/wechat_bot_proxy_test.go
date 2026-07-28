@@ -1,11 +1,9 @@
 package httpapi
 
 import (
-	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"steam-game-takeover-backend/internal/config"
 	"steam-game-takeover-backend/internal/model"
@@ -60,34 +58,16 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 	}
 }
 
-func TestWechatBotProxyForwardsVerifiedIdentityAndQuery(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/messages" || r.URL.RawQuery != "page=2&keyword=steam" {
-			t.Fatalf("unexpected upstream URL: %s", r.URL.String())
-		}
-		if r.Header.Get(wechatBotSecretHeader) != "shared-secret" || r.Header.Get("Authorization") != "Bearer shared-secret" || r.Header.Get(wechatBotAdminIDHeader) != "42" || r.Header.Get(wechatBotAdminUsernameHeader) != "ops" || r.Header.Get(wechatBotSummaryMaxHeader) != "1000" {
-			t.Fatalf("unexpected trusted headers: %#v", r.Header)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"success":true,"data":{"ok":true}}`))
-	}))
-	defer upstream.Close()
-
-	h := NewHandler(config.Config{
-		WechatBotAdminURL:       upstream.URL + "/api",
-		WechatBotSharedSecret:   "shared-secret",
-		WechatBotProxyTimeout:   time.Second,
-		WechatBotSummaryTimeout: time.Second,
-	}, nil)
+func TestWechatBotProxyRequiresWechatDB(t *testing.T) {
+	h := NewHandler(config.Config{WechatBotSharedSecret: "shared-secret"}, nil)
 	rec := proxyRequest(h, http.MethodGet, "/messages", "page=2&keyword=steam", model.AdminUser{ID: 42, Username: "ops", Role: model.AdminRoleSuperAdmin})
-	if rec.Code != http.StatusAccepted || rec.Header().Get("Content-Type") != "application/json" || rec.Body.String() != `{"success":true,"data":{"ok":true}}` {
-		t.Fatalf("unexpected response: status=%d headers=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured db status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 
 func TestWechatBotProxyRejectsMissingAdminAndUnknownPath(t *testing.T) {
-	h := NewHandler(config.Config{WechatBotAdminURL: "http://127.0.0.1:1/api", WechatBotSharedSecret: "secret", WechatBotProxyTimeout: time.Second}, nil)
+	h := NewHandler(config.Config{WechatBotSharedSecret: "secret"}, nil)
 	if rec := proxyRequest(h, http.MethodGet, "/messages", "", model.AdminUser{}); rec.Code != http.StatusForbidden {
 		t.Fatalf("missing admin status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
@@ -96,33 +76,17 @@ func TestWechatBotProxyRejectsMissingAdminAndUnknownPath(t *testing.T) {
 	}
 }
 
-func TestWechatBotProxyMapsTransportFailureAndTimeout(t *testing.T) {
-	failing := NewHandler(config.Config{WechatBotAdminURL: "http://127.0.0.1:1/api", WechatBotSharedSecret: "secret", WechatBotProxyTimeout: 100 * time.Millisecond}, nil)
-	if rec := proxyRequest(failing, http.MethodGet, "/messages", "", model.AdminUser{ID: 1, Role: model.AdminRoleSuperAdmin}); rec.Code != http.StatusBadGateway {
-		t.Fatalf("transport status = %d, want %d", rec.Code, http.StatusBadGateway)
-	}
-
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
-	}))
-	defer upstream.Close()
-	timed := NewHandler(config.Config{WechatBotAdminURL: upstream.URL + "/api", WechatBotSharedSecret: "secret", WechatBotProxyTimeout: 10 * time.Millisecond}, nil)
-	if rec := proxyRequest(timed, http.MethodGet, "/messages", "", model.AdminUser{ID: 1, Role: model.AdminRoleSuperAdmin}); rec.Code != http.StatusGatewayTimeout {
-		t.Fatalf("timeout status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
-	}
-}
-
 func TestWxbotControlProxyRejectsUnknownPath(t *testing.T) {
-	h := NewHandler(config.Config{WechatBotSharedSecret: "token", WechatBotProxyTimeout: time.Second}, nil)
+	h := NewHandler(config.Config{WechatBotSharedSecret: "token"}, nil)
 	if rec := wxbotRequest(h, http.MethodGet, "/unknown", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown path status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
 
-func TestWxbotControlProxyRejectsBadToken(t *testing.T) {
-	h := NewHandler(config.Config{WechatBotSharedSecret: "expected", WechatBotProxyTimeout: time.Second}, nil)
-	if rec := wxbotRequest(h, http.MethodGet, "/config", nil); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("bad token status = %d, want %d", rec.Code, http.StatusUnauthorized)
+func TestWxbotControlProxyRequiresWechatDB(t *testing.T) {
+	h := NewHandler(config.Config{WechatBotSharedSecret: "expected"}, nil)
+	if rec := wxbotRequest(h, http.MethodGet, "/config", nil); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured db status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -141,7 +105,7 @@ func proxyRequest(h *Handler, method, path, query string, admin model.AdminUser)
 func wxbotRequest(h *Handler, method, path string, body []byte) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(method, "/api/wxbot"+path, bytes.NewReader(body))
+	c.Request = httptest.NewRequest(method, "/api/wxbot"+path, nil)
 	c.Request.Header.Set("Authorization", "Bearer token")
 	c.Request.Header.Set(wxbotTokenHeader, "token")
 	c.Request.Header.Set("Content-Type", "application/json")

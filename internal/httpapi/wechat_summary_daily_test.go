@@ -3,8 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,18 +64,10 @@ func TestWechatSummaryDailyRunKeyRoundTrip(t *testing.T) {
 	}
 }
 
-func TestCreateWechatSummaryDailyJobTreatsDuplicateAsSuccess(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/messages/summary-jobs" {
-			t.Fatalf("path = %s", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusConflict)
-	}))
-	defer upstream.Close()
-
-	h := NewHandler(config.Config{WechatBotAdminURL: upstream.URL}, nil)
+func TestCreateWechatSummaryDailyJobRequiresWechatDB(t *testing.T) {
+	h := NewHandler(config.Config{}, nil)
 	err := h.createWechatSummaryDailyJob(context.Background(), "2026-07-15", wechatSummaryDailySchedule{Period: "day"})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "wechat bot database") {
+		t.Fatalf("err = %v, want wechat bot database error", err)
 	}
 }

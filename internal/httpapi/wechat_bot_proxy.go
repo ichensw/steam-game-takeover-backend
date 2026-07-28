@@ -1,17 +1,13 @@
 package httpapi
 
 import (
-	"context"
-	"errors"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"steam-game-takeover-backend/internal/model"
+	"steam-game-takeover-backend/internal/wechatadmin"
 
 	"github.com/gin-gonic/gin"
 )
@@ -110,23 +106,7 @@ func (h *Handler) ProxyWechatBotControl(c *gin.Context) {
 		fail(c, http.StatusNotFound, CodeParamInvalid, "wxbot endpoint not found")
 		return
 	}
-	if !h.requireWxbotToken(c) {
-		return
-	}
-	switch {
-	case path == "/heartbeat":
-		h.WxbotHeartbeat(c)
-	case path == "/config":
-		h.WxbotConfig(c)
-	case path == "/config/applied":
-		h.WxbotConfigApplied(c)
-	case path == "/ai/history-learning/next":
-		h.WxbotNextHistoryLearning(c)
-	case strings.HasPrefix(path, "/ai/history-learning/") && strings.HasSuffix(path, "/progress"):
-		h.WxbotReportHistoryLearning(c, path)
-	default:
-		fail(c, http.StatusNotFound, CodeParamInvalid, "wxbot endpoint not found")
-	}
+	h.serveWechatBot(c, c.Request.URL.Path, nil)
 }
 
 func (h *Handler) wechatBotAdminAllowed(admin model.AdminUser, required []string) bool {
@@ -148,58 +128,12 @@ func (h *Handler) AdminProxyWechatBot(c *gin.Context) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "permission denied")
 		return
 	}
-	if h.adminWechatBotLocal(c, path) {
-		return
-	}
-	if h.cfg.WechatBotAdminURL == "" || h.cfg.WechatBotSharedSecret == "" {
-		fail(c, http.StatusServiceUnavailable, CodeSystemError, "wechat bot gateway is not configured")
-		return
-	}
-
-	target, err := url.JoinPath(h.cfg.WechatBotAdminURL, path)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "wechat bot gateway URL is invalid")
-		return
-	}
-	if c.Request.URL.RawQuery != "" {
-		target += "?" + c.Request.URL.RawQuery
-	}
-	request, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "create wechat bot request failed")
-		return
-	}
-	for _, header := range []string{"Accept", "Content-Type"} {
-		if value := c.GetHeader(header); value != "" {
-			request.Header.Set(header, value)
-		}
-	}
-	h.applyWechatBotHeaders(request, strconv.FormatUint(admin.ID, 10), admin.Username)
-
-	client := h.wechatBotClient
-	if c.Request.Method == http.MethodPost && (path == "/messages/summary" || path == "/messages/summary-jobs") {
-		client = h.wechatBotSummaryClient
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {
-			fail(c, http.StatusGatewayTimeout, CodeSystemError, "wechat bot request timed out")
-			return
-		}
-		fail(c, http.StatusBadGateway, CodeSystemError, "wechat bot service unavailable")
-		return
-	}
-	defer response.Body.Close()
-	if contentType := response.Header.Get("Content-Type"); contentType != "" {
-		c.Header("Content-Type", contentType)
-	}
-	c.Status(response.StatusCode)
-	_, _ = io.Copy(c.Writer, response.Body)
+	h.serveWechatBot(c, "/api"+path, &admin)
 }
 
 func (h *Handler) applyWechatBotHeaders(request *http.Request, adminID, username string) {
-	request.Header.Set(wechatBotSecretHeader, h.cfg.WechatBotSharedSecret)
-	request.Header.Set("Authorization", "Bearer "+h.cfg.WechatBotSharedSecret)
+	request.Header.Set(wechatBotSecretHeader, h.wechatBotGatewaySecret())
+	request.Header.Set("Authorization", "Bearer "+h.wechatBotGatewaySecret())
 	request.Header.Set(wechatBotAdminIDHeader, adminID)
 	request.Header.Set(wechatBotAdminUsernameHeader, username)
 	request.Header.Set(wechatBotSummaryMaxHeader, strconv.Itoa(h.wechatSummaryMaxMessages()))
@@ -216,7 +150,53 @@ func setHeaderIfNotEmpty(request *http.Request, header, value string) {
 	}
 }
 
-func isTimeoutError(err error) bool {
-	var networkError net.Error
-	return errors.As(err, &networkError) && networkError.Timeout()
+func (h *Handler) serveWechatBot(c *gin.Context, path string, admin *model.AdminUser) {
+	if h.wechatBotDB == nil {
+		fail(c, http.StatusServiceUnavailable, CodeSystemError, "wechat bot database is not configured")
+		return
+	}
+	request := c.Request.Clone(c.Request.Context())
+	request.RequestURI = ""
+	request.Header = c.Request.Header.Clone()
+	urlCopy := *request.URL
+	urlCopy.Path = path
+	request.URL = &urlCopy
+	if admin != nil {
+		h.applyWechatBotHeaders(request, strconv.FormatUint(admin.ID, 10), admin.Username)
+	}
+	wechatadmin.NewServer(h.wechatBotAdminConfig(), h.wechatBotDB).ServeHTTP(c.Writer, request)
+}
+
+func (h *Handler) wechatBotAdminConfig() wechatadmin.Config {
+	aiModel := firstNonEmptyString(h.wechatSummaryModel(), h.aiExtractModel(), "gpt-4o-mini")
+	aiBaseURL := firstNonEmptyString(h.aiExtractBaseURL(), h.cfg.AIBaseURL, "https://api.openai.com/v1")
+	aiAPIKey := firstNonEmptyString(h.aiExtractAPIKey(), h.cfg.AIAPIKey)
+	return wechatadmin.Config{
+		GatewaySharedSecret: h.wechatBotGatewaySecret(),
+		AIAPIKey:            aiAPIKey,
+		AIBaseURL:           aiBaseURL,
+		AIModel:             aiModel,
+		AITimeout:           h.cfg.WechatBotSummaryTimeout,
+		SummaryMaxMessages:  h.wechatSummaryMaxMessages(),
+		WechatHookAPIURL:    h.cfg.WechatHookAPIURL,
+		WechatHookAPIToken:  h.cfg.WechatHookAPIToken,
+		WxbotAPIToken:       strings.TrimSpace(h.cfg.WechatBotSharedSecret),
+		Location:            h.cfg.Location,
+	}
+}
+
+func (h *Handler) wechatBotGatewaySecret() string {
+	if secret := strings.TrimSpace(h.cfg.WechatBotSharedSecret); secret != "" {
+		return secret
+	}
+	return "in-process-wechat-bot-admin"
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

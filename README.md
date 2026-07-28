@@ -93,7 +93,8 @@ cp .env.example .env
 | 变量 | 说明 |
 | --- | --- |
 | `APP_ADDR` | 服务监听地址，例如 `:8081` |
-| `DB_DSN` | MySQL DSN |
+| `DB_DSN` | 接龙后台 MySQL DSN |
+| `WECHAT_BOT_DB_DSN` | 微信机器人 MySQL DSN，独立于 `DB_DSN` |
 | `JWT_SECRET` | 小程序用户 token 签名密钥 |
 | `USER_TOKEN_TTL_HOURS` | 小程序用户 token 有效期 |
 | `ADMIN_PASSWORD` | 初始化后台管理员密码 |
@@ -105,10 +106,9 @@ cp .env.example .env
 | `CONTENT_SECURITY_ENABLED` | 微信内容安全开关 |
 | `BOT_QUERY_ENABLED` | 微信机器人查询账号开关 |
 | `OSS_*` | 阿里云 OSS 上传配置 |
-| `WECHAT_BOT_ADMIN_URL` | 微信机器人后台内部 API 地址 |
-| `WECHAT_BOT_GATEWAY_SHARED_SECRET` | 与微信机器人后台一致的服务间密钥 |
-| `WECHAT_BOT_PROXY_TIMEOUT_SECONDS` | 普通机器人查询超时秒数 |
+| `WECHAT_BOT_GATEWAY_SHARED_SECRET` | Windows 机器人访问 `/api/wxbot/*` 的共享 token |
 | `WECHAT_BOT_SUMMARY_TIMEOUT_SECONDS` | AI 总结请求超时秒数 |
+| `WECHAT_HOOK_API_URL` / `WECHAT_HOOK_API_TOKEN` | 可选：总结完成后推送到微信 Hook 的地址和 token |
 
 ### 3. 启动服务
 
@@ -239,7 +239,7 @@ steam_web_api_key
 
 ### 微信机器人后台
 
-后台管理员访问 `/api/admin/wechat-bot/*` 时，服务会先校验现有管理员 token 和角色菜单权限，再将白名单请求转发到 `WECHAT_BOT_ADMIN_URL`。浏览器不会接触服务间共享密钥。生产环境应让微信机器人后台只接受本服务的私有网络访问。
+后台管理员访问 `/api/admin/wechat-bot/*` 时，服务会先校验现有管理员 token 和角色菜单权限，再由进程内的微信机器人模块直接访问 `WECHAT_BOT_DB_DSN` 指向的独立微信机器人数据库。接龙业务仍只访问 `DB_DSN` 指向的接龙后台数据库。
 
 ## 部署说明
 

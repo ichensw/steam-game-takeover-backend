@@ -1666,7 +1666,8 @@ LIMIT 20;
 | 变量 | 说明 | 默认值 |
 | --- | --- | --- |
 | `APP_ADDR` | 服务监听地址 | `:8081` |
-| `DB_DSN` | MySQL DSN | 本地示例 DSN |
+| `DB_DSN` | 接龙后台 MySQL DSN | 本地示例 DSN |
+| `WECHAT_BOT_DB_DSN` | 微信机器人 MySQL DSN，独立于 `DB_DSN` | 空 |
 | `JWT_SECRET` | 用户 token 签名密钥 | `change-me-user-token-secret` |
 | `USER_TOKEN_TTL_HOURS` | 用户 token 有效期小时 | `720` |
 | `WX_APP_ID` | 微信小程序 AppID | 空 |
@@ -1704,9 +1705,9 @@ curl.exe -X POST "http://47.102.200.211:8081/api/uploads/image" `
   -H "Authorization: Bearer user-token" `
   -F "file=@C:\path\avatar.jpg"
 ```
-# 微信机器人后台网关
+# 微信机器人后台模块
 
-以下接口均使用后台管理员 Bearer Token，并按角色菜单权限授权：
+以下接口均使用后台管理员 Bearer Token，并按角色菜单权限授权。服务在进程内访问 `WECHAT_BOT_DB_DSN` 指向的微信机器人数据库，不再代理到独立的微信机器人后台服务：
 
 | 方法 | 路径 | 菜单权限 |
 | --- | --- | --- |
