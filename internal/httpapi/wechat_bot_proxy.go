@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"steam-game-takeover-backend/internal/model"
 
@@ -46,8 +47,12 @@ func wxbotControlAllowed(method, path string) bool {
 		return method == http.MethodGet
 	case "/config/applied":
 		return method == http.MethodPost
+	case "/ai/history-learning/next":
+		return method == http.MethodGet
 	default:
-		return false
+		return method == http.MethodPost &&
+			strings.HasPrefix(path, "/ai/history-learning/") &&
+			strings.HasSuffix(path, "/progress")
 	}
 }
 
@@ -105,43 +110,23 @@ func (h *Handler) ProxyWechatBotControl(c *gin.Context) {
 		fail(c, http.StatusNotFound, CodeParamInvalid, "wxbot endpoint not found")
 		return
 	}
-	if h.cfg.WechatBotAdminURL == "" {
-		fail(c, http.StatusServiceUnavailable, CodeSystemError, "wechat bot gateway is not configured")
+	if !h.requireWxbotToken(c) {
 		return
 	}
-	target, err := url.JoinPath(h.cfg.WechatBotAdminURL, "/wxbot"+path)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "wechat bot gateway URL is invalid")
-		return
+	switch {
+	case path == "/heartbeat":
+		h.WxbotHeartbeat(c)
+	case path == "/config":
+		h.WxbotConfig(c)
+	case path == "/config/applied":
+		h.WxbotConfigApplied(c)
+	case path == "/ai/history-learning/next":
+		h.WxbotNextHistoryLearning(c)
+	case strings.HasPrefix(path, "/ai/history-learning/") && strings.HasSuffix(path, "/progress"):
+		h.WxbotReportHistoryLearning(c, path)
+	default:
+		fail(c, http.StatusNotFound, CodeParamInvalid, "wxbot endpoint not found")
 	}
-	if c.Request.URL.RawQuery != "" {
-		target += "?" + c.Request.URL.RawQuery
-	}
-	request, err := http.NewRequestWithContext(c.Request.Context(), c.Request.Method, target, c.Request.Body)
-	if err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "create wxbot request failed")
-		return
-	}
-	for _, header := range []string{"Accept", "Content-Type", "Authorization", wxbotTokenHeader} {
-		if value := c.GetHeader(header); value != "" {
-			request.Header.Set(header, value)
-		}
-	}
-	response, err := h.wechatBotClient.Do(request)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || isTimeoutError(err) {
-			fail(c, http.StatusGatewayTimeout, CodeSystemError, "wxbot request timed out")
-			return
-		}
-		fail(c, http.StatusBadGateway, CodeSystemError, "wxbot service unavailable")
-		return
-	}
-	defer response.Body.Close()
-	if contentType := response.Header.Get("Content-Type"); contentType != "" {
-		c.Header("Content-Type", contentType)
-	}
-	c.Status(response.StatusCode)
-	_, _ = io.Copy(c.Writer, response.Body)
 }
 
 func (h *Handler) wechatBotAdminAllowed(admin model.AdminUser, required []string) bool {
@@ -161,6 +146,9 @@ func (h *Handler) AdminProxyWechatBot(c *gin.Context) {
 	admin, authenticated := currentAdmin(c)
 	if !authenticated || !h.wechatBotAdminAllowed(admin, required) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "permission denied")
+		return
+	}
+	if h.adminWechatBotLocal(c, path) {
 		return
 	}
 	if h.cfg.WechatBotAdminURL == "" || h.cfg.WechatBotSharedSecret == "" {

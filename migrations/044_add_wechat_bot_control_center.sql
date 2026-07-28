@@ -1,0 +1,43 @@
+CREATE TABLE IF NOT EXISTS `ttw_wechat_bot_instance` (
+  `bot_id` varchar(128) NOT NULL COMMENT 'stable bot id from wxbot_control.bot_id',
+  `name` varchar(128) NOT NULL DEFAULT '' COMMENT 'display name',
+  `wxid` varchar(128) NOT NULL DEFAULT '' COMMENT 'wechat wxid',
+  `status` varchar(32) NOT NULL DEFAULT '' COMMENT 'runtime status',
+  `version` varchar(64) NOT NULL DEFAULT '' COMMENT 'bot version',
+  `host` varchar(255) NOT NULL DEFAULT '' COMMENT 'host name',
+  `pid` int NOT NULL DEFAULT 0 COMMENT 'process id',
+  `started_at` varchar(64) NOT NULL DEFAULT '' COMMENT 'process start time',
+  `last_seen_at` datetime NOT NULL COMMENT 'last heartbeat time',
+  `current_config_json` longtext NOT NULL COMMENT 'last reported local config JSON',
+  `config_json` longtext NOT NULL COMMENT 'pending remote config JSON',
+  `ai_status_json` longtext NOT NULL COMMENT 'last reported AI status JSON',
+  `config_updated_at` datetime DEFAULT NULL COMMENT 'remote config updated time',
+  `config_applied_at` datetime DEFAULT NULL COMMENT 'bot applied config time',
+  `gmt_create` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'created at',
+  `gmt_modified` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'updated at',
+  PRIMARY KEY (`bot_id`),
+  KEY `idx_last_seen_at` (`last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='WeChat bot outbound control-center state';
+
+CREATE TABLE IF NOT EXISTS `ttw_wechat_ai_history_learning_task` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'primary key',
+  `bot_id` varchar(128) NOT NULL DEFAULT '' COMMENT 'claimed bot id',
+  `remote_task_id` bigint DEFAULT NULL COMMENT 'task id in wxbot AI database',
+  `room_id` varchar(128) NOT NULL COMMENT 'wechat chatroom id',
+  `status` varchar(16) NOT NULL DEFAULT 'queued' COMMENT 'queued/running/succeeded/failed',
+  `stage` varchar(32) NOT NULL DEFAULT 'segment' COMMENT 'segment/profile_merge/culture_update/persona_candidate/done',
+  `window_start` double NOT NULL DEFAULT 0 COMMENT 'unix seconds',
+  `window_end` double NOT NULL COMMENT 'unix seconds',
+  `max_messages` int NOT NULL DEFAULT 0 COMMENT '0 means unlimited',
+  `total_msg_count` int NOT NULL DEFAULT 0 COMMENT 'reported by bot',
+  `processed_msg_count` int NOT NULL DEFAULT 0 COMMENT 'reported by bot',
+  `segment_job_count` int NOT NULL DEFAULT 0 COMMENT 'reported by bot',
+  `error_message` text DEFAULT NULL COMMENT 'failure message',
+  `created_at` double NOT NULL COMMENT 'unix seconds',
+  `updated_at` double NOT NULL COMMENT 'unix seconds',
+  `finished_at` double DEFAULT NULL COMMENT 'unix seconds',
+  PRIMARY KEY (`id`),
+  KEY `idx_wechat_ai_history_status` (`status`, `created_at`),
+  KEY `idx_wechat_ai_history_room_status` (`room_id`, `status`, `created_at`),
+  KEY `idx_wechat_ai_history_bot_remote` (`bot_id`, `remote_task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='WeChat AI history learning tasks claimed by outbound bot';

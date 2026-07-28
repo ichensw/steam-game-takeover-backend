@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -113,38 +112,17 @@ func TestWechatBotProxyMapsTransportFailureAndTimeout(t *testing.T) {
 	}
 }
 
-func TestWxbotControlProxyForwardsTokenAndBody(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/wxbot/heartbeat" {
-			t.Fatalf("unexpected upstream request: %s %s", r.Method, r.URL.String())
-		}
-		if r.Header.Get("Authorization") != "Bearer token" || r.Header.Get(wxbotTokenHeader) != "token" || r.Header.Get("Content-Type") != "application/json" {
-			t.Fatalf("unexpected headers: %#v", r.Header)
-		}
-		body, _ := io.ReadAll(r.Body)
-		if string(body) != `{"botId":"wxbot-main"}` {
-			t.Fatalf("unexpected body: %s", string(body))
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"success":true}`))
-	}))
-	defer upstream.Close()
-
-	h := NewHandler(config.Config{
-		WechatBotAdminURL:     upstream.URL + "/api",
-		WechatBotProxyTimeout: time.Second,
-	}, nil)
-	rec := wxbotRequest(h, http.MethodPost, "/heartbeat", []byte(`{"botId":"wxbot-main"}`))
-	if rec.Code != http.StatusCreated || rec.Header().Get("Content-Type") != "application/json" || rec.Body.String() != `{"success":true}` {
-		t.Fatalf("unexpected response: status=%d headers=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
+func TestWxbotControlProxyRejectsUnknownPath(t *testing.T) {
+	h := NewHandler(config.Config{WechatBotSharedSecret: "token", WechatBotProxyTimeout: time.Second}, nil)
+	if rec := wxbotRequest(h, http.MethodGet, "/unknown", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown path status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
 
-func TestWxbotControlProxyRejectsUnknownPath(t *testing.T) {
-	h := NewHandler(config.Config{WechatBotAdminURL: "http://127.0.0.1:1/api", WechatBotProxyTimeout: time.Second}, nil)
-	if rec := wxbotRequest(h, http.MethodGet, "/unknown", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("unknown path status = %d, want %d", rec.Code, http.StatusNotFound)
+func TestWxbotControlProxyRejectsBadToken(t *testing.T) {
+	h := NewHandler(config.Config{WechatBotSharedSecret: "expected", WechatBotProxyTimeout: time.Second}, nil)
+	if rec := wxbotRequest(h, http.MethodGet, "/config", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("bad token status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 
