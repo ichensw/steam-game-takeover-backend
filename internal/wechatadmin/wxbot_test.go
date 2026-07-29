@@ -33,9 +33,9 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 			"api_base_url": "",
 			"api_key": "",
 			"reply_model": "",
-			"summary_model": "",
-			"merge_model": "",
-			"manual_deep_model": "",
+			"summary_model": "5.4 Mini",
+			"merge_model": "5.5",
+			"manual_deep_model": "5.6 Luna",
 			"scan_interval_seconds": 0,
 			"segment_min_messages": 0,
 			"segment_quiet_seconds": 0,
@@ -57,8 +57,17 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if err := json.Unmarshal(normalized, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg["ai"]["reply_model"]; got != "5.4 Mini" {
+	if got := cfg["ai"]["reply_model"]; got != "gpt-5.4-mini" {
 		t.Fatalf("reply_model = %#v, want default", got)
+	}
+	if got := cfg["ai"]["summary_model"]; got != "gpt-5.4-mini" {
+		t.Fatalf("summary_model = %#v, want normalized id", got)
+	}
+	if got := cfg["ai"]["merge_model"]; got != "gpt-5.5" {
+		t.Fatalf("merge_model = %#v, want normalized id", got)
+	}
+	if got := cfg["ai"]["manual_deep_model"]; got != "gpt-5.6-luna" {
+		t.Fatalf("manual_deep_model = %#v, want normalized id", got)
 	}
 	if got := cfg["ai"]["group_whitelist"].([]interface{})[0]; got != "47759534463@chatroom" {
 		t.Fatalf("group_whitelist = %#v, want configured room", got)

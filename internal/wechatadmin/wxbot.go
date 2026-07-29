@@ -436,8 +436,8 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 	stringSpec := wxbotConfigFieldSpec{kind: "string"}
 	stringListSpec := wxbotConfigFieldSpec{kind: "stringList"}
 	summaryJobsSpec := wxbotConfigFieldSpec{kind: "summaryJobs", defaultValue: []map[string]string{}}
-	stringDefaultSpec := func(defaultValue string) wxbotConfigFieldSpec {
-		return wxbotConfigFieldSpec{kind: "stringDefault", defaultValue: defaultValue}
+	aiModelSpec := func(defaultValue string) wxbotConfigFieldSpec {
+		return wxbotConfigFieldSpec{kind: "aiModel", defaultValue: defaultValue}
 	}
 	boolSpec := func(defaultValue bool) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "bool", defaultValue: defaultValue}
@@ -525,10 +525,10 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"reply_enabled":           boolSpec(true),
 			"api_base_url":            stringSpec,
 			"api_key":                 stringSpec,
-			"reply_model":             stringDefaultSpec("5.4 Mini"),
-			"summary_model":           stringDefaultSpec("5.4 Mini"),
-			"merge_model":             stringDefaultSpec("5.5"),
-			"manual_deep_model":       stringDefaultSpec("5.6 Luna"),
+			"reply_model":             aiModelSpec("gpt-5.4-mini"),
+			"summary_model":           aiModelSpec("gpt-5.4-mini"),
+			"merge_model":             aiModelSpec("gpt-5.5"),
+			"manual_deep_model":       aiModelSpec("gpt-5.6-luna"),
 			"scan_interval_seconds":   positiveIntSpec(300),
 			"segment_min_messages":    positiveIntSpec(30),
 			"segment_quiet_seconds":   positiveIntSpec(600),
@@ -581,6 +581,12 @@ func normalizeWxbotConfigValue(value interface{}, spec wxbotConfigFieldSpec) (in
 			return spec.defaultValue, nil
 		}
 		return text, nil
+	case "aiModel":
+		text, ok := value.(string)
+		if !ok {
+			return nil, errors.New("config string field must be a string")
+		}
+		return normalizeAIModelName(text, spec.defaultValue.(string)), nil
 	case "bool":
 		return normalizeWxbotBool(value, spec.defaultValue.(bool))
 	case "int":
@@ -692,6 +698,44 @@ func toString(value interface{}) string {
 		return text
 	}
 	return fmt.Sprint(value)
+}
+
+func normalizeAIModelName(value string, defaultValue string) string {
+	model := strings.TrimSpace(value)
+	if model == "" {
+		return defaultValue
+	}
+	aliases := map[string]string{
+		"5.2":                 "gpt-5.2",
+		"gpt-5.2":             "gpt-5.2",
+		"5.4":                 "gpt-5.4",
+		"gpt-5.4":             "gpt-5.4",
+		"5.4 mini":            "gpt-5.4-mini",
+		"gpt-5.4 mini":        "gpt-5.4-mini",
+		"gpt-5.4-mini":        "gpt-5.4-mini",
+		"5.5":                 "gpt-5.5",
+		"gpt-5.5":             "gpt-5.5",
+		"5.6":                 "gpt-5.6",
+		"gpt-5.6":             "gpt-5.6",
+		"gpt-5.6 (sol)":       "gpt-5.6",
+		"5.6 sol":             "gpt-5.6-sol",
+		"gpt-5.6 sol":         "gpt-5.6-sol",
+		"gpt-5.6-sol":         "gpt-5.6-sol",
+		"5.6 terra":           "gpt-5.6-terra",
+		"gpt-5.6 terra":       "gpt-5.6-terra",
+		"gpt-5.6-terra":       "gpt-5.6-terra",
+		"5.6 luna":            "gpt-5.6-luna",
+		"gpt-5.6 luna":        "gpt-5.6-luna",
+		"gpt-5.6-luna":        "gpt-5.6-luna",
+		"gpt-5.3 codex spark": "gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark": "gpt-5.3-codex-spark",
+		"codex mini":          "codex-mini-latest",
+		"codex-mini-latest":   "codex-mini-latest",
+	}
+	if normalized, ok := aliases[strings.ToLower(model)]; ok {
+		return normalized
+	}
+	return model
 }
 
 func validateWxbotConfig(cfg map[string]interface{}) error {

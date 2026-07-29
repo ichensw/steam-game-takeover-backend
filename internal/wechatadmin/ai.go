@@ -899,6 +899,11 @@ func (s *Server) latestAIConfig(ctx context.Context) map[string]interface{} {
 	if ai == nil {
 		return map[string]interface{}{}
 	}
+	for _, key := range []string{"reply_model", "summary_model", "merge_model", "manual_deep_model"} {
+		if value := normalizeAIModelName(stringValue(ai[key]), ""); value != "" {
+			ai[key] = value
+		}
+	}
 	return ai
 }
 
@@ -1002,9 +1007,9 @@ func tableExists(ctx context.Context, db *sql.DB, table string) bool {
 func (s *Server) modelForJob(ctx context.Context, jobType string) string {
 	cfg := s.latestAIConfig(ctx)
 	if jobType == "segment_summary" {
-		return firstNonEmpty(stringValue(cfg["summary_model"]), s.cfg.AIModel)
+		return normalizeAIModelName(firstNonEmpty(stringValue(cfg["summary_model"]), s.cfg.AIModel), "")
 	}
-	return firstNonEmpty(stringValue(cfg["merge_model"]), s.cfg.AIModel)
+	return normalizeAIModelName(firstNonEmpty(stringValue(cfg["merge_model"]), s.cfg.AIModel), "")
 }
 
 func (s *Server) countTextMessages(ctx context.Context, roomID string, start, end float64) (int, error) {
