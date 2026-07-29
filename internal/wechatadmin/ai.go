@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -903,6 +904,7 @@ func (s *Server) latestAIConfig(ctx context.Context) map[string]interface{} {
 
 func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) {
 	roomIDs := map[string]struct{}{}
+	roomNames := map[string]string{}
 	addRooms := func(query string) error {
 		rows, err := s.db.QueryContext(ctx, query)
 		if err != nil {
@@ -920,11 +922,34 @@ func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) 
 		}
 		return rows.Err()
 	}
+	if tableExists(ctx, s.db, "group_info") {
+		rows, err := s.db.QueryContext(ctx, "SELECT room_id, room_name FROM group_info ORDER BY updated_at DESC LIMIT 500")
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var roomID, roomName string
+			if err := rows.Scan(&roomID, &roomName); err != nil {
+				return nil, err
+			}
+			roomID = strings.TrimSpace(roomID)
+			if roomID == "" {
+				continue
+			}
+			roomIDs[roomID] = struct{}{}
+			if strings.TrimSpace(roomName) != "" {
+				roomNames[roomID] = roomName
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
 	for _, item := range []struct {
 		table string
 		query string
 	}{
-		{"group_info", "SELECT room_id FROM group_info ORDER BY updated_at DESC LIMIT 200"},
 		{"ai_jobs", "SELECT DISTINCT room_id FROM ai_jobs ORDER BY room_id LIMIT 200"},
 		{"ai_memory_runs", "SELECT DISTINCT room_id FROM ai_memory_runs ORDER BY room_id LIMIT 200"},
 		{"ai_history_learning_tasks", "SELECT DISTINCT room_id FROM ai_history_learning_tasks ORDER BY room_id LIMIT 200"},
@@ -935,9 +960,20 @@ func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) 
 			}
 		}
 	}
-	result := make([]map[string]interface{}, 0, len(roomIDs))
+	ids := make([]string, 0, len(roomIDs))
 	for roomID := range roomIDs {
-		result = append(result, map[string]interface{}{"roomId": roomID, "activeJobs": []interface{}{}})
+		ids = append(ids, roomID)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		return firstNonEmpty(roomNames[ids[i]], ids[i]) < firstNonEmpty(roomNames[ids[j]], ids[j])
+	})
+	result := make([]map[string]interface{}, 0, len(roomIDs))
+	for _, roomID := range ids {
+		result = append(result, map[string]interface{}{
+			"roomId":     roomID,
+			"roomName":   firstNonEmpty(roomNames[roomID], roomID),
+			"activeJobs": []interface{}{},
+		})
 	}
 	return result, nil
 }

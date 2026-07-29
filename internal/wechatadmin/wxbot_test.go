@@ -27,6 +27,7 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 		"summary_reminder": {"enabled": true},
 		"ai": {
 			"enabled": false,
+			"group_whitelist": ["47759534463@chatroom"],
 			"auto_memory_enabled": false,
 			"reply_enabled": false,
 			"api_base_url": "",
@@ -58,6 +59,9 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	}
 	if got := cfg["ai"]["reply_model"]; got != "5.4 Mini" {
 		t.Fatalf("reply_model = %#v, want default", got)
+	}
+	if got := cfg["ai"]["group_whitelist"].([]interface{})[0]; got != "47759534463@chatroom" {
+		t.Fatalf("group_whitelist = %#v, want configured room", got)
 	}
 	if got := cfg["ai"]["scan_interval_seconds"]; got != float64(300) {
 		t.Fatalf("scan_interval_seconds = %#v, want default", got)

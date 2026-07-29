@@ -520,6 +520,7 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 		},
 		"ai": {
 			"enabled":                 boolSpec(false),
+			"group_whitelist":         stringListSpec,
 			"auto_memory_enabled":     boolSpec(true),
 			"reply_enabled":           boolSpec(true),
 			"api_base_url":            stringSpec,
