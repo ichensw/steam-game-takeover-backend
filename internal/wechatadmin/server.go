@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -146,18 +147,34 @@ func (s *Server) wxbotAuth(next http.Handler) http.Handler {
 }
 
 func (s *Server) groups(w http.ResponseWriter, r *http.Request) {
+	whitelist, err := s.botGroupWhitelist(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query group whitelist failed")
+		return
+	}
+	if len(whitelist) == 0 {
+		ok(w, []map[string]interface{}{})
+		return
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(whitelist)), ",")
+	args := make([]interface{}, 0, len(whitelist))
+	for _, roomID := range whitelist {
+		args = append(args, roomID)
+	}
+
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT room_id, room_name, member_count, owner_wxid, updated_at
 		FROM group_info
+		WHERE room_id IN (`+placeholders+`)
 		ORDER BY updated_at DESC
-	`)
+	`, args...)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query groups failed")
 		return
 	}
 	defer rows.Close()
 
-	var groups []map[string]interface{}
+	groups := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var roomID, roomName, ownerWxid string
 		var memberCount int
@@ -175,6 +192,86 @@ func (s *Server) groups(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	ok(w, groups)
+}
+
+func (s *Server) botGroupWhitelist(ctx context.Context) ([]string, error) {
+	if err := s.ensureWxbotSchema(ctx); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT COALESCE(config_json, JSON_OBJECT()), COALESCE(current_config_json, JSON_OBJECT())
+		FROM wxbot_agents
+		ORDER BY config_updated_at DESC, last_seen_at DESC, bot_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	seen := make(map[string]struct{})
+	whitelist := make([]string, 0)
+	for rows.Next() {
+		var configRaw, currentConfigRaw []byte
+		if err := rows.Scan(&configRaw, &currentConfigRaw); err != nil {
+			return nil, err
+		}
+		values, ok := parseBotGroupWhitelist(configRaw)
+		if !ok {
+			values, _ = parseBotGroupWhitelist(currentConfigRaw)
+		}
+		for _, value := range values {
+			roomID := strings.TrimSpace(value)
+			if roomID == "" {
+				continue
+			}
+			if _, exists := seen[roomID]; exists {
+				continue
+			}
+			seen[roomID] = struct{}{}
+			whitelist = append(whitelist, roomID)
+		}
+	}
+	return whitelist, rows.Err()
+}
+
+func botGroupWhitelistSet(whitelist []string) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(whitelist))
+	for _, roomID := range whitelist {
+		roomID = strings.TrimSpace(roomID)
+		if roomID != "" {
+			allowed[roomID] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func botGroupAllowed(roomID string, allowed map[string]struct{}) bool {
+	_, ok := allowed[strings.TrimSpace(roomID)]
+	return ok
+}
+
+func parseBotGroupWhitelist(raw []byte) ([]string, bool) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, false
+	}
+	botRaw, ok := root["bot"]
+	if !ok {
+		return nil, false
+	}
+	var bot map[string]json.RawMessage
+	if err := json.Unmarshal(botRaw, &bot); err != nil {
+		return nil, false
+	}
+	whitelistRaw, ok := bot["group_whitelist"]
+	if !ok {
+		return nil, false
+	}
+	var whitelist []string
+	if err := json.Unmarshal(whitelistRaw, &whitelist); err != nil {
+		return nil, false
+	}
+	return whitelist, true
 }
 
 func (s *Server) messages(w http.ResponseWriter, r *http.Request) {

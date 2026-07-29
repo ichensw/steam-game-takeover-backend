@@ -79,3 +79,27 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 		t.Fatal("summary_reminder.jobs default missing")
 	}
 }
+
+func TestParseBotGroupWhitelist(t *testing.T) {
+	values, ok := parseBotGroupWhitelist([]byte(`{"bot":{"group_whitelist":["a@chatroom","b@chatroom"]}}`))
+	if !ok || len(values) != 2 || values[0] != "a@chatroom" || values[1] != "b@chatroom" {
+		t.Fatalf("whitelist = %#v, ok=%v", values, ok)
+	}
+	values, ok = parseBotGroupWhitelist([]byte(`{"bot":{"group_whitelist":[]}}`))
+	if !ok || len(values) != 0 {
+		t.Fatalf("empty whitelist = %#v, ok=%v", values, ok)
+	}
+	if _, ok := parseBotGroupWhitelist([]byte(`{"ai":{"group_whitelist":["ai@chatroom"]}}`)); ok {
+		t.Fatal("ai whitelist should not be used as bot group whitelist")
+	}
+}
+
+func TestBotGroupAllowedUsesWhitelistOnly(t *testing.T) {
+	allowed := botGroupWhitelistSet([]string{" a@chatroom ", "", "b@chatroom"})
+	if !botGroupAllowed("a@chatroom", allowed) || !botGroupAllowed(" b@chatroom ", allowed) {
+		t.Fatalf("expected whitelisted rooms to be allowed: %#v", allowed)
+	}
+	if botGroupAllowed("c@chatroom", allowed) || botGroupAllowed("", allowed) {
+		t.Fatalf("non-whitelisted room should not be allowed: %#v", allowed)
+	}
+}

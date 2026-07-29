@@ -908,6 +908,14 @@ func (s *Server) latestAIConfig(ctx context.Context) map[string]interface{} {
 }
 
 func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) {
+	whitelist, err := s.botGroupWhitelist(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(whitelist) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	allowed := botGroupWhitelistSet(whitelist)
 	roomIDs := map[string]struct{}{}
 	roomNames := map[string]string{}
 	addRooms := func(query string) error {
@@ -921,7 +929,8 @@ func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) 
 			if err := rows.Scan(&roomID); err != nil {
 				return err
 			}
-			if strings.TrimSpace(roomID) != "" {
+			roomID = strings.TrimSpace(roomID)
+			if botGroupAllowed(roomID, allowed) {
 				roomIDs[roomID] = struct{}{}
 			}
 		}
@@ -940,6 +949,9 @@ func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) 
 			}
 			roomID = strings.TrimSpace(roomID)
 			if roomID == "" {
+				continue
+			}
+			if !botGroupAllowed(roomID, allowed) {
 				continue
 			}
 			roomIDs[roomID] = struct{}{}
