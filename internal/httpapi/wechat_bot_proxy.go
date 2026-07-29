@@ -35,6 +35,7 @@ var (
 	aiErrorActionPattern     = regexp.MustCompile(`^/ai/errors/[0-9]+/(retry|resolve)$`)
 	aiCandidateActionPattern = regexp.MustCompile(`^/ai/memory/persona-candidates/[0-9]+/(promote|reject)$`)
 	aiCandidateEvidencePath  = regexp.MustCompile(`^/ai/memory/persona-candidates/[0-9]+/evidence$`)
+	aiVersionRollbackPattern = regexp.MustCompile(`^/ai/memory/persona-versions/[0-9]+/rollback$`)
 )
 
 func wxbotControlAllowed(method, path string) bool {
@@ -82,13 +83,13 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 func aiWechatBotPathAllowed(method, path string) bool {
 	if method == http.MethodGet {
 		switch path {
-		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/memory/runs", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates":
+		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/observation", "/ai/memory/runs", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates", "/ai/memory/persona-versions":
 			return true
 		}
 		return aiJobPathPattern.MatchString(path) || aiCandidateEvidencePath.MatchString(path)
 	}
 	if method == http.MethodPost {
-		return path == "/ai/jobs" || path == "/ai/history-learning" || aiHistoryActionPattern.MatchString(path) || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path)
+		return path == "/ai/jobs" || path == "/ai/history-learning" || aiHistoryActionPattern.MatchString(path) || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path) || aiVersionRollbackPattern.MatchString(path)
 	}
 	return false
 }

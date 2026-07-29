@@ -417,6 +417,96 @@ func (s *Server) resolveAIError(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]interface{}{"resolved": true})
 }
 
+func (s *Server) aiObservation(w http.ResponseWriter, r *http.Request) {
+	days := positiveInt(r.URL.Query().Get("days"), 7, 1, 90)
+	since := float64(time.Now().Add(-time.Duration(days)*24*time.Hour).UnixNano()) / 1e9
+	roomID := strings.TrimSpace(r.URL.Query().Get("roomId"))
+	roomClause, args := "", []interface{}{since}
+	if roomID != "" {
+		roomClause = " AND room_id = ?"
+		args = append(args, roomID)
+	}
+	jobStats := []map[string]interface{}{}
+	if tableExists(r.Context(), s.db, "ai_jobs") {
+		var err error
+		jobStats, err = s.listAIMaps(r.Context(), `
+			SELECT job_type, status, COUNT(*) AS count, AVG(input_msg_count) AS avg_input_msg_count
+			FROM ai_jobs
+			WHERE created_at >= ?`+roomClause+`
+			GROUP BY job_type, status
+			ORDER BY job_type ASC, status ASC
+		`, args...)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai job observation failed")
+			return
+		}
+	}
+	memoryStats := map[string]interface{}{"segmentCount": 0, "avgQualityScore": nil, "lowQualityCount": 0}
+	if tableExists(r.Context(), s.db, "ai_memory_runs") {
+		qualityExpr := "CAST(JSON_UNQUOTE(JSON_EXTRACT(result_json, '$.qualityScore')) AS DECIMAL(10,2))"
+		row, err := s.oneAIMap(r.Context(), `
+			SELECT COUNT(*) AS segment_count,
+				AVG(`+qualityExpr+`) AS avg_quality_score,
+				SUM(CASE WHEN `+qualityExpr+` < 60 THEN 1 ELSE 0 END) AS low_quality_count
+			FROM ai_memory_runs
+			WHERE granularity = 'segment' AND created_at >= ?`+roomClause, args...)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai memory observation failed")
+			return
+		}
+		memoryStats = row
+	}
+	activeLearning := []map[string]interface{}{}
+	if tableExists(r.Context(), s.db, "ai_history_learning_tasks") {
+		queryArgs := []interface{}{}
+		where := "status IN ('queued', 'running', 'paused')"
+		if roomID != "" {
+			where += " AND room_id = ?"
+			queryArgs = append(queryArgs, roomID)
+		}
+		var err error
+		activeLearning, err = s.listAIMaps(r.Context(), "SELECT * FROM ai_history_learning_tasks WHERE "+where+" ORDER BY id DESC LIMIT 20", queryArgs...)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query active learning failed")
+			return
+		}
+	}
+	recentErrors := []map[string]interface{}{}
+	if tableExists(r.Context(), s.db, "ai_job_errors") {
+		queryArgs := []interface{}{}
+		where := "resolved = 0"
+		if roomID != "" {
+			where += " AND room_id = ?"
+			queryArgs = append(queryArgs, roomID)
+		}
+		var err error
+		recentErrors, err = s.listAIMaps(r.Context(), "SELECT * FROM ai_job_errors WHERE "+where+" ORDER BY id DESC LIMIT 10", queryArgs...)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query recent errors failed")
+			return
+		}
+	}
+	recentVersions := []map[string]interface{}{}
+	if err := s.ensureAIPersonaVersionTable(r.Context()); err == nil {
+		queryArgs := []interface{}{}
+		where := "1=1"
+		if roomID != "" {
+			where = "room_id = ?"
+			queryArgs = append(queryArgs, roomID)
+		}
+		recentVersions, _ = s.listAIMaps(r.Context(), "SELECT * FROM ai_persona_versions WHERE "+where+" ORDER BY id DESC LIMIT 10", queryArgs...)
+	}
+	ok(w, map[string]interface{}{
+		"days":           days,
+		"roomId":         roomID,
+		"jobStats":       jobStats,
+		"memoryStats":    memoryStats,
+		"activeLearning": activeLearning,
+		"recentErrors":   recentErrors,
+		"recentVersions": recentVersions,
+	})
+}
+
 func (s *Server) aiMemoryRuns(w http.ResponseWriter, r *http.Request) {
 	where, args := "1=1", []interface{}{}
 	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
@@ -514,6 +604,76 @@ func (s *Server) aiPersonaCandidateEvidence(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ok(w, map[string]interface{}{"candidate": candidate, "runs": runs, "messages": messages})
+}
+
+func (s *Server) aiPersonaVersions(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureAIPersonaVersionTable(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure persona versions failed")
+		return
+	}
+	where, args := "1=1", []interface{}{}
+	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
+		where = "room_id = ?"
+		args = append(args, roomID)
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_persona_versions WHERE "+where+" ORDER BY id DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query persona versions failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) rollbackAIPersonaVersion(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid persona version id")
+		return
+	}
+	if err := s.ensureAIPersonaVersionTable(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure persona versions failed")
+		return
+	}
+	version, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_persona_versions WHERE id = ?", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "persona version not found")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query persona version failed")
+		return
+	}
+	roomID := stringValue(version["roomId"])
+	current, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_room_persona WHERE room_id = ?", roomID)
+	if err == nil {
+		_ = s.insertPersonaVersion(r.Context(), roomID, current["roomCultureJson"], current["botPersonaJson"], "rollback_backup", &id, "rollback previous active persona")
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query current persona failed")
+		return
+	}
+	cultureJSON, _ := json.Marshal(version["roomCultureJson"])
+	personaJSON, _ := json.Marshal(version["botPersonaJson"])
+	now := float64(time.Now().UnixNano()) / 1e9
+	if _, err := s.db.ExecContext(r.Context(), `
+		INSERT INTO ai_room_persona (room_id, room_culture_json, bot_persona_json, updated_at)
+		VALUES (?, CAST(? AS JSON), CAST(? AS JSON), ?)
+		ON DUPLICATE KEY UPDATE room_culture_json = VALUES(room_culture_json),
+			bot_persona_json = VALUES(bot_persona_json), updated_at = VALUES(updated_at)
+	`, roomID, string(cultureJSON), string(personaJSON), now); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "rollback persona failed")
+		return
+	}
+	if err := s.insertPersonaVersion(r.Context(), roomID, version["roomCultureJson"], version["botPersonaJson"], "rollback", &id, "rollback applied"); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "record rollback version failed")
+		return
+	}
+	row, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_room_persona WHERE room_id = ?", roomID)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query room persona failed")
+		return
+	}
+	ok(w, map[string]interface{}{"persona": row, "rolledBackFrom": version})
 }
 
 func (s *Server) promoteAIPersonaCandidate(w http.ResponseWriter, r *http.Request) {
@@ -852,6 +1012,9 @@ func (s *Server) promoteCandidatePersona(ctx context.Context, candidate map[stri
 	if persona == nil {
 		persona = candidateJSON
 	}
+	if err := s.ensureAIPersonaVersionTable(ctx); err != nil {
+		return err
+	}
 	current, err := s.oneAIMap(ctx, "SELECT * FROM ai_room_persona WHERE room_id = ?", roomID)
 	if errors.Is(err, sql.ErrNoRows) {
 		current = map[string]interface{}{"roomCultureJson": map[string]interface{}{}}
@@ -865,6 +1028,51 @@ func (s *Server) promoteCandidatePersona(ctx context.Context, candidate map[stri
 		VALUES (?, CAST(? AS JSON), CAST(? AS JSON), ?)
 		ON DUPLICATE KEY UPDATE bot_persona_json = VALUES(bot_persona_json), updated_at = VALUES(updated_at)
 	`, roomID, string(cultureJSON), string(personaJSON), float64(time.Now().UnixNano())/1e9)
+	if err != nil {
+		return err
+	}
+	candidateID := int64Value(candidate["id"])
+	return s.insertPersonaVersion(ctx, roomID, current["roomCultureJson"], persona, "candidate_promote", &candidateID, "promoted persona candidate")
+}
+
+func (s *Server) ensureAIPersonaVersionTable(ctx context.Context) error {
+	if tableExists(ctx, s.db, "ai_persona_versions") {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS ai_persona_versions (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			room_id VARCHAR(128) NOT NULL,
+			version_no INT NOT NULL,
+			room_culture_json JSON NOT NULL,
+			bot_persona_json JSON NOT NULL,
+			source_type VARCHAR(32) NOT NULL DEFAULT '',
+			source_id BIGINT NULL,
+			note VARCHAR(255) NOT NULL DEFAULT '',
+			created_at DOUBLE NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uq_ai_persona_versions_room_version (room_id, version_no),
+			KEY idx_ai_persona_versions_room_time (room_id, created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`)
+	return err
+}
+
+func (s *Server) insertPersonaVersion(ctx context.Context, roomID string, culture, persona interface{}, sourceType string, sourceID *int64, note string) error {
+	if err := s.ensureAIPersonaVersionTable(ctx); err != nil {
+		return err
+	}
+	var versionNo int
+	if err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version_no), 0) + 1 FROM ai_persona_versions WHERE room_id = ?", roomID).Scan(&versionNo); err != nil {
+		return err
+	}
+	cultureJSON, _ := json.Marshal(culture)
+	personaJSON, _ := json.Marshal(persona)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO ai_persona_versions
+			(room_id, version_no, room_culture_json, bot_persona_json, source_type, source_id, note, created_at)
+		VALUES (?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?)
+	`, roomID, versionNo, string(cultureJSON), string(personaJSON), strings.TrimSpace(sourceType), nullableInt(sourceID), strings.TrimSpace(note), float64(time.Now().UnixNano())/1e9)
 	return err
 }
 
