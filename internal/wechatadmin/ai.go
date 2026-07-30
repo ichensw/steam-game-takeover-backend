@@ -37,6 +37,14 @@ var manualAIJobTypes = map[string]bool{
 	"persona_candidate": true,
 }
 
+const defaultAIRoleCard = "你是智能小助手，但在群里更像一个懂游戏和梗、偶尔冒泡的老群友。你的任务是把话接住，不是提供服务或主持讨论。优先短句、自然停顿和有来有回的接话，不机械复述问题。该接梗就接梗，该装傻就装傻；偶发夸张、胡说八道式整活可以，别把它当事实。不要为了显得有用主动总结、追问、教学或提醒。"
+
+var aiPromptInstructionKeys = []string{
+	"segment_summary",
+	"profile_merge",
+	"takeover_recruitment",
+}
+
 func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 	queues := map[string]int{}
 	if tableExists(r.Context(), s.db, "ai_jobs") {
@@ -506,6 +514,405 @@ func (s *Server) aiObservation(w http.ResponseWriter, r *http.Request) {
 		"recentErrors":   recentErrors,
 		"recentVersions": recentVersions,
 	})
+}
+
+func (s *Server) aiRoleCard(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	row, err := s.oneAIMap(r.Context(), "SELECT content, updated_at FROM ai_role_cards WHERE id = 1")
+	if errors.Is(err, sql.ErrNoRows) {
+		ok(w, map[string]interface{}{"content": defaultAIRoleCard, "isDefault": true})
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai role card failed")
+		return
+	}
+	ok(w, row)
+}
+
+func (s *Server) updateAIRoleCard(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if len(content) > 8000 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "role card is too long")
+		return
+	}
+	if content == "" {
+		if _, err := s.db.ExecContext(r.Context(), "DELETE FROM ai_role_cards WHERE id = 1"); err != nil {
+			fail(w, http.StatusInternalServerError, "SAVE_FAILED", "reset ai role card failed")
+			return
+		}
+		ok(w, map[string]interface{}{"content": defaultAIRoleCard, "isDefault": true})
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if _, err := s.db.ExecContext(r.Context(), `
+		INSERT INTO ai_role_cards (id, content, updated_at)
+		VALUES (1, ?, ?)
+		ON DUPLICATE KEY UPDATE content = VALUES(content), updated_at = VALUES(updated_at)
+	`, content, now); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save ai role card failed")
+		return
+	}
+	ok(w, map[string]interface{}{"content": content, "updatedAt": now, "isDefault": false})
+}
+
+func (s *Server) aiPromptInstructions(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	rows, err := s.listAIMaps(r.Context(), "SELECT instruction_key, content, updated_at FROM ai_prompt_instructions")
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai prompt instructions failed")
+		return
+	}
+	byKey := make(map[string]map[string]interface{}, len(rows))
+	for _, row := range rows {
+		byKey[stringValue(row["instructionKey"])] = row
+	}
+	items := make([]map[string]interface{}, 0, len(aiPromptInstructionKeys))
+	for _, key := range aiPromptInstructionKeys {
+		item := map[string]interface{}{"key": key, "content": ""}
+		if row := byKey[key]; row != nil {
+			item["content"] = stringValue(row["content"])
+			item["updatedAt"] = row["updatedAt"]
+		}
+		items = append(items, item)
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) updateAIPromptInstruction(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Key     string `json:"key"`
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	key := strings.TrimSpace(req.Key)
+	if !validAIPromptInstructionKey(key) {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai prompt instruction key")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	content := strings.TrimSpace(req.Content)
+	if len(content) > 4000 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "ai prompt instruction is too long")
+		return
+	}
+	if content == "" {
+		if _, err := s.db.ExecContext(r.Context(), "DELETE FROM ai_prompt_instructions WHERE instruction_key = ?", key); err != nil {
+			fail(w, http.StatusInternalServerError, "SAVE_FAILED", "reset ai prompt instruction failed")
+			return
+		}
+		ok(w, map[string]interface{}{"key": key, "content": ""})
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if _, err := s.db.ExecContext(r.Context(), `
+		INSERT INTO ai_prompt_instructions (instruction_key, content, updated_at)
+		VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE content = VALUES(content), updated_at = VALUES(updated_at)
+	`, key, content, now); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save ai prompt instruction failed")
+		return
+	}
+	ok(w, map[string]interface{}{"key": key, "content": content, "updatedAt": now})
+}
+
+func validAIPromptInstructionKey(key string) bool {
+	for _, allowed := range aiPromptInstructionKeys {
+		if key == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) aiReplyStyleSamples(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	where, args := "1=1", []interface{}{}
+	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
+		where = "room_id = ?"
+		args = append(args, roomID)
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_reply_style_samples WHERE "+where+" ORDER BY updated_at DESC, id DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai reply samples failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) createAIReplyStyleSample(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RoomID      string `json:"roomId"`
+		Scenario    string `json:"scenario"`
+		TriggerText string `json:"triggerText"`
+		ReplyText   string `json:"replyText"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	roomID := strings.TrimSpace(req.RoomID)
+	scenario := strings.TrimSpace(req.Scenario)
+	triggerText := strings.TrimSpace(req.TriggerText)
+	replyText := strings.TrimSpace(req.ReplyText)
+	if (roomID != "" && !strings.HasSuffix(roomID, "@chatroom")) || triggerText == "" || replyText == "" || len(scenario) > 32 || len(triggerText) > 2000 || len(replyText) > 1000 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai reply sample")
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	result, err := s.db.ExecContext(r.Context(), `
+		INSERT INTO ai_reply_style_samples (room_id, scenario, trigger_text, reply_text, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, roomID, scenario, triggerText, replyText, now, now)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "create ai reply sample failed")
+		return
+	}
+	id, _ := result.LastInsertId()
+	row, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_reply_style_samples WHERE id = ?", id)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai reply sample failed")
+		return
+	}
+	ok(w, row)
+}
+
+func (s *Server) deleteAIReplyStyleSample(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai reply sample id")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	result, err := s.db.ExecContext(r.Context(), "DELETE FROM ai_reply_style_samples WHERE id = ?", id)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "delete ai reply sample failed")
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "ai reply sample not found")
+		return
+	}
+	ok(w, map[string]interface{}{"deleted": true})
+}
+
+func (s *Server) aiReplyConversationSamples(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	where, args := "1=1", []interface{}{}
+	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
+		where = "room_id = ?"
+		args = append(args, roomID)
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_reply_conversation_samples WHERE "+where+" ORDER BY updated_at DESC, id DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai reply conversation samples failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) createAIReplyConversationSample(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RoomID      string `json:"roomId"`
+		Scenario    string `json:"scenario"`
+		ContextText string `json:"contextText"`
+		ReplyText   string `json:"replyText"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<10)).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	roomID := strings.TrimSpace(req.RoomID)
+	scenario := strings.TrimSpace(req.Scenario)
+	contextText := strings.TrimSpace(req.ContextText)
+	replyText := strings.TrimSpace(req.ReplyText)
+	if (roomID != "" && !strings.HasSuffix(roomID, "@chatroom")) || contextText == "" || replyText == "" || len(scenario) > 32 || len(contextText) > 8000 || len(replyText) > 1000 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai reply conversation sample")
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	result, err := s.db.ExecContext(r.Context(), `
+		INSERT INTO ai_reply_conversation_samples (room_id, scenario, context_text, reply_text, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, roomID, scenario, contextText, replyText, now, now)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "create ai reply conversation sample failed")
+		return
+	}
+	id, _ := result.LastInsertId()
+	row, err := s.oneAIMap(r.Context(), "SELECT * FROM ai_reply_conversation_samples WHERE id = ?", id)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai reply conversation sample failed")
+		return
+	}
+	ok(w, row)
+}
+
+func (s *Server) deleteAIReplyConversationSample(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai reply conversation sample id")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	result, err := s.db.ExecContext(r.Context(), "DELETE FROM ai_reply_conversation_samples WHERE id = ?", id)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "delete ai reply conversation sample failed")
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "ai reply conversation sample not found")
+		return
+	}
+	ok(w, map[string]interface{}{"deleted": true})
+}
+
+func (s *Server) aiReplyLogs(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	if !tableExists(r.Context(), s.db, "ai_reply_logs") {
+		ok(w, map[string]interface{}{"items": []map[string]interface{}{}})
+		return
+	}
+	where, args := "l.reply_text <> ''", []interface{}{}
+	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
+		where += " AND l.room_id = ?"
+		args = append(args, roomID)
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), `
+		SELECT l.*, COALESCE(m.content, '') AS trigger_content,
+			COALESCE(f.feedback, '') AS feedback, f.updated_at AS feedback_at
+		FROM ai_reply_logs l
+		LEFT JOIN group_messages m ON m.msg_id = l.trigger_msg_id
+		LEFT JOIN ai_reply_log_feedbacks f ON f.reply_log_id = l.id
+		WHERE `+where+` ORDER BY l.id DESC LIMIT ?`, args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai reply logs failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) reviewAIReplyLog(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai reply log id")
+		return
+	}
+	var req struct {
+		Feedback string `json:"feedback"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	feedback := strings.TrimSpace(req.Feedback)
+	if !validAIReplyFeedback(feedback) {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid ai reply feedback")
+		return
+	}
+	if err := s.ensureAIStyleTables(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "ensure ai style tables failed")
+		return
+	}
+	log, err := s.oneAIMap(r.Context(), `
+		SELECT l.id, l.room_id, l.reply_text, COALESCE(m.content, '') AS trigger_content
+		FROM ai_reply_logs l
+		LEFT JOIN group_messages m ON m.msg_id = l.trigger_msg_id
+		WHERE l.id = ?
+	`, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "ai reply log not found")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai reply log failed")
+		return
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if _, err := s.db.ExecContext(r.Context(), `
+		INSERT INTO ai_reply_log_feedbacks (reply_log_id, feedback, updated_at)
+		VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE feedback = VALUES(feedback), updated_at = VALUES(updated_at)
+	`, id, feedback, now); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save ai reply feedback failed")
+		return
+	}
+	sampleActive := false
+	if feedback == "human" {
+		triggerText := strings.TrimSpace(stringValue(log["triggerContent"]))
+		replyText := strings.TrimSpace(stringValue(log["replyText"]))
+		if triggerText != "" && replyText != "" {
+			_, err = s.db.ExecContext(r.Context(), `
+				INSERT INTO ai_reply_style_samples
+					(room_id, scenario, trigger_text, reply_text, source_reply_log_id, created_at, updated_at)
+				VALUES (?, 'general', ?, ?, ?, ?, ?)
+				ON DUPLICATE KEY UPDATE room_id = VALUES(room_id), trigger_text = VALUES(trigger_text),
+					reply_text = VALUES(reply_text), updated_at = VALUES(updated_at)
+			`, stringValue(log["roomId"]), triggerText, replyText, id, now, now)
+			if err != nil {
+				fail(w, http.StatusInternalServerError, "SAVE_FAILED", "promote ai reply sample failed")
+				return
+			}
+			sampleActive = true
+		}
+	} else if _, err := s.db.ExecContext(r.Context(), "DELETE FROM ai_reply_style_samples WHERE source_reply_log_id = ?", id); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "remove ai reply sample failed")
+		return
+	}
+	ok(w, map[string]interface{}{"feedback": feedback, "sampleActive": sampleActive})
+}
+
+func validAIReplyFeedback(value string) bool {
+	return value == "human" || value == "too_ai" || value == "too_much"
 }
 
 func (s *Server) aiMemoryRuns(w http.ResponseWriter, r *http.Request) {
@@ -1092,6 +1499,63 @@ func (s *Server) promoteCandidatePersona(ctx context.Context, candidate map[stri
 	}
 	candidateID := int64Value(candidate["id"])
 	return s.insertPersonaVersion(ctx, roomID, current["roomCultureJson"], persona, "candidate_promote", &candidateID, "promoted persona candidate")
+}
+
+func (s *Server) ensureAIStyleTables(ctx context.Context) error {
+	if tableExists(ctx, s.db, "ai_role_cards") && tableExists(ctx, s.db, "ai_prompt_instructions") && tableExists(ctx, s.db, "ai_reply_style_samples") && tableExists(ctx, s.db, "ai_reply_conversation_samples") && tableExists(ctx, s.db, "ai_reply_log_feedbacks") {
+		return nil
+	}
+	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS ai_role_cards (
+			id TINYINT NOT NULL,
+			content TEXT NOT NULL,
+			updated_at DOUBLE NOT NULL,
+			PRIMARY KEY (id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS ai_prompt_instructions (
+			instruction_key VARCHAR(64) NOT NULL,
+			content TEXT NOT NULL,
+			updated_at DOUBLE NOT NULL,
+			PRIMARY KEY (instruction_key)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS ai_reply_style_samples (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			room_id VARCHAR(128) NOT NULL DEFAULT '',
+			scenario VARCHAR(32) NOT NULL DEFAULT '',
+			trigger_text TEXT NOT NULL,
+			reply_text TEXT NOT NULL,
+			source_reply_log_id BIGINT NULL,
+			created_at DOUBLE NOT NULL,
+			updated_at DOUBLE NOT NULL,
+			PRIMARY KEY (id),
+			UNIQUE KEY uq_ai_reply_style_samples_source (source_reply_log_id),
+			KEY idx_ai_reply_style_samples_room_time (room_id, updated_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS ai_reply_conversation_samples (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			room_id VARCHAR(128) NOT NULL DEFAULT '',
+			scenario VARCHAR(32) NOT NULL DEFAULT '',
+			context_text TEXT NOT NULL,
+			reply_text TEXT NOT NULL,
+			source_reply_log_id BIGINT NULL,
+			created_at DOUBLE NOT NULL,
+			updated_at DOUBLE NOT NULL,
+			PRIMARY KEY (id),
+			KEY idx_ai_reply_conversation_samples_room_time (room_id, updated_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS ai_reply_log_feedbacks (
+			reply_log_id BIGINT NOT NULL,
+			feedback VARCHAR(16) NOT NULL,
+			updated_at DOUBLE NOT NULL,
+			PRIMARY KEY (reply_log_id),
+			KEY idx_ai_reply_log_feedbacks_feedback_time (feedback, updated_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+	} {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) ensureAIPersonaVersionTable(ctx context.Context) error {

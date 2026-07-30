@@ -53,3 +53,14 @@ func TestNormalizeAIResolvedValueIsBoolean(t *testing.T) {
 		}
 	}
 }
+
+func TestValidAIReplyFeedback(t *testing.T) {
+	for _, value := range []string{"human", "too_ai", "too_much"} {
+		if !validAIReplyFeedback(value) {
+			t.Fatalf("feedback %q should be allowed", value)
+		}
+	}
+	if validAIReplyFeedback("ignore") {
+		t.Fatal("unexpected feedback should be rejected")
+	}
+}
