@@ -304,7 +304,7 @@ git -C ../wechat-hook-bot commit -m "feat: answer AI takeover questions"
 **Interfaces:**
 
 - Produces: parse_takeover_card_xml(xml: str) -> Optional[int] in the shared card module.
-- Produces: a five-minute in-memory card reference keyed by (room_id, sender_wxid).
+- Produces: an in-memory latest-card reference keyed by (room_id, sender_wxid), with no TTL or cooldown.
 - Produces: a manual takeover_recruitment background job with reason manual_card:<takeover_id> and source_msg_id equal to the @ command message ID.
 
 - [ ] **Step 1: Write failing card-reference and command tests**
@@ -312,7 +312,7 @@ git -C ../wechat-hook-bot commit -m "feat: answer AI takeover questions"
 Cover the exact interaction:
 
 1. a valid Rabbit Nest card followed by @机器人 帮我摇这车 from the same sender and room creates one manual recruitment job;
-2. malformed XML, another mini-program source username, another page path, zero/non-numeric ID, a card older than five minutes, or a card from another sender is rejected;
+2. malformed XML, another mini-program source username, another page path, zero/non-numeric ID, or a card from another sender is rejected; a prior valid card remains usable until the same sender shares a newer valid card in that room;
 3. the manual request does not create the ordinary reply job and returns HandlerResult.HANDLED;
 4. a duplicate webhook for the same command message ID does not create a second job;
 5. an existing automatic marker does not block a new manual command, while a successful manual result writes the marker for later automatic scans;
@@ -339,7 +339,7 @@ Do not use title, description, recent text, or AI to infer a target. The parser 
 
 - [ ] **Step 4: Remember cards before text mention handling**
 
-AIHandler currently only handles group text. Expand its lightweight observation path so every group message with XML can call AIService.remember_takeover_card(msg), then retain the existing mention processing for text messages only. Store the latest valid card for the card sender and room with a five-minute TTL; discard expired entries opportunistically. This cache is intentionally in-memory: after restart the user shares the card again.
+AIHandler currently only handles group text. Expand its lightweight observation path so every group message with XML can call AIService.remember_takeover_card(msg), then retain the existing mention processing for text messages only. Store the latest valid card for the card sender and room without a TTL; a later valid card from that sender in that room replaces it. This cache is intentionally in-memory: after restart the user shares the card again. Card age never decides whether a command is accepted; the backend's live candidate lookup decides whether its takeover remains valid, recruiting, unexpired, and underfilled.
 
 - [ ] **Step 5: Enqueue the targeted manual job**
 
