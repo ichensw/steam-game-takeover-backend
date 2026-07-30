@@ -839,6 +839,9 @@ func normalizeAIValue(column string, value interface{}) interface{} {
 	if value == nil {
 		return nil
 	}
+	if column == "resolved" {
+		return parseBool(stringValue(value))
+	}
 	if raw, ok := value.([]byte); ok {
 		text := string(raw)
 		if aiJSONColumns[column] {

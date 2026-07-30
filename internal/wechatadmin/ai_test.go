@@ -36,3 +36,20 @@ func TestEvidenceMessageIDsCollectsNestedUniqueIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeAIResolvedValueIsBoolean(t *testing.T) {
+	for _, test := range []struct {
+		value interface{}
+		want  bool
+	}{
+		{[]byte("0"), false},
+		{[]byte("1"), true},
+		{int64(0), false},
+		{int64(1), true},
+	} {
+		got, ok := normalizeAIValue("resolved", test.value).(bool)
+		if !ok || got != test.want {
+			t.Fatalf("resolved %#v = %#v, want boolean %#v", test.value, got, test.want)
+		}
+	}
+}
