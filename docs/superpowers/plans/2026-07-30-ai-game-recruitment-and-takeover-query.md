@@ -4,7 +4,7 @@
 
 **Goal:** 微信机器人通过现有 bot-login 出站 API 获取全部未满人接龙，回答被 @ 的接龙问题，并在已启用 AI 的微信群中按已沉淀的成员画像自动 @ 潜在玩家、发送接龙小程序卡片。
 
-**Architecture:** steam-game-takeover-backend 新增一个只读、分页的候选接龙接口，并继续作为接龙库唯一访问者。wechat-hook-bot 的 PartySiteClient 使用已有 bot token 调用它；实时问答走既有 reply 队列，自动摇人走既有 background 队列和持久化 AI job。机器人本地 MySQL 仅新增一个 (takeover_id, room_id) 技术去重标记，不新增用户绑定、偏好库或邀请产品记录。
+**Architecture:** steam-game-takeover-backend 新增一个只读、分页的候选接龙接口，并继续作为接龙库唯一访问者。wechat-hook-bot 的 PartySiteClient 使用已有 bot token 调用它；实时问答走既有 reply 队列，自动摇人走既有 background 队列和持久化 AI job。手动摇人由同群同发起人的最近一张合法兔兔窝小程序卡片精确指定目标。机器人本地 MySQL 仅新增一个 (takeover_id, room_id) 技术去重标记，不新增用户绑定、偏好库或邀请产品记录。
 
 **Tech Stack:** Go 1.22, Gin, Gorm/MySQL, Python, Flask, APScheduler, Requests, OpenAI-compatible Chat Completions, existing WeChat hook sender.
 
@@ -19,6 +19,7 @@
 - 需要保留非用户可见的幂等标记，防止同一车在每个轮询周期反复 @ 同一群。
 - 实时回复继续走 reply 队列；自动摇人只能走 background 队列，不得阻塞 @ 回复。
 - 自动摇人默认关闭，复用 ai.scan_interval_seconds，不添加第二个轮询周期配置。
+- 手动摇人只接受“先发兔兔窝接龙卡片，再 @机器人 帮我摇这车”的精确卡片引用；不做标题、摘要或聊天文本的模糊兜底。
 
 ## Candidate API Contract
 
@@ -290,7 +291,77 @@ git -C ../wechat-hook-bot commit -m "feat: answer AI takeover questions"
 
 ---
 
-### Task 4: Run Automatic Recruitment as a Background AI Job
+### Task 4: Manually Recruit From a Shared Mini-program Card
+
+**Files:**
+
+- Modify: ../wechat-hook-bot/bot/ai/handler.py
+- Modify: ../wechat-hook-bot/bot/ai/service.py
+- Modify: ../wechat-hook-bot/bot/party/cards.py
+- Modify: ../wechat-hook-bot/tests/test_ai_service.py
+- Create: ../wechat-hook-bot/tests/test_ai_handler.py when no focused handler test file already exists.
+
+**Interfaces:**
+
+- Produces: parse_takeover_card_xml(xml: str) -> Optional[int] in the shared card module.
+- Produces: a five-minute in-memory card reference keyed by (room_id, sender_wxid).
+- Produces: a manual takeover_recruitment background job with reason manual_card:<takeover_id> and source_msg_id equal to the @ command message ID.
+
+- [ ] **Step 1: Write failing card-reference and command tests**
+
+Cover the exact interaction:
+
+1. a valid Rabbit Nest card followed by @机器人 帮我摇这车 from the same sender and room creates one manual recruitment job;
+2. malformed XML, another mini-program source username, another page path, zero/non-numeric ID, a card older than five minutes, or a card from another sender is rejected;
+3. the manual request does not create the ordinary reply job and returns HandlerResult.HANDLED;
+4. a duplicate webhook for the same command message ID does not create a second job;
+5. an existing automatic marker does not block a new manual command, while a successful manual result writes the marker for later automatic scans;
+6. a full, closed, deleted, or missing takeover produces a short deterministic status response and no AI job;
+7. a caller without existing bot-admin permission cannot trigger group-wide @ delivery.
+
+- [ ] **Step 2: Confirm RED**
+
+~~~bash
+cd ../wechat-hook-bot && pytest -q tests/test_ai_service.py tests/test_ai_handler.py -k 'manual or card'
+~~~
+
+Expected: fail because the card parser, in-memory reference, and manual command path do not exist.
+
+- [ ] **Step 3: Parse only the known mini-program detail card**
+
+Move the existing card builder into bot/party/cards.py as planned in Task 3, then add a parser next to it. Use xml.etree.ElementTree, not string slicing. Accept only the known Rabbit Nest source username currently emitted by the builder and a weappinfo/pagepath matching:
+
+~~~text
+pages/detail/detail.html?id=<positive integer>
+~~~
+
+Do not use title, description, recent text, or AI to infer a target. The parser returns only the numeric takeover ID or no value.
+
+- [ ] **Step 4: Remember cards before text mention handling**
+
+AIHandler currently only handles group text. Expand its lightweight observation path so every group message with XML can call AIService.remember_takeover_card(msg), then retain the existing mention processing for text messages only. Store the latest valid card for the card sender and room with a five-minute TTL; discard expired entries opportunistically. This cache is intentionally in-memory: after restart the user shares the card again.
+
+- [ ] **Step 5: Enqueue the targeted manual job**
+
+Before enqueue_reply, recognize only the normalized command phrase 帮我摇这车 (optionally its exact short alias 摇这车) after an @ mention. Require the existing bot-admin permission check. Resolve the requester-owned card reference, fetch current recruitment candidates from the backend, and require the extracted ID to still be present.
+
+On success, send a fixed short acknowledgement without waiting for the model, create the existing takeover_recruitment job with reason manual_card:<id>, source_msg_id=msg.msg_id, and room_id=msg.room_id, then return HANDLED. The command's source message ID supplies idempotency through the existing ai_jobs dedupe key. Do not add a manual-request table or an ID field to the mini-program UI.
+
+- [ ] **Step 6: Reuse the background matcher deliberately**
+
+In _run_takeover_recruitment, recognize the manual reason and evaluate only that verified candidate against profiles in the current group. Manual selection must ignore an existing marker so a newly issued command is an intentional retry. After terminal success or no-match, write the same marker; automatic polling then skips it. Failures retain the normal ai_jobs and ai_job_errors behavior.
+
+- [ ] **Step 7: Confirm GREEN and commit**
+
+~~~bash
+cd ../wechat-hook-bot && pytest -q tests/test_ai_service.py tests/test_ai_handler.py tests/test_admin_commands.py
+git add bot/ai/handler.py bot/ai/service.py bot/party/cards.py tests/test_ai_service.py tests/test_ai_handler.py tests/test_admin_commands.py
+git commit -m "feat: recruit from shared takeover cards"
+~~~
+
+---
+
+### Task 5: Run Automatic Recruitment as a Background AI Job
 
 **Files:**
 
@@ -379,7 +450,7 @@ git -C ../wechat-hook-bot commit -m "feat: recruit players from AI group profile
 
 ---
 
-### Task 5: Review, Deploy, and Verify the Cross-service Flow
+### Task 6: Review, Deploy, and Verify the Cross-service Flow
 
 **Files:**
 
@@ -404,15 +475,19 @@ Run git diff --check in both repositories. Confirm no API key, database password
 
 Use the existing bot-login flow, then request the candidate endpoint. Confirm total/pagination coherence, active-underfilled filtering, description/vacancy fields, and absence of Kook/member/admin-only fields.
 
-- [ ] **Step 3: Controlled realtime verification**
+- [ ] **Step 3: Controlled manual-card verification**
+
+In one AI-whitelisted test group, have an existing bot administrator share a known Rabbit Nest takeover card, then @ the bot with 帮我摇这车. Confirm the fixed acknowledgement returns immediately, only the selected live underfilled takeover is evaluated in the background, and no generic reply job is created. Confirm an old/wrong-source card, a card from another sender, and a now-full takeover do not start an AI job. Issue a second deliberate command after an automatic marker and confirm it is allowed, while duplicate delivery of the same command message ID is not.
+
+- [ ] **Step 4: Controlled realtime verification**
 
 In one AI-whitelisted test group, @ the bot with a known game query and a generic question. Confirm the first gives a valid live candidate/card when available, the generic question skips candidate retrieval, and the reply remains responsive when the candidate API is unavailable.
 
-- [ ] **Step 4: Controlled automatic verification**
+- [ ] **Step 5: Controlled automatic verification**
 
 Enable ai.takeover_recruitment_enabled for one test group with a known profile and one underfilled test takeover. Trigger a scan. Confirm one @ plus card and inspect the ai_jobs result. Trigger a second scan and confirm the marker suppresses a duplicate. Repeat with an empty match and forced API/send failure to prove markers are written only for terminal results.
 
-- [ ] **Step 5: Deploy in dependency order**
+- [ ] **Step 6: Deploy in dependency order**
 
 1. Deploy steam-game-takeover-backend first so the API exists.
 2. Deploy wechat-hook-bot to Windows and let it create the marker table.
@@ -420,7 +495,7 @@ Enable ai.takeover_recruitment_enabled for one test group with a known profile a
 4. Enable it for one selected AI group through existing wxbot configuration, then repeat the controlled test.
 5. Expand to the intended AI groups only after that result is clean.
 
-- [ ] **Step 6: Push repositories**
+- [ ] **Step 7: Push repositories**
 
 ~~~bash
 git -C steam-game-takeover-backend push origin main
