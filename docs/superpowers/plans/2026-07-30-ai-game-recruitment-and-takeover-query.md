@@ -4,7 +4,7 @@
 
 **Goal:** 微信机器人通过现有 bot-login 出站 API 获取全部未满人接龙，回答被 @ 的接龙问题，并在已启用 AI 的微信群中按已沉淀的成员画像自动 @ 潜在玩家、发送接龙小程序卡片。
 
-**Architecture:** steam-game-takeover-backend 新增一个只读、分页的候选接龙接口，并继续作为接龙库唯一访问者。wechat-hook-bot 的 PartySiteClient 使用已有 bot token 调用它；实时问答走既有 reply 队列，自动摇人走既有 background 队列和持久化 AI job。手动摇人由同群同发起人的最近一张合法兔兔窝小程序卡片精确指定目标。机器人本地 MySQL 仅新增一个 (takeover_id, room_id) 技术去重标记，不新增用户绑定、偏好库或邀请产品记录。
+**Architecture:** steam-game-takeover-backend 新增只读、分页的候选接龙接口和单车招募状态接口，并继续作为接龙库唯一访问者。wechat-hook-bot 的 PartySiteClient 使用已有 bot token 调用它；实时问答走既有 reply 队列，自动摇人走既有 background 队列和持久化 AI job。手动摇人仅从同一条 @ 命令所引用的合法兔兔窝小程序卡片精确提取目标，不保存卡片或查询历史消息。机器人本地 MySQL 仅新增一个 (takeover_id, room_id) 技术去重标记，不新增用户绑定、偏好库或邀请产品记录。
 
 **Tech Stack:** Go 1.22, Gin, Gorm/MySQL, Python, Flask, APScheduler, Requests, OpenAI-compatible Chat Completions, existing WeChat hook sender.
 
@@ -19,12 +19,15 @@
 - 需要保留非用户可见的幂等标记，防止同一车在每个轮询周期反复 @ 同一群。
 - 实时回复继续走 reply 队列；自动摇人只能走 background 队列，不得阻塞 @ 回复。
 - 自动摇人默认关闭，复用 ai.scan_interval_seconds，不添加第二个轮询周期配置。
-- 手动摇人只接受“先发兔兔窝接龙卡片，再 @机器人 帮我摇这车”的精确卡片引用；不做标题、摘要或聊天文本的模糊兜底。
+- 手动摇人只接受“引用兔兔窝接龙卡片并 @机器人 帮我摇这车”的精确卡片引用；不做标题、摘要、聊天文本、最近卡片缓存或历史消息的兜底。
 
 ## Candidate API Contract
 
 ~~~text
 GET /api/takeovers/recruitment-candidates?page=1&pageSize=100
+Authorization: Bearer <bot-login token>
+
+GET /api/takeovers/:takeoverId/recruitment-status
 Authorization: Bearer <bot-login token>
 ~~~
 
@@ -55,9 +58,26 @@ Authorization: Bearer <bot-login token>
 
 The endpoint returns no Kook URL, creator/member identity, user profile, or admin-only field. Description is required for fuzzy matching.
 
+The single-takeover status endpoint returns HTTP 200 for every syntactically valid ID. It is the sole manual-command authority and returns:
+
+~~~json
+{
+  "id": 123,
+  "title": "今晚星露谷联机",
+  "canRecruit": false,
+  "status": "full",
+  "statusLabel": "已满员",
+  "joinedCount": 4,
+  "participantLimit": 4,
+  "missingCount": 0
+}
+~~~
+
+`status` is exactly one of `recruiting`, `full`, `closed`, `expired`, `deleted`, or `not_found`; the backend-owned `statusLabel` is the wording supplied to the bot and model. Apply the current expiration sync first, then classify in order: not found, deleted, expired, closed, full, recruiting. Do not return member, creator, Kook, or admin-only data.
+
 ---
 
-### Task 1: Add the Read-only Recruitment Candidate API
+### Task 1: Add Read-only Recruitment Candidate and Status APIs
 
 **Files:**
 
@@ -69,6 +89,8 @@ The endpoint returns no Kook URL, creator/member identity, user profile, or admi
 
 - Produces: GET /api/takeovers/recruitment-candidates protected by the existing h.UserAuth used by bot-login tokens.
 - Produces: func (h *Handler) ListTakeoverRecruitmentCandidates(c *gin.Context).
+- Produces: GET /api/takeovers/:takeoverId/recruitment-status protected by the same h.UserAuth.
+- Produces: func (h *Handler) GetTakeoverRecruitmentStatus(c *gin.Context).
 - Consumes: syncExpiredTakeovers, takeoverListQuery(0), applyTakeoverRecommendOrder, scheduleText, and model.Takeover.
 
 - [ ] **Step 1: Write the focused handler/query tests**
@@ -79,11 +101,14 @@ Add tests that prove the recruitment query:
 2. uses the valid joined-member count exposed by takeoverListQuery;
 3. returns description, schedule fields, and missingCount;
 4. honors page/pageSize, caps pageSize at 100, and returns total separately from the current page.
+5. status returns recruiting only for a non-deleted, normal, unexpired, underfilled row;
+6. status distinguishes full, closed, expired, deleted, and not_found with the documented code and Chinese label;
+7. a status lookup exposes no member, creator, Kook, or admin-only fields.
 
 - [ ] **Step 2: Confirm RED**
 
 ~~~bash
-go test -count=1 ./internal/httpapi -run 'Test.*RecruitmentCandidate'
+go test -count=1 ./internal/httpapi -run 'Test.*Recruitment'
 ~~~
 
 Expected: fail because the handler and route do not exist.
@@ -94,6 +119,7 @@ Register:
 
 ~~~go
 api.GET("/takeovers/recruitment-candidates", h.UserAuth(), h.ListTakeoverRecruitmentCandidates)
+api.GET("/takeovers/:takeoverId/recruitment-status", h.UserAuth(), h.GetTakeoverRecruitmentStatus)
 ~~~
 
 The handler must:
@@ -113,6 +139,8 @@ Where("is_deleted = ? AND takeover_state = ? AND participant_limit > COALESCE(j.
 
 Do not reuse an admin DTO that could expose fields unintentionally.
 
+The status handler calls syncExpiredTakeovers, loads one row with the same valid-member count semantics, and returns a 200 status payload for missing or inactive rows. Keep status classification in one helper so the initial manual check and pre-delivery check cannot drift.
+
 - [ ] **Step 4: Confirm GREEN**
 
 ~~~bash
@@ -123,7 +151,7 @@ go test -count=1 ./internal/httpapi
 
 ~~~bash
 git add internal/httpapi/router.go internal/httpapi/takeover_handlers.go internal/httpapi/takeover_summary_test.go
-git commit -m "feat: expose takeover recruitment candidates"
+git commit -m "feat: expose takeover recruitment status"
 ~~~
 
 ---
@@ -148,6 +176,7 @@ git commit -m "feat: expose takeover recruitment candidates"
 **Interfaces:**
 
 - Produces: PartySiteClient.recruitment_candidates() returning all candidate pages.
+- Produces: PartySiteClient.recruitment_status(takeover_id) returning the documented single-takeover status object.
 - Produces: AIConfig.takeover_recruitment_enabled with default false.
 - Produces: bot-local table ai_takeover_recruitment_markers keyed by (takeover_id, room_id).
 - Produces: repository methods to return unmarked candidates and atomically mark one candidate as sent or no_match.
@@ -158,10 +187,11 @@ Add tests that assert:
 
 1. recruitment_candidates uses _request_bot only, never /api/admin routes;
 2. it uses pageSize 100, concatenates pages until total is reached, and stops safely on malformed/inconsistent empty data;
-3. AIConfig defaults takeover_recruitment_enabled to false and accepts true;
-4. the bot remote-config allowlist accepts it under ai;
-5. normalizeWxbotConfig retains a boolean and rejects a non-boolean value;
-6. a marker suppresses only the same (takeover_id, room_id), not another room.
+3. recruitment_status uses _request_bot only and preserves canRecruit, status, statusLabel, title, and counts without guessing a status from an HTTP error;
+4. AIConfig defaults takeover_recruitment_enabled to false and accepts true;
+5. the bot remote-config allowlist accepts it under ai;
+6. normalizeWxbotConfig retains a boolean and rejects a non-boolean value;
+7. a marker suppresses only the same (takeover_id, room_id), not another room.
 
 - [ ] **Step 2: Confirm RED**
 
@@ -172,9 +202,11 @@ cd ../steam-game-takeover-backend && go test -count=1 ./internal/wechatadmin -ru
 
 Expected: fail because the client method, flag, and marker schema do not exist.
 
-- [ ] **Step 3: Implement the smallest paginated client method**
+- [ ] **Step 3: Implement the smallest client methods**
 
 Use only PartySiteClient._request_bot. Parse data.page, data.pageSize, data.total, and data.list; append dict rows only. Stop when the accumulated list reaches total, a page is empty, or no forward progress is possible. Do not introduce another HTTP client or database setting.
+
+Add recruitment_status(takeover_id) as one authenticated GET to the single-status endpoint. Validate only the documented primitive fields and preserve the backend status code and label verbatim. It must not fall back to a candidate-list search because inactive takeovers are intentionally absent from that list.
 
 - [ ] **Step 4: Implement config and local marker state**
 
@@ -297,27 +329,29 @@ git -C ../wechat-hook-bot commit -m "feat: answer AI takeover questions"
 
 - Modify: ../wechat-hook-bot/bot/ai/handler.py
 - Modify: ../wechat-hook-bot/bot/ai/service.py
+- Modify: ../wechat-hook-bot/bot/ai/prompts.py
 - Modify: ../wechat-hook-bot/bot/party/cards.py
 - Modify: ../wechat-hook-bot/tests/test_ai_service.py
 - Create: ../wechat-hook-bot/tests/test_ai_handler.py when no focused handler test file already exists.
 
 **Interfaces:**
 
-- Produces: parse_takeover_card_xml(xml: str) -> Optional[int] in the shared card module.
-- Produces: an in-memory latest-card reference keyed by (room_id, sender_wxid), with no TTL or cooldown.
+- Produces: extract_referenced_takeover_id(msg: HookMessage) -> Optional[int] in the shared card module.
+- Consumes: only the triggering command's native WeChat reply/quote payload; no retained card, recent-card map, or chat-history lookup.
 - Produces: a manual takeover_recruitment background job with reason manual_card:<takeover_id> and source_msg_id equal to the @ command message ID.
 
 - [ ] **Step 1: Write failing card-reference and command tests**
 
 Cover the exact interaction:
 
-1. a valid Rabbit Nest card followed by @机器人 帮我摇这车 from the same sender and room creates one manual recruitment job;
-2. malformed XML, another mini-program source username, another page path, zero/non-numeric ID, or a card from another sender is rejected; a prior valid card remains usable until the same sender shares a newer valid card in that room;
+1. a command callback that natively quotes a valid Rabbit Nest card and contains @机器人 帮我摇这车 creates one manual recruitment job without a prior card-observation event;
+2. malformed reference XML, another mini-program source username, another page path, zero/non-numeric ID, or no direct quote reference is rejected;
 3. the manual request does not create the ordinary reply job and returns HandlerResult.HANDLED;
 4. a duplicate webhook for the same command message ID does not create a second job;
 5. an existing automatic marker does not block a new manual command, while a successful manual result writes the marker for later automatic scans;
-6. a full, closed, deleted, or missing takeover produces a short deterministic status response and no AI job;
+6. full, closed, expired, deleted, and missing status responses produce a short constrained status reply and no matching/@ delivery;
 7. a caller without existing bot-admin permission cannot trigger group-wide @ delivery.
+8. a card present only in an earlier callback is not usable: the current command must carry its own native quote reference.
 
 - [ ] **Step 2: Confirm RED**
 
@@ -325,38 +359,40 @@ Cover the exact interaction:
 cd ../wechat-hook-bot && pytest -q tests/test_ai_service.py tests/test_ai_handler.py -k 'manual or card'
 ~~~
 
-Expected: fail because the card parser, in-memory reference, and manual command path do not exist.
+Expected: fail because direct quote parsing, status handling, and the manual command path do not exist.
 
-- [ ] **Step 3: Parse only the known mini-program detail card**
+- [ ] **Step 3: Parse only the known referenced mini-program detail card**
 
-Move the existing card builder into bot/party/cards.py as planned in Task 3, then add a parser next to it. Use xml.etree.ElementTree, not string slicing. Accept only the known Rabbit Nest source username currently emitted by the builder and a weappinfo/pagepath matching:
+Move the existing card builder into bot/party/cards.py as planned in Task 3, then add a parser next to it. Use xml.etree.ElementTree, not string slicing. The parser receives only a normalized referenced-card fragment taken from the current callback. Accept only the known Rabbit Nest source username currently emitted by the builder and a weappinfo/pagepath matching:
 
 ~~~text
 pages/detail/detail.html?id=<positive integer>
 ~~~
 
-Do not use title, description, recent text, or AI to infer a target. The parser returns only the numeric takeover ID or no value.
+Do not use title, description, recent text, a previous message, or AI to infer a target. The parser returns only the numeric takeover ID or no value.
 
-- [ ] **Step 4: Remember cards before text mention handling**
+- [ ] **Step 4: Extract the native quote reference from the command callback**
 
-AIHandler currently only handles group text. Expand its lightweight observation path so every group message with XML can call AIService.remember_takeover_card(msg), then retain the existing mention processing for text messages only. Store the latest valid card for the card sender and room without a TTL; a later valid card from that sender in that room replaces it. This cache is intentionally in-memory: after restart the user shares the card again. Card age never decides whether a command is accepted; the backend's live candidate lookup decides whether its takeover remains valid, recruiting, unexpired, and underfilled.
+AIHandler continues to ignore unrelated card messages. For the @ command only, extract the reference from msg.xml or the documented raw callback reference field and normalize it into the parser's XML fragment. Add a sanitized fixture captured from the actual Windows Hook callback before implementing the extractor; the current HookMessage keeps raw data in msg.extra, but does not yet expose a reply-reference field. If the Hook callback has no direct reference payload, extend HookMessage.from_callback to expose the source-provided reference field. Do not solve a missing payload by caching cards or querying group_messages.
 
 - [ ] **Step 5: Enqueue the targeted manual job**
 
-Before enqueue_reply, recognize only the normalized command phrase 帮我摇这车 (optionally its exact short alias 摇这车) after an @ mention. Require the existing bot-admin permission check. Resolve the requester-owned card reference, fetch current recruitment candidates from the backend, and require the extracted ID to still be present.
+Before enqueue_reply, recognize only the normalized command phrase 帮我摇这车 (optionally its exact short alias 摇这车) after an @ mention. Require the existing bot-admin permission check. Extract the current command's quoted-card ID. If it is absent or invalid, send a short direct instruction to quote the Rabbit Nest card and do not enqueue work.
 
-On success, send a fixed short acknowledgement without waiting for the model, create the existing takeover_recruitment job with reason manual_card:<id>, source_msg_id=msg.msg_id, and room_id=msg.room_id, then return HANDLED. The command's source message ID supplies idempotency through the existing ai_jobs dedupe key. Do not add a manual-request table or an ID field to the mini-program UI.
+On success, send a neutral short acknowledgement without waiting for a model or backend lookup, create the existing takeover_recruitment job with reason manual_card:<id>, source_msg_id=msg.msg_id, and room_id=msg.room_id, then return HANDLED. The command's source message ID supplies idempotency through the existing ai_jobs dedupe key. Do not add a manual-request table, card cache, or an ID field to the mini-program UI.
 
 - [ ] **Step 6: Reuse the background matcher deliberately**
 
-In _run_takeover_recruitment, recognize the manual reason and evaluate only that verified candidate against profiles in the current group. Manual selection must ignore an existing marker so a newly issued command is an intentional retry. After terminal success or no-match, write the same marker; automatic polling then skips it. Failures retain the normal ai_jobs and ai_job_errors behavior.
+In _run_takeover_recruitment, recognize the manual reason and call PartySiteClient.recruitment_status first. If canRecruit is false, do not read profiles or run the matcher. Give the verified status fields to a constrained reply-model prompt for one natural group-chat sentence; use a statusLabel-based template when that call fails. Do not write a recruitment marker for an inactive takeover.
+
+If canRecruit is true, evaluate only that takeover against profiles in the current group. Manual selection must ignore an existing marker so a newly issued command is an intentional retry. Re-read recruitment_status immediately before @ delivery; if the state changed, send the status reply and do not deliver the @ or card. After terminal success or no-match, write the same marker; automatic polling then skips it. Failures retain the normal ai_jobs and ai_job_errors behavior.
 
 - [ ] **Step 7: Confirm GREEN and commit**
 
 ~~~bash
 cd ../wechat-hook-bot && pytest -q tests/test_ai_service.py tests/test_ai_handler.py tests/test_admin_commands.py
-git add bot/ai/handler.py bot/ai/service.py bot/party/cards.py tests/test_ai_service.py tests/test_ai_handler.py tests/test_admin_commands.py
-git commit -m "feat: recruit from shared takeover cards"
+git add bot/ai/handler.py bot/ai/service.py bot/ai/prompts.py bot/party/cards.py tests/test_ai_service.py tests/test_ai_handler.py tests/test_admin_commands.py
+git commit -m "feat: recruit from quoted takeover cards"
 ~~~
 
 ---
@@ -373,7 +409,7 @@ git commit -m "feat: recruit from shared takeover cards"
 **Interfaces:**
 
 - Produces job type takeover_recruitment.
-- Consumes the existing background queue, AIRepository.create_job, ai_group_whitelist, PartySiteClient.recruitment_candidates, ThreadSafeSender.send_at_text, and send_app_msg.
+- Consumes the existing background queue, AIRepository.create_job, ai_group_whitelist, PartySiteClient.recruitment_candidates, PartySiteClient.recruitment_status, ThreadSafeSender.send_at_text, and send_app_msg.
 - Produces structured matches containing only input takeover IDs and input member wxids.
 
 - [ ] **Step 1: Write failing job tests**
@@ -386,8 +422,9 @@ Use a fake party client, repository, sender, and AI client to assert:
 4. unknown takeover IDs and wxids from the model are discarded;
 5. a valid match sends @ text, sends a detail card, and writes a sent marker;
 6. a valid no-match writes a no_match marker;
-7. retrieval, model, or @ send failure writes no marker and goes through existing ai_job_errors;
-8. a second scan with the marker sends nothing.
+7. a candidate that becomes full, closed, expired, deleted, or unavailable after model matching sends nothing and writes no marker;
+8. retrieval, model, status lookup, or @ send failure writes no marker and goes through existing ai_job_errors;
+9. a second scan with the marker sends nothing.
 
 - [ ] **Step 2: Confirm RED**
 
@@ -429,7 +466,7 @@ Prompt rules:
 - No sensitive preference inference, pressure, or service-style follow-up.
 - No credible match means an empty matches array.
 
-Use merge_model and an existing background timeout. Validate and de-duplicate all output. For every pending takeover, mark no_match if it has no valid match; otherwise send the @ text and card, then mark sent only after @ delivery succeeds. A card failure is logged but must not repeat a successful @ later.
+Use merge_model and an existing background timeout. Validate and de-duplicate all output. For every pending takeover, mark no_match if it has no valid match; otherwise call recruitment_status immediately before the @ text and card. Deliver only when canRecruit remains true, then mark sent only after @ delivery succeeds. A status change is not an AI error and writes no marker; a status API failure is an error and writes no marker. A card failure is logged but must not repeat a successful @ later.
 
 - [ ] **Step 5: Preserve latency and error behavior**
 
@@ -469,15 +506,15 @@ pytest -q
 git diff --check
 ~~~
 
-Run git diff --check in both repositories. Confirm no API key, database password, bot token, raw message, or member-profile evidence appears in a fixture or log.
+Run git diff --check in both repositories. Confirm no API key, database password, bot token, unredacted raw message, or member-profile evidence appears in a fixture or log. The required quote-callback fixture must be sanitized to structural fields only.
 
 - [ ] **Step 2: Verify the backend API with the bot account**
 
-Use the existing bot-login flow, then request the candidate endpoint. Confirm total/pagination coherence, active-underfilled filtering, description/vacancy fields, and absence of Kook/member/admin-only fields.
+Use the existing bot-login flow, then request the candidate and single-status endpoints. Confirm total/pagination coherence, active-underfilled filtering, description/vacancy fields, all documented inactive status codes/labels, and absence of Kook/member/admin-only fields.
 
 - [ ] **Step 3: Controlled manual-card verification**
 
-In one AI-whitelisted test group, have an existing bot administrator share a known Rabbit Nest takeover card, then @ the bot with 帮我摇这车. Confirm the fixed acknowledgement returns immediately, only the selected live underfilled takeover is evaluated in the background, and no generic reply job is created. Confirm an old/wrong-source card, a card from another sender, and a now-full takeover do not start an AI job. Issue a second deliberate command after an automatic marker and confirm it is allowed, while duplicate delivery of the same command message ID is not.
+In one AI-whitelisted test group, have an existing bot administrator use WeChat's native reply/quote action on a known Rabbit Nest takeover card, then @ the bot with 帮我摇这车. Confirm the neutral acknowledgement returns immediately, only the selected live underfilled takeover is evaluated in the background, and no generic reply job is created. Confirm a command without a direct quote, a malformed/wrong-source quote, and each full/closed/expired/deleted/missing backend status produce no @ delivery and a correct status reply. Confirm a card that only appeared in an earlier message is not accepted. Issue a second deliberate command after an automatic marker and confirm it is allowed, while duplicate delivery of the same command message ID is not.
 
 - [ ] **Step 4: Controlled realtime verification**
 
@@ -485,7 +522,7 @@ In one AI-whitelisted test group, @ the bot with a known game query and a generi
 
 - [ ] **Step 5: Controlled automatic verification**
 
-Enable ai.takeover_recruitment_enabled for one test group with a known profile and one underfilled test takeover. Trigger a scan. Confirm one @ plus card and inspect the ai_jobs result. Trigger a second scan and confirm the marker suppresses a duplicate. Repeat with an empty match and forced API/send failure to prove markers are written only for terminal results.
+Enable ai.takeover_recruitment_enabled for one test group with a known profile and one underfilled test takeover. Trigger a scan. Confirm one @ plus card and inspect the ai_jobs result. Trigger a second scan and confirm the marker suppresses a duplicate. Repeat with an empty match, a takeover that fills while matching, and forced API/send failure to prove markers are written only for terminal results.
 
 - [ ] **Step 6: Deploy in dependency order**
 
