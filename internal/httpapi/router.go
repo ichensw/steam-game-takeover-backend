@@ -23,6 +23,8 @@ func NewRouter(h *Handler) *gin.Engine {
 
 	api.GET("/takeovers", h.UserAuth(), h.ListTakeovers)
 	api.GET("/takeovers/summary", h.UserAuth(), h.ListTakeoverSummaries)
+	api.GET("/takeovers/recruitment-candidates", h.UserAuth(), h.ListTakeoverRecruitmentCandidates)
+	api.GET("/takeovers/:takeoverId/recruitment-status", h.UserAuth(), h.GetTakeoverRecruitmentStatus)
 	api.GET("/takeovers/:takeoverId", h.OptionalUserAuth(), h.GetTakeover)
 	api.GET("/takeovers/:takeoverId/member-activities", h.OptionalUserAuth(), h.ListTakeoverMemberActivities)
 	api.POST("/takeovers", h.UserAuth(), h.CreateTakeover)

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "sections": {
+    "bot": {
+      "name": "string",
+      "admin_wxids": "stringList",
+      "group_whitelist": "stringList",
+      "command_prefix": "string",
+      "at_me_required": "bool"
+    },
+    "hook": {
+      "dll_path": "string",
+      "inject_exe_path": "string",
+      "http_server_port": "int",
+      "receive_mode": "string",
+      "tcp_ip": "string",
+      "tcp_port": "int",
+      "callback_url": "string",
+      "usedefault": "bool",
+      "start_server_while_login": "bool",
+      "force_reinject_on_start": "bool"
+    },
+    "monitor": {
+      "message": "bool",
+      "message_types": "stringList",
+      "alert_member_change": "bool",
+      "group_cache_ttl": "int"
+    },
+    "webhook": {
+      "enabled": "bool",
+      "host": "string",
+      "port": "int",
+      "token": "string",
+      "rate_limit": "int",
+      "cors_origins": "stringList"
+    },
+    "database": {
+      "host": "string",
+      "port": "int",
+      "user": "string",
+      "password": "string",
+      "name": "string",
+      "charset": "string",
+      "connect_timeout": "int",
+      "read_timeout": "int",
+      "write_timeout": "int",
+      "batch_size": "int",
+      "batch_flush_interval": "int",
+      "message_queue_size": "int"
+    },
+    "logging": {
+      "level": "string",
+      "file": "string",
+      "max_size_mb": "int",
+      "backup_count": "int"
+    },
+    "welcome": {
+      "enabled": "bool",
+      "default_msg": "string"
+    },
+    "party_site": {
+      "enabled": "bool",
+      "base_url": "string",
+      "admin_username": "string",
+      "admin_password": "string",
+      "token": "string",
+      "timeout": "int"
+    },
+    "summary_reminder": {
+      "enabled": "bool",
+      "jobs": "summaryJobs"
+    },
+    "ai": {
+      "enabled": "bool",
+      "group_whitelist": "stringList",
+      "mention_aliases": "stringList",
+      "auto_memory_enabled": "bool",
+      "reply_enabled": "bool",
+      "takeover_recruitment_enabled": "bool",
+      "api_base_url": "string",
+      "api_key": "string",
+      "reply_model": "aiModel",
+      "summary_model": "aiModel",
+      "merge_model": "aiModel",
+      "manual_deep_model": "aiModel",
+      "scan_interval_seconds": "positiveInt",
+      "segment_min_messages": "positiveInt",
+      "segment_quiet_seconds": "positiveInt",
+      "segment_stale_seconds": "positiveInt",
+      "profile_min_segments": "positiveInt",
+      "max_segment_messages": "positiveInt",
+      "reply_context_messages": "positiveInt",
+      "worker_queue_size": "positiveInt",
+      "reply_timeout_seconds": "positiveInt",
+      "summary_timeout_seconds": "positiveInt",
+      "merge_timeout_seconds": "positiveInt"
+    },
+    "wxbot_control": {
+      "enabled": "bool",
+      "base_url": "string",
+      "token": "string",
+      "bot_id": "string",
+      "name": "string",
+      "heartbeat_interval": "int",
+      "config_pull_interval": "int",
+      "request_timeout": "int"
+    },
+    "oss": {
+      "enabled": "bool",
+      "endpoint": "string",
+      "bucket": "string",
+      "access_key_id": "string",
+      "access_key_secret": "string",
+      "public_base_url": "string",
+      "object_prefix": "string",
+      "keep_local": "bool"
+    }
+  }
+}

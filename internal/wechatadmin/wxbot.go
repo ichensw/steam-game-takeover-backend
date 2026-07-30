@@ -15,33 +15,37 @@ import (
 )
 
 type wxbotHeartbeatRequest struct {
-	BotID         string          `json:"botId"`
-	Name          string          `json:"name"`
-	Wxid          string          `json:"wxid"`
-	Status        string          `json:"status"`
-	Version       string          `json:"version"`
-	Host          string          `json:"host"`
-	PID           int             `json:"pid"`
-	StartedAt     string          `json:"startedAt"`
-	CurrentConfig json.RawMessage `json:"currentConfig"`
+	BotID               string          `json:"botId"`
+	Name                string          `json:"name"`
+	Wxid                string          `json:"wxid"`
+	Status              string          `json:"status"`
+	Version             string          `json:"version"`
+	Host                string          `json:"host"`
+	PID                 int             `json:"pid"`
+	StartedAt           string          `json:"startedAt"`
+	ConfigSchemaVersion int             `json:"configSchemaVersion"`
+	LastConfigError     string          `json:"lastConfigError"`
+	CurrentConfig       json.RawMessage `json:"currentConfig"`
 }
 
 type wxbotRecord struct {
-	BotID           string          `json:"botId"`
-	Name            string          `json:"name"`
-	Wxid            string          `json:"wxid"`
-	Status          string          `json:"status"`
-	Version         string          `json:"version"`
-	Host            string          `json:"host"`
-	PID             int             `json:"pid"`
-	Online          bool            `json:"online"`
-	StartedAt       string          `json:"startedAt,omitempty"`
-	LastSeenAt      string          `json:"lastSeenAt,omitempty"`
-	Config          json.RawMessage `json:"config"`
-	CurrentConfig   json.RawMessage `json:"currentConfig"`
-	ConfigUpdatedAt string          `json:"configUpdatedAt,omitempty"`
-	ConfigAppliedAt string          `json:"configAppliedAt,omitempty"`
-	UpdatedAt       string          `json:"updatedAt,omitempty"`
+	BotID               string          `json:"botId"`
+	Name                string          `json:"name"`
+	Wxid                string          `json:"wxid"`
+	Status              string          `json:"status"`
+	Version             string          `json:"version"`
+	Host                string          `json:"host"`
+	PID                 int             `json:"pid"`
+	Online              bool            `json:"online"`
+	StartedAt           string          `json:"startedAt,omitempty"`
+	LastSeenAt          string          `json:"lastSeenAt,omitempty"`
+	Config              json.RawMessage `json:"config"`
+	CurrentConfig       json.RawMessage `json:"currentConfig"`
+	ConfigSchemaVersion int             `json:"configSchemaVersion"`
+	LastConfigError     string          `json:"lastConfigError,omitempty"`
+	ConfigUpdatedAt     string          `json:"configUpdatedAt,omitempty"`
+	ConfigAppliedAt     string          `json:"configAppliedAt,omitempty"`
+	UpdatedAt           string          `json:"updatedAt,omitempty"`
 }
 
 type wxbotConfigUpdateRequest struct {
@@ -49,8 +53,12 @@ type wxbotConfigUpdateRequest struct {
 }
 
 type wxbotConfigAppliedRequest struct {
-	BotID string `json:"botId"`
+	BotID               string `json:"botId"`
+	ConfigSchemaVersion int    `json:"configSchemaVersion"`
+	LastConfigError     string `json:"lastConfigError"`
 }
+
+const wxbotConfigSchemaVersion = 1
 
 func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var req wxbotHeartbeatRequest
@@ -68,20 +76,23 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := nullTime(req.StartedAt)
-	currentConfig := json.RawMessage([]byte("{}"))
+	currentConfig := emptyWxbotConfig()
 	hasCurrentConfig := len(bytes.TrimSpace(req.CurrentConfig)) > 0
+	lastConfigError := strings.TrimSpace(req.LastConfigError)
 	if hasCurrentConfig {
 		var err error
 		currentConfig, err = normalizeWxbotConfig(req.CurrentConfig)
 		if err != nil {
-			fail(w, http.StatusBadRequest, "PARAM_INVALID", err.Error())
-			return
+			hasCurrentConfig = false
+			lastConfigError = err.Error()
+		} else if lastConfigError == "" {
+			lastConfigError = ""
 		}
 	}
 	_, err := s.db.ExecContext(r.Context(), `
 		INSERT INTO wxbot_agents
-			(bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at, config_json, current_config_json, config_updated_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), JSON_OBJECT(), ?, NOW(), NOW())
+			(bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at, config_json, current_config_json, config_schema_version, last_config_error, config_updated_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			wxid = VALUES(wxid),
@@ -92,8 +103,10 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 			started_at = COALESCE(VALUES(started_at), started_at),
 			last_seen_at = NOW(),
 			current_config_json = IF(? = 1, VALUES(current_config_json), current_config_json),
+			config_schema_version = VALUES(config_schema_version),
+			last_config_error = VALUES(last_config_error),
 			updated_at = NOW()
-	`, req.BotID, req.Name, req.Wxid, req.Status, req.Version, req.Host, req.PID, startedAt, string(currentConfig), boolInt(hasCurrentConfig))
+	`, req.BotID, req.Name, req.Wxid, req.Status, req.Version, req.Host, req.PID, startedAt, string(emptyWxbotConfig()), string(currentConfig), effectiveWxbotSchemaVersion(req.ConfigSchemaVersion), lastConfigError, boolInt(hasCurrentConfig))
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save wxbot heartbeat failed")
 		return
@@ -120,8 +133,8 @@ func (s *Server) wxbotConfigForBot(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		_, _ = s.db.ExecContext(r.Context(), `
 			INSERT INTO wxbot_agents (bot_id, status, last_seen_at, config_json, config_updated_at, updated_at)
-			VALUES (?, 'unknown', NOW(), JSON_OBJECT(), NOW(), NOW())
-		`, botID)
+			VALUES (?, 'unknown', NOW(), ?, NOW(), NOW())
+		`, botID, string(emptyWxbotConfig()))
 		record, err = s.wxbotByID(r.Context(), botID)
 	}
 	if err != nil {
@@ -129,10 +142,13 @@ func (s *Server) wxbotConfigForBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]interface{}{
-		"botId":           record.BotID,
-		"config":          record.Config,
-		"currentConfig":   record.CurrentConfig,
-		"configUpdatedAt": record.ConfigUpdatedAt,
+		"botId":               record.BotID,
+		"schemaVersion":       wxbotConfigSchemaVersion,
+		"config":              record.Config,
+		"currentConfig":       record.CurrentConfig,
+		"configSchemaVersion": record.ConfigSchemaVersion,
+		"lastConfigError":     record.LastConfigError,
+		"configUpdatedAt":     record.ConfigUpdatedAt,
 	})
 }
 
@@ -151,13 +167,20 @@ func (s *Server) wxbotConfigApplied(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "SCHEMA_FAILED", "ensure wxbot schema failed")
 		return
 	}
+	if req.ConfigSchemaVersion != 0 && req.ConfigSchemaVersion != wxbotConfigSchemaVersion {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "unsupported wxbot config schema version")
+		return
+	}
+	lastConfigError := strings.TrimSpace(req.LastConfigError)
 	_, err := s.db.ExecContext(r.Context(), `
-		INSERT INTO wxbot_agents (bot_id, status, last_seen_at, config_json, config_updated_at, config_applied_at, updated_at)
-		VALUES (?, 'unknown', NOW(), JSON_OBJECT(), NOW(), NOW(), NOW())
+		INSERT INTO wxbot_agents (bot_id, status, last_seen_at, config_json, config_schema_version, last_config_error, config_updated_at, config_applied_at, updated_at)
+		VALUES (?, 'unknown', NOW(), ?, ?, ?, NOW(), IF(? = '', NOW(), NULL), NOW())
 		ON DUPLICATE KEY UPDATE
-			config_applied_at = NOW(),
+			config_schema_version = VALUES(config_schema_version),
+			last_config_error = VALUES(last_config_error),
+			config_applied_at = IF(? = '', NOW(), config_applied_at),
 			updated_at = NOW()
-	`, req.BotID)
+	`, req.BotID, string(emptyWxbotConfig()), effectiveWxbotSchemaVersion(req.ConfigSchemaVersion), lastConfigError, lastConfigError, lastConfigError)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save wxbot config applied failed")
 		return
@@ -177,7 +200,8 @@ func (s *Server) wxbotList(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at,
-		       COALESCE(config_json, JSON_OBJECT()), COALESCE(current_config_json, JSON_OBJECT()), config_updated_at, config_applied_at, updated_at
+		       COALESCE(config_json, JSON_OBJECT()), COALESCE(current_config_json, JSON_OBJECT()),
+		       config_schema_version, COALESCE(last_config_error, ''), config_updated_at, config_applied_at, updated_at
 		FROM wxbot_agents
 		ORDER BY last_seen_at DESC, bot_id
 	`)
@@ -218,10 +242,13 @@ func (s *Server) wxbotConfigDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]interface{}{
-		"botId":           record.BotID,
-		"config":          record.Config,
-		"currentConfig":   record.CurrentConfig,
-		"configUpdatedAt": record.ConfigUpdatedAt,
+		"botId":               record.BotID,
+		"schemaVersion":       wxbotConfigSchemaVersion,
+		"config":              record.Config,
+		"currentConfig":       record.CurrentConfig,
+		"configSchemaVersion": record.ConfigSchemaVersion,
+		"lastConfigError":     record.LastConfigError,
+		"configUpdatedAt":     record.ConfigUpdatedAt,
 	})
 }
 
@@ -263,10 +290,13 @@ func (s *Server) wxbotUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]interface{}{
-		"botId":           record.BotID,
-		"config":          record.Config,
-		"currentConfig":   record.CurrentConfig,
-		"configUpdatedAt": record.ConfigUpdatedAt,
+		"botId":               record.BotID,
+		"schemaVersion":       wxbotConfigSchemaVersion,
+		"config":              record.Config,
+		"currentConfig":       record.CurrentConfig,
+		"configSchemaVersion": record.ConfigSchemaVersion,
+		"lastConfigError":     record.LastConfigError,
+		"configUpdatedAt":     record.ConfigUpdatedAt,
 	})
 }
 
@@ -275,20 +305,28 @@ func (s *Server) ensureWxbotSchema(ctx context.Context) error {
 		return err
 	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM information_schema.columns
-		WHERE table_schema = DATABASE()
-		  AND table_name = 'wxbot_agents'
-		  AND column_name = 'current_config_json'
-	`).Scan(&count)
-	if err != nil {
-		return err
+	for _, column := range []struct{ name, ddl string }{
+		{"current_config_json", `ALTER TABLE wxbot_agents ADD COLUMN current_config_json JSON NULL AFTER config_json`},
+		{"config_schema_version", `ALTER TABLE wxbot_agents ADD COLUMN config_schema_version INT NOT NULL DEFAULT 1 AFTER current_config_json`},
+		{"last_config_error", `ALTER TABLE wxbot_agents ADD COLUMN last_config_error TEXT NULL AFTER config_schema_version`},
+	} {
+		err := s.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.columns
+			WHERE table_schema = DATABASE()
+			  AND table_name = 'wxbot_agents'
+			  AND column_name = ?
+		`, column.name).Scan(&count)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := s.db.ExecContext(ctx, column.ddl); err != nil {
+				return err
+			}
+		}
 	}
-	if count == 0 {
-		_, err = s.db.ExecContext(ctx, `ALTER TABLE wxbot_agents ADD COLUMN current_config_json JSON NULL AFTER config_json`)
-	}
-	return err
+	return nil
 }
 
 const wxbotSchemaSQL = `
@@ -304,6 +342,8 @@ CREATE TABLE IF NOT EXISTS wxbot_agents (
   last_seen_at DATETIME NULL,
   config_json JSON NOT NULL,
   current_config_json JSON NULL,
+  config_schema_version INT NOT NULL DEFAULT 1,
+  last_config_error TEXT NULL,
   config_updated_at DATETIME NULL,
   config_applied_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -318,7 +358,8 @@ func (s *Server) wxbotByID(ctx context.Context, botID string) (wxbotRecord, erro
 	}
 	row := s.db.QueryRowContext(ctx, `
 		SELECT bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at,
-		       COALESCE(config_json, JSON_OBJECT()), COALESCE(current_config_json, JSON_OBJECT()), config_updated_at, config_applied_at, updated_at
+		       COALESCE(config_json, JSON_OBJECT()), COALESCE(current_config_json, JSON_OBJECT()),
+		       config_schema_version, COALESCE(last_config_error, ''), config_updated_at, config_applied_at, updated_at
 		FROM wxbot_agents
 		WHERE bot_id = ?
 	`, botID)
@@ -333,6 +374,7 @@ func scanWxbot(scanner wxbotScanner) (wxbotRecord, error) {
 	var item wxbotRecord
 	var startedAt, lastSeenAt, configUpdatedAt, configAppliedAt, updatedAt sql.NullTime
 	var configRaw, currentConfigRaw []byte
+	var lastConfigError string
 	if err := scanner.Scan(
 		&item.BotID,
 		&item.Name,
@@ -345,6 +387,8 @@ func scanWxbot(scanner wxbotScanner) (wxbotRecord, error) {
 		&lastSeenAt,
 		&configRaw,
 		&currentConfigRaw,
+		&item.ConfigSchemaVersion,
+		&lastConfigError,
 		&configUpdatedAt,
 		&configAppliedAt,
 		&updatedAt,
@@ -358,13 +402,17 @@ func scanWxbot(scanner wxbotScanner) (wxbotRecord, error) {
 	item.UpdatedAt = formatNullTime(updatedAt)
 	item.Online = lastSeenAt.Valid && time.Since(lastSeenAt.Time) <= 90*time.Second
 	if len(configRaw) == 0 {
-		configRaw = []byte("{}")
+		configRaw = emptyWxbotConfig()
 	}
 	if len(currentConfigRaw) == 0 {
-		currentConfigRaw = []byte("{}")
+		currentConfigRaw = emptyWxbotConfig()
 	}
-	item.Config = json.RawMessage(configRaw)
-	item.CurrentConfig = json.RawMessage(currentConfigRaw)
+	item.Config = json.RawMessage(versionedWxbotConfigRaw(configRaw))
+	item.CurrentConfig = json.RawMessage(versionedWxbotConfigRaw(currentConfigRaw))
+	if item.ConfigSchemaVersion == 0 {
+		item.ConfigSchemaVersion = wxbotConfigSchemaVersion
+	}
+	item.LastConfigError = lastConfigError
 	return item, nil
 }
 
@@ -383,33 +431,30 @@ func cleanBotID(value string) string {
 }
 
 func normalizeWxbotConfig(raw json.RawMessage) (json.RawMessage, error) {
-	if len(raw) == 0 {
-		return json.RawMessage("{}"), nil
-	}
-	var cfg map[string]interface{}
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return nil, errors.New("config must be a json object")
+	cfg, err := unwrapWxbotConfig(raw)
+	if err != nil {
+		return nil, err
 	}
 	schema := wxbotConfigSchema()
 	result := make(map[string]interface{}, len(cfg))
 	for section, value := range cfg {
 		fields, ok := schema[section]
 		if !ok {
-			return nil, errors.New("config contains unsupported section")
+			return nil, fmt.Errorf("%s is unsupported", section)
 		}
 		values, ok := value.(map[string]interface{})
 		if !ok {
-			return nil, errors.New("config section must be a json object")
+			return nil, fmt.Errorf("%s must be a json object", section)
 		}
 		normalized := make(map[string]interface{}, len(values))
 		for field, fieldValue := range values {
 			spec, ok := fields[field]
 			if !ok {
-				return nil, errors.New("config contains unsupported field")
+				return nil, fmt.Errorf("%s.%s is unsupported", section, field)
 			}
 			next, err := normalizeWxbotConfigValue(fieldValue, spec)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("%s.%s %w", section, field, err)
 			}
 			normalized[field] = next
 		}
@@ -423,7 +468,10 @@ func normalizeWxbotConfig(raw json.RawMessage) (json.RawMessage, error) {
 	if err := validateWxbotConfig(result); err != nil {
 		return nil, err
 	}
-	encoded, _ := json.Marshal(result)
+	encoded, _ := json.Marshal(map[string]interface{}{
+		"schemaVersion": wxbotConfigSchemaVersion,
+		"config":        result,
+	})
 	return encoded, nil
 }
 
@@ -434,7 +482,7 @@ type wxbotConfigFieldSpec struct {
 
 func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 	stringSpec := wxbotConfigFieldSpec{kind: "string"}
-	stringListSpec := wxbotConfigFieldSpec{kind: "stringList"}
+	stringListSpec := wxbotConfigFieldSpec{kind: "stringList", defaultValue: []string{}}
 	summaryJobsSpec := wxbotConfigFieldSpec{kind: "summaryJobs", defaultValue: []map[string]string{}}
 	aiModelSpec := func(defaultValue string) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "aiModel", defaultValue: defaultValue}
@@ -519,27 +567,29 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"jobs":    summaryJobsSpec,
 		},
 		"ai": {
-			"enabled":                 boolSpec(false),
-			"group_whitelist":         stringListSpec,
-			"auto_memory_enabled":     boolSpec(true),
-			"reply_enabled":           boolSpec(true),
-			"api_base_url":            stringSpec,
-			"api_key":                 stringSpec,
-			"reply_model":             aiModelSpec("gpt-5.4-mini"),
-			"summary_model":           aiModelSpec("gpt-5.4-mini"),
-			"merge_model":             aiModelSpec("gpt-5.5"),
-			"manual_deep_model":       aiModelSpec("gpt-5.6-luna"),
-			"scan_interval_seconds":   positiveIntSpec(300),
-			"segment_min_messages":    positiveIntSpec(30),
-			"segment_quiet_seconds":   positiveIntSpec(600),
-			"segment_stale_seconds":   positiveIntSpec(21600),
-			"profile_min_segments":    positiveIntSpec(3),
-			"max_segment_messages":    positiveIntSpec(800),
-			"reply_context_messages":  positiveIntSpec(100),
-			"worker_queue_size":       positiveIntSpec(200),
-			"reply_timeout_seconds":   positiveIntSpec(20),
-			"summary_timeout_seconds": positiveIntSpec(180),
-			"merge_timeout_seconds":   positiveIntSpec(300),
+			"enabled":                      boolSpec(false),
+			"group_whitelist":              stringListSpec,
+			"mention_aliases":              stringListSpec,
+			"auto_memory_enabled":          boolSpec(true),
+			"reply_enabled":                boolSpec(true),
+			"takeover_recruitment_enabled": boolSpec(false),
+			"api_base_url":                 stringSpec,
+			"api_key":                      stringSpec,
+			"reply_model":                  aiModelSpec("gpt-5.4-mini"),
+			"summary_model":                aiModelSpec("gpt-5.4-mini"),
+			"merge_model":                  aiModelSpec("gpt-5.5"),
+			"manual_deep_model":            aiModelSpec("gpt-5.6-luna"),
+			"scan_interval_seconds":        positiveIntSpec(300),
+			"segment_min_messages":         positiveIntSpec(30),
+			"segment_quiet_seconds":        positiveIntSpec(600),
+			"segment_stale_seconds":        positiveIntSpec(21600),
+			"profile_min_segments":         positiveIntSpec(3),
+			"max_segment_messages":         positiveIntSpec(800),
+			"reply_context_messages":       positiveIntSpec(100),
+			"worker_queue_size":            positiveIntSpec(200),
+			"reply_timeout_seconds":        positiveIntSpec(20),
+			"summary_timeout_seconds":      positiveIntSpec(180),
+			"merge_timeout_seconds":        positiveIntSpec(300),
 		},
 		"wxbot_control": {
 			"enabled":              boolSpec(true),
@@ -562,6 +612,55 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"keep_local":        boolSpec(false),
 		},
 	}
+}
+
+func unwrapWxbotConfig(raw json.RawMessage) (map[string]interface{}, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return map[string]interface{}{}, nil
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, errors.New("config must be a json object")
+	}
+	if versionRaw, ok := root["schemaVersion"]; ok {
+		var version int
+		if err := json.Unmarshal(versionRaw, &version); err != nil || version != wxbotConfigSchemaVersion {
+			return nil, errors.New("unsupported wxbot config schema version")
+		}
+		configRaw := root["config"]
+		if len(bytes.TrimSpace(configRaw)) == 0 || bytes.Equal(bytes.TrimSpace(configRaw), []byte("null")) {
+			return map[string]interface{}{}, nil
+		}
+		var cfg map[string]interface{}
+		if err := json.Unmarshal(configRaw, &cfg); err != nil {
+			return nil, errors.New("config.config must be a json object")
+		}
+		return cfg, nil
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, errors.New("config must be a json object")
+	}
+	return cfg, nil
+}
+
+func emptyWxbotConfig() json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{"schemaVersion":%d,"config":{}}`, wxbotConfigSchemaVersion))
+}
+
+func versionedWxbotConfigRaw(raw []byte) []byte {
+	normalized, err := normalizeWxbotConfig(raw)
+	if err != nil {
+		return raw
+	}
+	return normalized
+}
+
+func effectiveWxbotSchemaVersion(version int) int {
+	if version == 0 {
+		return wxbotConfigSchemaVersion
+	}
+	return version
 }
 
 func normalizeWxbotConfigValue(value interface{}, spec wxbotConfigFieldSpec) (interface{}, error) {

@@ -24,6 +24,42 @@ type takeoverListRow struct {
 	HasJoined      int   `gorm:"column:has_joined"`
 }
 
+const (
+	recruitmentStatusRecruiting = "recruiting"
+	recruitmentStatusFull       = "full"
+	recruitmentStatusClosed     = "closed"
+	recruitmentStatusExpired    = "expired"
+	recruitmentStatusDeleted    = "deleted"
+	recruitmentStatusNotFound   = "not_found"
+)
+
+type takeoverRecruitmentCandidateDTO struct {
+	ID               uint64 `json:"id"`
+	Title            string `json:"title"`
+	SummaryName      string `json:"summaryName"`
+	Description      string `json:"description"`
+	ScheduleText     string `json:"scheduleText"`
+	ScheduleType     uint8  `json:"scheduleType"`
+	StartDate        string `json:"startDate"`
+	EndDate          string `json:"endDate"`
+	PlayTime         string `json:"playTime"`
+	JoinedCount      int64  `json:"joinedCount"`
+	ParticipantLimit uint   `json:"participantLimit"`
+	MissingCount     int64  `json:"missingCount"`
+	TakeoverState    uint8  `json:"takeoverState"`
+}
+
+type takeoverRecruitmentStatusDTO struct {
+	ID               uint64 `json:"id"`
+	Title            string `json:"title,omitempty"`
+	CanRecruit       bool   `json:"canRecruit"`
+	Status           string `json:"status"`
+	StatusLabel      string `json:"statusLabel"`
+	JoinedCount      int64  `json:"joinedCount"`
+	ParticipantLimit uint   `json:"participantLimit"`
+	MissingCount     int64  `json:"missingCount"`
+}
+
 func (h *Handler) ListTakeovers(c *gin.Context) {
 	user, _ := currentUser(c)
 	now := time.Now()
@@ -141,6 +177,137 @@ func (h *Handler) ListTakeoverSummaries(c *gin.Context) {
 		})
 	}
 	ok(c, "success", gin.H{"total": len(list), "list": list})
+}
+
+func (h *Handler) ListTakeoverRecruitmentCandidates(c *gin.Context) {
+	now := time.Now()
+	if err := syncExpiredTakeovers(h.db, now); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	page := positiveInt(c.Query("page"), 1)
+	pageSize := positiveInt(c.Query("pageSize"), 100)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	filter := "ttw_takeover.is_deleted = ? AND ttw_takeover.takeover_state = ? AND ttw_takeover.participant_limit > COALESCE(j.joined_count, 0)"
+	var total int64
+	if err := h.takeoverListQuery(0).
+		Where(filter, false, model.TakeoverStateNormal).
+		Count(&total).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var rows []takeoverListRow
+	if err := applyTakeoverRecommendOrder(
+		h.takeoverListQuery(0).Where(filter, false, model.TakeoverStateNormal),
+		now,
+	).Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	list := make([]takeoverRecruitmentCandidateDTO, 0, len(rows))
+	for _, row := range rows {
+		list = append(list, takeoverRecruitmentCandidate(row))
+	}
+	ok(c, "success", gin.H{
+		"page":     page,
+		"pageSize": pageSize,
+		"total":    total,
+		"list":     list,
+	})
+}
+
+func (h *Handler) GetTakeoverRecruitmentStatus(c *gin.Context) {
+	takeoverID, okID := pathUint64(c, "takeoverId")
+	if !okID {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
+		return
+	}
+
+	now := time.Now()
+	if err := syncExpiredTakeovers(h.db, now); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	var row takeoverListRow
+	if err := h.takeoverListQuery(0).Where("ttw_takeover.id = ?", takeoverID).First(&row).Error; err != nil {
+		if isNotFound(err) {
+			ok(c, "success", takeoverRecruitmentStatus(model.Takeover{ID: takeoverID}, 0, false, now))
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+
+	ok(c, "success", takeoverRecruitmentStatus(row.Takeover, row.JoinedCount, true, now))
+}
+
+func takeoverRecruitmentCandidate(row takeoverListRow) takeoverRecruitmentCandidateDTO {
+	t := row.Takeover
+	return takeoverRecruitmentCandidateDTO{
+		ID:               t.ID,
+		Title:            t.Title,
+		SummaryName:      firstNonEmpty(stringValue(t.SummaryName), cleanSummaryName(t.Title)),
+		Description:      stringValue(t.Description),
+		ScheduleText:     scheduleText(t),
+		ScheduleType:     t.ScheduleType,
+		StartDate:        stringValue(dateString(t.StartDate)),
+		EndDate:          stringValue(dateString(t.EndDate)),
+		PlayTime:         shortTime(t.PlayTime),
+		JoinedCount:      row.JoinedCount,
+		ParticipantLimit: t.ParticipantLimit,
+		MissingCount:     missingTakeoverParticipants(t, row.JoinedCount),
+		TakeoverState:    t.TakeoverState,
+	}
+}
+
+func takeoverRecruitmentStatus(t model.Takeover, joinedCount int64, found bool, now time.Time) takeoverRecruitmentStatusDTO {
+	result := takeoverRecruitmentStatusDTO{
+		ID:               t.ID,
+		JoinedCount:      joinedCount,
+		ParticipantLimit: t.ParticipantLimit,
+		MissingCount:     missingTakeoverParticipants(t, joinedCount),
+	}
+	switch {
+	case !found:
+		result.Status = recruitmentStatusNotFound
+		result.StatusLabel = "接龙不存在"
+	case t.IsDeleted:
+		result.Status = recruitmentStatusDeleted
+		result.StatusLabel = "接龙已删除"
+	case isTakeoverExpiredAt(t, now):
+		result.Title = t.Title
+		result.Status = recruitmentStatusExpired
+		result.StatusLabel = "接龙已过期"
+	case t.TakeoverState != model.TakeoverStateNormal:
+		result.Title = t.Title
+		result.Status = recruitmentStatusClosed
+		result.StatusLabel = "已停止招募"
+	case t.ParticipantLimit == 0 || joinedCount >= int64(t.ParticipantLimit):
+		result.Title = t.Title
+		result.Status = recruitmentStatusFull
+		result.StatusLabel = "已满员"
+	default:
+		result.Title = t.Title
+		result.CanRecruit = true
+		result.Status = recruitmentStatusRecruiting
+		result.StatusLabel = "招募中"
+	}
+	return result
+}
+
+func missingTakeoverParticipants(t model.Takeover, joinedCount int64) int64 {
+	missing := int64(t.ParticipantLimit) - joinedCount
+	if missing < 0 {
+		return 0
+	}
+	return missing
 }
 
 func (h *Handler) takeoverListQuery(userID uint64) *gorm.DB {

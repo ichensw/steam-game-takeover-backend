@@ -2,6 +2,7 @@ package wechatadmin
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -30,6 +31,7 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 			"group_whitelist": ["47759534463@chatroom"],
 			"auto_memory_enabled": false,
 			"reply_enabled": false,
+			"takeover_recruitment_enabled": true,
 			"api_base_url": "",
 			"api_key": "",
 			"reply_model": "",
@@ -53,10 +55,17 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var cfg map[string]map[string]interface{}
-	if err := json.Unmarshal(normalized, &cfg); err != nil {
+	var envelope struct {
+		SchemaVersion int                               `json:"schemaVersion"`
+		Config        map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
 		t.Fatal(err)
 	}
+	if envelope.SchemaVersion != wxbotConfigSchemaVersion {
+		t.Fatalf("schemaVersion = %d, want %d", envelope.SchemaVersion, wxbotConfigSchemaVersion)
+	}
+	cfg := envelope.Config
 	if got := cfg["ai"]["reply_model"]; got != "gpt-5.4-mini" {
 		t.Fatalf("reply_model = %#v, want default", got)
 	}
@@ -72,6 +81,12 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if got := cfg["ai"]["group_whitelist"].([]interface{})[0]; got != "47759534463@chatroom" {
 		t.Fatalf("group_whitelist = %#v, want configured room", got)
 	}
+	if got := cfg["ai"]["takeover_recruitment_enabled"]; got != true {
+		t.Fatalf("takeover_recruitment_enabled = %#v, want true", got)
+	}
+	if _, ok := cfg["ai"]["mention_aliases"]; !ok {
+		t.Fatal("ai.mention_aliases default missing")
+	}
 	if got := cfg["ai"]["scan_interval_seconds"]; got != float64(300) {
 		t.Fatalf("scan_interval_seconds = %#v, want default", got)
 	}
@@ -80,8 +95,60 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	}
 }
 
+func TestNormalizeWxbotConfigAcceptsVersionedPayload(t *testing.T) {
+	normalized, err := normalizeWxbotConfig(json.RawMessage(`{"schemaVersion":1,"config":{"bot":{"name":"Bot","group_whitelist":["a@chatroom"]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := parseBotGroupWhitelist(normalized); !ok {
+		t.Fatal("versioned config should still be readable by whitelist parser")
+	}
+}
+
+func TestNormalizeWxbotConfigRejectsFutureVersion(t *testing.T) {
+	_, err := normalizeWxbotConfig(json.RawMessage(`{"schemaVersion":2,"config":{}}`))
+	if err == nil {
+		t.Fatal("expected future schema version to be rejected")
+	}
+}
+
+func TestWxbotConfigSchemaFileMatchesNormalizer(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/contracts/wxbot-config.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		SchemaVersion int                          `json:"schemaVersion"`
+		Sections      map[string]map[string]string `json:"sections"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.SchemaVersion != wxbotConfigSchemaVersion {
+		t.Fatalf("schema file version = %d, want %d", doc.SchemaVersion, wxbotConfigSchemaVersion)
+	}
+	schema := wxbotConfigSchema()
+	if len(doc.Sections) != len(schema) {
+		t.Fatalf("schema sections = %d, want %d", len(doc.Sections), len(schema))
+	}
+	for section, fields := range schema {
+		docFields, ok := doc.Sections[section]
+		if !ok {
+			t.Fatalf("section %s missing from schema file", section)
+		}
+		if len(docFields) != len(fields) {
+			t.Fatalf("section %s fields = %d, want %d", section, len(docFields), len(fields))
+		}
+		for field, spec := range fields {
+			if got := docFields[field]; got != spec.kind {
+				t.Fatalf("%s.%s kind = %q, want %q", section, field, got, spec.kind)
+			}
+		}
+	}
+}
+
 func TestParseBotGroupWhitelist(t *testing.T) {
-	values, ok := parseBotGroupWhitelist([]byte(`{"bot":{"group_whitelist":["a@chatroom","b@chatroom"]}}`))
+	values, ok := parseBotGroupWhitelist([]byte(`{"schemaVersion":1,"config":{"bot":{"group_whitelist":["a@chatroom","b@chatroom"]}}}`))
 	if !ok || len(values) != 2 || values[0] != "a@chatroom" || values[1] != "b@chatroom" {
 		t.Fatalf("whitelist = %#v, ok=%v", values, ok)
 	}

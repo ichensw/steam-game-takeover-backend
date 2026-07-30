@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -251,25 +250,24 @@ func botGroupAllowed(roomID string, allowed map[string]struct{}) bool {
 }
 
 func parseBotGroupWhitelist(raw []byte) ([]string, bool) {
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &root); err != nil {
+	root, err := unwrapWxbotConfig(raw)
+	if err != nil {
 		return nil, false
 	}
-	botRaw, ok := root["bot"]
+	bot, ok := root["bot"].(map[string]interface{})
 	if !ok {
 		return nil, false
 	}
-	var bot map[string]json.RawMessage
-	if err := json.Unmarshal(botRaw, &bot); err != nil {
-		return nil, false
-	}
-	whitelistRaw, ok := bot["group_whitelist"]
+	items, ok := bot["group_whitelist"].([]interface{})
 	if !ok {
+		if values, ok := bot["group_whitelist"].([]string); ok {
+			return values, true
+		}
 		return nil, false
 	}
-	var whitelist []string
-	if err := json.Unmarshal(whitelistRaw, &whitelist); err != nil {
-		return nil, false
+	whitelist := make([]string, 0, len(items))
+	for _, item := range items {
+		whitelist = append(whitelist, strings.TrimSpace(toString(item)))
 	}
 	return whitelist, true
 }

@@ -894,7 +894,10 @@ func (s *Server) latestAIConfig(ctx context.Context) map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{}
 	}
-	root, _ := parseJSONValue(string(raw), map[string]interface{}{}).(map[string]interface{})
+	root, err := unwrapWxbotConfig(raw)
+	if err != nil {
+		return map[string]interface{}{}
+	}
 	ai, _ := root["ai"].(map[string]interface{})
 	if ai == nil {
 		return map[string]interface{}{}

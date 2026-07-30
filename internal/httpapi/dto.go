@@ -320,6 +320,10 @@ func takeoverStatusLabel(t model.Takeover, joinedCount int64) string {
 }
 
 func isTakeoverExpired(t model.Takeover) bool {
+	return isTakeoverExpiredAt(t, time.Now())
+}
+
+func isTakeoverExpiredAt(t model.Takeover, now time.Time) bool {
 	var endDate *time.Time
 	switch t.ScheduleType {
 	case model.ScheduleSpecifiedDate:
@@ -336,7 +340,7 @@ func isTakeoverExpired(t model.Takeover) bool {
 	if err != nil {
 		return false
 	}
-	return time.Now().After(endAt)
+	return now.After(endAt)
 }
 
 func combineDateAndPlayTime(date time.Time, playTime string) (time.Time, error) {
