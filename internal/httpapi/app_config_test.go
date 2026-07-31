@@ -92,3 +92,60 @@ func TestValidateWechatSummaryMaxMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeAIExtractProvider(t *testing.T) {
+	for input, want := range map[string]string{
+		"":       aiExtractProviderGPT,
+		"GPT":    aiExtractProviderGPT,
+		"openai": aiExtractProviderGPT,
+		"豆包":     aiExtractProviderDoubao,
+		"doubao": aiExtractProviderDoubao,
+	} {
+		got, err := normalizeAIExtractProvider(input)
+		if err != nil || got != want {
+			t.Fatalf("normalizeAIExtractProvider(%q) = %q, %v; want %q", input, got, err, want)
+		}
+	}
+	if _, err := normalizeAIExtractProvider("other"); err == nil {
+		t.Fatal("expected unsupported provider error")
+	}
+}
+
+func TestIsDoubaoAPIBaseURL(t *testing.T) {
+	if !isDoubaoAPIBaseURL(doubaoAPIBaseURL + "/chat/completions") {
+		t.Fatal("expected Ark chat completion URL to resolve as Doubao")
+	}
+	if isDoubaoAPIBaseURL("https://gpt.example.com/v1") {
+		t.Fatal("unexpected GPT endpoint classified as Doubao")
+	}
+}
+
+func TestInferAIExtractProviderMigratesLegacyArkConfig(t *testing.T) {
+	if got := inferAIExtractProvider("", doubaoAPIBaseURL); got != aiExtractProviderDoubao {
+		t.Fatalf("legacy Ark config provider = %q, want %q", got, aiExtractProviderDoubao)
+	}
+	if got := inferAIExtractProvider("gpt", doubaoAPIBaseURL); got != aiExtractProviderGPT {
+		t.Fatalf("explicit provider = %q, want %q", got, aiExtractProviderGPT)
+	}
+}
+
+func TestNormalizeAIExtractModel(t *testing.T) {
+	for _, tt := range []struct {
+		provider string
+		model    string
+		want     string
+	}{
+		{aiExtractProviderGPT, "gpt-5.5", "gpt-5.5"},
+		{aiExtractProviderGPT, "", "gpt-5.4-mini"},
+		{aiExtractProviderDoubao, "doubao-seed-2-1-turbo-260628", "doubao-seed-2-1-turbo-260628"},
+		{aiExtractProviderDoubao, "", "doubao-seed-2-0-mini-260428"},
+	} {
+		got, err := normalizeAIExtractModel(tt.provider, tt.model)
+		if err != nil || got != tt.want {
+			t.Fatalf("normalizeAIExtractModel(%q, %q) = %q, %v; want %q", tt.provider, tt.model, got, err, tt.want)
+		}
+	}
+	if _, err := normalizeAIExtractModel(aiExtractProviderDoubao, "gpt-5.5"); err == nil {
+		t.Fatal("expected provider/model mismatch to fail")
+	}
+}

@@ -19,7 +19,28 @@ const (
 	defaultWechatSummaryMaxMessages    = 1000
 	minWechatSummaryMaxMessages        = 1
 	maxWechatSummaryMaxMessages        = 10000
+	aiExtractProviderGPT               = "gpt"
+	aiExtractProviderDoubao            = "doubao"
+	doubaoAPIBaseURL                   = "https://ark.cn-beijing.volces.com/api/v3"
 )
+
+var aiExtractModelDefaults = map[string]string{
+	aiExtractProviderGPT:    "gpt-5.4-mini",
+	aiExtractProviderDoubao: "doubao-seed-2-0-mini-260428",
+}
+
+var aiExtractModels = map[string]map[string]struct{}{
+	aiExtractProviderGPT: {
+		"gpt-5.4-mini": {},
+		"gpt-5.5":      {},
+		"gpt-5.2":      {},
+	},
+	aiExtractProviderDoubao: {
+		"doubao-seed-2-0-mini-260428":  {},
+		"doubao-seed-2-1-turbo-260628": {},
+		"doubao-seed-2-1-pro-260628":   {},
+	},
+}
 
 func (h *Handler) publishTakeoverEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(h.appConfigValue(model.AppConfigPublishTakeoverEnabled))) {
@@ -68,15 +89,118 @@ func (h *Handler) aiExtractEnabled() bool {
 }
 
 func (h *Handler) aiExtractAPIKey() string {
-	return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractAPIKey))
+	if h.aiExtractProvider() == aiExtractProviderDoubao {
+		return h.aiExtractDoubaoAPIKey()
+	}
+	return h.aiExtractGPTAPIKey()
 }
 
 func (h *Handler) aiExtractBaseURL() string {
-	return strings.TrimRight(strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractBaseURL)), "/")
+	if h.aiExtractProvider() == aiExtractProviderDoubao {
+		return doubaoAPIBaseURL
+	}
+	return h.aiExtractGPTBaseURL()
+}
+
+func (h *Handler) aiExtractProvider() string {
+	return inferAIExtractProvider(
+		h.appConfigValue(model.AppConfigAIExtractProvider),
+		h.appConfigValue(model.AppConfigAIExtractBaseURL),
+	)
+}
+
+func inferAIExtractProvider(configured string, legacyBaseURL string) string {
+	if strings.TrimSpace(configured) != "" {
+		if provider, err := normalizeAIExtractProvider(configured); err == nil {
+			return provider
+		}
+	}
+	if isDoubaoAPIBaseURL(legacyBaseURL) {
+		return aiExtractProviderDoubao
+	}
+	return aiExtractProviderGPT
+}
+
+func (h *Handler) aiExtractGPTBaseURL() string {
+	baseURL := normalizeAIBaseURL(h.appConfigValue(model.AppConfigAIExtractGPTBaseURL))
+	if baseURL != "" {
+		return baseURL
+	}
+	legacyBaseURL := h.appConfigValue(model.AppConfigAIExtractBaseURL)
+	if h.aiExtractProvider() == aiExtractProviderGPT && !isDoubaoAPIBaseURL(legacyBaseURL) {
+		return normalizeAIBaseURL(legacyBaseURL)
+	}
+	return ""
+}
+
+func (h *Handler) aiExtractGPTAPIKey() string {
+	apiKey := strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractGPTAPIKey))
+	if apiKey != "" {
+		return apiKey
+	}
+	legacyBaseURL := h.appConfigValue(model.AppConfigAIExtractBaseURL)
+	if h.aiExtractProvider() == aiExtractProviderGPT && !isDoubaoAPIBaseURL(legacyBaseURL) {
+		return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractAPIKey))
+	}
+	return ""
+}
+
+func (h *Handler) aiExtractDoubaoAPIKey() string {
+	apiKey := strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractDoubaoAPIKey))
+	if apiKey != "" {
+		return apiKey
+	}
+	if h.aiExtractProvider() == aiExtractProviderDoubao && isDoubaoAPIBaseURL(h.appConfigValue(model.AppConfigAIExtractBaseURL)) {
+		return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractAPIKey))
+	}
+	return ""
+}
+
+func normalizeAIExtractProvider(value string) (string, error) {
+	provider := strings.ToLower(strings.TrimSpace(value))
+	if provider == "" {
+		return aiExtractProviderGPT, nil
+	}
+	switch provider {
+	case aiExtractProviderGPT, "openai", "chatgpt":
+		return aiExtractProviderGPT, nil
+	case aiExtractProviderDoubao, "dou bao", "豆包":
+		return aiExtractProviderDoubao, nil
+	default:
+		return "", errors.New("aiExtractProvider must be gpt or doubao")
+	}
+}
+
+func normalizeAIBaseURL(value string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(value), "/")
+	return strings.TrimSuffix(baseURL, "/chat/completions")
+}
+
+func isDoubaoAPIBaseURL(value string) bool {
+	return strings.EqualFold(normalizeAIBaseURL(value), doubaoAPIBaseURL)
+}
+
+func normalizeAIExtractModel(provider string, value string) (string, error) {
+	normalizedProvider, err := normalizeAIExtractProvider(provider)
+	if err != nil {
+		return "", err
+	}
+	modelName := strings.TrimSpace(value)
+	if modelName == "" {
+		return aiExtractModelDefaults[normalizedProvider], nil
+	}
+	if _, ok := aiExtractModels[normalizedProvider][modelName]; !ok {
+		return "", errors.New("aiExtractModel is not available for the selected provider")
+	}
+	return modelName, nil
 }
 
 func (h *Handler) aiExtractModel() string {
-	return strings.TrimSpace(h.appConfigValue(model.AppConfigAIExtractModel))
+	modelName, err := normalizeAIExtractModel(h.aiExtractProvider(), h.appConfigValue(model.AppConfigAIExtractModel))
+	if err != nil {
+		return aiExtractModelDefaults[h.aiExtractProvider()]
+	}
+	return modelName
 }
 
 func parseDailyTakeoverExpirationDays(raw string) int {
@@ -216,6 +340,10 @@ func (h *Handler) AdminGetSettings(c *gin.Context) {
 		"kookVerifyToken":             h.kookVerifyToken(),
 		"kookEncryptKey":              h.kookEncryptKey(),
 		"aiExtractEnabled":            h.aiExtractEnabled(),
+		"aiExtractProvider":           h.aiExtractProvider(),
+		"aiExtractGptBaseUrl":         h.aiExtractGPTBaseURL(),
+		"aiExtractGptApiKey":          h.aiExtractGPTAPIKey(),
+		"aiExtractDoubaoApiKey":       h.aiExtractDoubaoAPIKey(),
 		"aiExtractApiKey":             h.aiExtractAPIKey(),
 		"aiExtractBaseUrl":            h.aiExtractBaseURL(),
 		"aiExtractModel":              h.aiExtractModel(),
@@ -241,6 +369,10 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		KookVerifyToken             *string                       `json:"kookVerifyToken"`
 		KookEncryptKey              *string                       `json:"kookEncryptKey"`
 		AIExtractEnabled            *bool                         `json:"aiExtractEnabled"`
+		AIExtractProvider           *string                       `json:"aiExtractProvider"`
+		AIExtractGPTBaseURL         *string                       `json:"aiExtractGptBaseUrl"`
+		AIExtractGPTAPIKey          *string                       `json:"aiExtractGptApiKey"`
+		AIExtractDoubaoAPIKey       *string                       `json:"aiExtractDoubaoApiKey"`
 		AIExtractAPIKey             *string                       `json:"aiExtractApiKey"`
 		AIExtractBaseURL            *string                       `json:"aiExtractBaseUrl"`
 		AIExtractModel              *string                       `json:"aiExtractModel"`
@@ -258,7 +390,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid request")
 		return
 	}
-	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil && req.WechatSummaryMaxMessages == nil && req.WechatSummaryPrompt == nil && req.WechatSummaryStyle == nil && req.WechatSummaryModel == nil && req.WechatSummaryCompareModels == nil && req.WechatSummaryAutoSend == nil && req.WechatSummaryAutoDaily == nil && req.WechatSummaryDailySchedules == nil {
+	if req.PublishTakeoverEnabled == nil && req.UAPIKey == nil && req.SteamWebAPIKey == nil && req.KookBotToken == nil && req.KookGuildID == nil && req.KookVerifyToken == nil && req.KookEncryptKey == nil && req.AIExtractEnabled == nil && req.AIExtractProvider == nil && req.AIExtractGPTBaseURL == nil && req.AIExtractGPTAPIKey == nil && req.AIExtractDoubaoAPIKey == nil && req.AIExtractAPIKey == nil && req.AIExtractBaseURL == nil && req.AIExtractModel == nil && req.DailyTakeoverExpirationDays == nil && req.WechatSummaryMaxMessages == nil && req.WechatSummaryPrompt == nil && req.WechatSummaryStyle == nil && req.WechatSummaryModel == nil && req.WechatSummaryCompareModels == nil && req.WechatSummaryAutoSend == nil && req.WechatSummaryAutoDaily == nil && req.WechatSummaryDailySchedules == nil {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "settings is required")
 		return
 	}
@@ -273,6 +405,24 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
 			return
 		}
+	}
+	nextAIExtractProvider := h.aiExtractProvider()
+	if req.AIExtractProvider != nil {
+		provider, err := normalizeAIExtractProvider(*req.AIExtractProvider)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+			return
+		}
+		nextAIExtractProvider = provider
+	}
+	var normalizedAIExtractModel string
+	if req.AIExtractModel != nil {
+		modelName, err := normalizeAIExtractModel(nextAIExtractProvider, *req.AIExtractModel)
+		if err != nil {
+			fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+			return
+		}
+		normalizedAIExtractModel = modelName
 	}
 	var normalizedSchedules []wechatSummaryDailySchedule
 	if req.WechatSummaryDailySchedules != nil {
@@ -331,6 +481,31 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.AIExtractProvider != nil {
+		provider, _ := normalizeAIExtractProvider(*req.AIExtractProvider)
+		if err := h.saveAppConfig(model.AppConfigAIExtractProvider, provider); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.AIExtractGPTBaseURL != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractGPTBaseURL, normalizeAIBaseURL(*req.AIExtractGPTBaseURL)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.AIExtractGPTAPIKey != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractGPTAPIKey, strings.TrimSpace(*req.AIExtractGPTAPIKey)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
+	if req.AIExtractDoubaoAPIKey != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractDoubaoAPIKey, strings.TrimSpace(*req.AIExtractDoubaoAPIKey)); err != nil {
+			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
+			return
+		}
+	}
 	if req.AIExtractAPIKey != nil {
 		if err := h.saveAppConfig(model.AppConfigAIExtractAPIKey, strings.TrimSpace(*req.AIExtractAPIKey)); err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
@@ -344,7 +519,7 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		}
 	}
 	if req.AIExtractModel != nil {
-		if err := h.saveAppConfig(model.AppConfigAIExtractModel, strings.TrimSpace(*req.AIExtractModel)); err != nil {
+		if err := h.saveAppConfig(model.AppConfigAIExtractModel, normalizedAIExtractModel); err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 			return
 		}
@@ -417,6 +592,10 @@ func (h *Handler) AdminUpdateSettings(c *gin.Context) {
 		"kookVerifyToken":             h.kookVerifyToken(),
 		"kookEncryptKey":              h.kookEncryptKey(),
 		"aiExtractEnabled":            h.aiExtractEnabled(),
+		"aiExtractProvider":           h.aiExtractProvider(),
+		"aiExtractGptBaseUrl":         h.aiExtractGPTBaseURL(),
+		"aiExtractGptApiKey":          h.aiExtractGPTAPIKey(),
+		"aiExtractDoubaoApiKey":       h.aiExtractDoubaoAPIKey(),
 		"aiExtractApiKey":             h.aiExtractAPIKey(),
 		"aiExtractBaseUrl":            h.aiExtractBaseURL(),
 		"aiExtractModel":              h.aiExtractModel(),

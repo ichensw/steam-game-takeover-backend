@@ -1,6 +1,9 @@
 package wechatadmin
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidAIPromptInstructionKey(t *testing.T) {
 	for _, key := range aiPromptInstructionKeys {
@@ -10,5 +13,13 @@ func TestValidAIPromptInstructionKey(t *testing.T) {
 	}
 	if validAIPromptInstructionKey("reply_system") {
 		t.Fatal("unexpected prompt instruction key allowed")
+	}
+}
+
+func TestDefaultAIPromptInstructionsCoverEveryAllowedKey(t *testing.T) {
+	for _, key := range aiPromptInstructionKeys {
+		if strings.TrimSpace(defaultAIPromptInstructions[key]) == "" {
+			t.Fatalf("missing default instruction for %q", key)
+		}
 	}
 }

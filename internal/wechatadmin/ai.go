@@ -45,6 +45,16 @@ var aiPromptInstructionKeys = []string{
 	"takeover_recruitment",
 }
 
+var defaultAIPromptInstructions = map[string]string{
+	"segment_summary":      "把聊天片段沉淀成可持续使用的成员画像、群文化和游戏线索。成员画像尽量捕捉公开说过或多条消息支持的生活、工作、作息、身份、喜好、价值判断、现实情境和关系线索；每条都保留 fact/hypothesis/judgement、置信度和消息证据。单次玩笑、角色扮演、没有证据的揣测不能写成稳定结论。游戏只记录成员明确说过玩过、想玩或正在找队友的具体游戏。",
+	"profile_merge":        "用多个分段摘要合并深度成员画像，只保留有证据支持的公开事实、价值判断、现实假设、关系假设、行为模式和重要记忆。事实、假设和群聊印象必须区分；低置信度推断不能升格为事实，同一结论合并证据而不是重复堆积。成员本人明确纠正时，优先覆盖与之冲突的旧推断，但不要外推他没有说过的信息。",
+	"takeover_recruitment": "针对正在招募的接龙，根据成员已沉淀的具体游戏、别名、同系列、明显相关类型和联机/合作偏好挑选合适对象。只有存在可解释的相关偏好时才 @ 人；不能根据泛泛游戏聊天、未提供的信息或猜测招人。招呼要像自然群聊，不曝光成员画像，也不施压要求参加。",
+}
+
+func EnsureAIStyleDefaults(ctx context.Context, db *sql.DB) error {
+	return (&Server{db: db}).ensureAIStyleTables(ctx)
+}
+
 func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 	queues := map[string]int{}
 	if tableExists(r.Context(), s.db, "ai_jobs") {
@@ -615,16 +625,11 @@ func (s *Server) updateAIPromptInstruction(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		content = defaultAIPromptInstructions[key]
+	}
 	if len(content) > 4000 {
 		fail(w, http.StatusBadRequest, "PARAM_INVALID", "ai prompt instruction is too long")
-		return
-	}
-	if content == "" {
-		if _, err := s.db.ExecContext(r.Context(), "DELETE FROM ai_prompt_instructions WHERE instruction_key = ?", key); err != nil {
-			fail(w, http.StatusInternalServerError, "SAVE_FAILED", "reset ai prompt instruction failed")
-			return
-		}
-		ok(w, map[string]interface{}{"key": key, "content": ""})
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
@@ -1503,7 +1508,7 @@ func (s *Server) promoteCandidatePersona(ctx context.Context, candidate map[stri
 
 func (s *Server) ensureAIStyleTables(ctx context.Context) error {
 	if tableExists(ctx, s.db, "ai_role_cards") && tableExists(ctx, s.db, "ai_prompt_instructions") && tableExists(ctx, s.db, "ai_reply_style_samples") && tableExists(ctx, s.db, "ai_reply_conversation_samples") && tableExists(ctx, s.db, "ai_reply_log_feedbacks") {
-		return nil
+		return s.ensureAIPromptInstructionDefaults(ctx)
 	}
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS ai_role_cards (
@@ -1552,6 +1557,19 @@ func (s *Server) ensureAIStyleTables(ctx context.Context) error {
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	} {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return s.ensureAIPromptInstructionDefaults(ctx)
+}
+
+func (s *Server) ensureAIPromptInstructionDefaults(ctx context.Context) error {
+	now := float64(time.Now().UnixNano()) / 1e9
+	for _, key := range aiPromptInstructionKeys {
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT IGNORE INTO ai_prompt_instructions (instruction_key, content, updated_at)
+			VALUES (?, ?, ?)
+		`, key, defaultAIPromptInstructions[key], now); err != nil {
 			return err
 		}
 	}

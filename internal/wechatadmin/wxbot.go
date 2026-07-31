@@ -58,7 +58,40 @@ type wxbotConfigAppliedRequest struct {
 	LastConfigError     string `json:"lastConfigError"`
 }
 
-const wxbotConfigSchemaVersion = 1
+const (
+	wxbotConfigSchemaVersion = 1
+	aiProviderGPT            = "gpt"
+	aiProviderDoubao         = "doubao"
+	doubaoAPIBaseURL         = "https://ark.cn-beijing.volces.com/api/v3"
+)
+
+var aiProviderModelDefaults = map[string]map[string]string{
+	aiProviderGPT: {
+		"reply_model":       "gpt-5.4-mini",
+		"summary_model":     "gpt-5.5",
+		"merge_model":       "gpt-5.5",
+		"manual_deep_model": "gpt-5.2",
+	},
+	aiProviderDoubao: {
+		"reply_model":       "doubao-seed-2-0-mini-260428",
+		"summary_model":     "doubao-seed-2-1-turbo-260628",
+		"merge_model":       "doubao-seed-2-1-pro-260628",
+		"manual_deep_model": "doubao-seed-2-1-pro-260628",
+	},
+}
+
+var aiProviderModels = map[string]map[string]struct{}{
+	aiProviderGPT: {
+		"gpt-5.4-mini": {},
+		"gpt-5.5":      {},
+		"gpt-5.2":      {},
+	},
+	aiProviderDoubao: {
+		"doubao-seed-2-0-mini-260428":  {},
+		"doubao-seed-2-1-turbo-260628": {},
+		"doubao-seed-2-1-pro-260628":   {},
+	},
+}
 
 func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var req wxbotHeartbeatRequest
@@ -448,6 +481,9 @@ func normalizeWxbotConfig(raw json.RawMessage) (json.RawMessage, error) {
 		}
 		normalized := make(map[string]interface{}, len(values))
 		for field, fieldValue := range values {
+			if section == "ai" && field == "profile_depth" {
+				continue
+			}
 			spec, ok := fields[field]
 			if !ok {
 				return nil, fmt.Errorf("%s.%s is unsupported", section, field)
@@ -461,6 +497,11 @@ func normalizeWxbotConfig(raw json.RawMessage) (json.RawMessage, error) {
 		for field, spec := range fields {
 			if _, ok := normalized[field]; !ok && spec.defaultValue != nil {
 				normalized[field] = spec.defaultValue
+			}
+		}
+		if section == "ai" {
+			if err := normalizeWxbotAIProviderConfig(values, normalized); err != nil {
+				return nil, err
 			}
 		}
 		result[section] = normalized
@@ -487,6 +528,7 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 	aiModelSpec := func(defaultValue string) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "aiModel", defaultValue: defaultValue}
 	}
+	aiProviderSpec := wxbotConfigFieldSpec{kind: "aiProvider", defaultValue: aiProviderGPT}
 	boolSpec := func(defaultValue bool) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "bool", defaultValue: defaultValue}
 	}
@@ -573,12 +615,16 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"auto_memory_enabled":          boolSpec(true),
 			"reply_enabled":                boolSpec(true),
 			"takeover_recruitment_enabled": boolSpec(false),
+			"provider":                     aiProviderSpec,
+			"gpt_api_base_url":             stringSpec,
+			"gpt_api_key":                  stringSpec,
+			"doubao_api_key":               stringSpec,
 			"api_base_url":                 stringSpec,
 			"api_key":                      stringSpec,
 			"reply_model":                  aiModelSpec("gpt-5.4-mini"),
-			"summary_model":                aiModelSpec("gpt-5.4-mini"),
+			"summary_model":                aiModelSpec("gpt-5.5"),
 			"merge_model":                  aiModelSpec("gpt-5.5"),
-			"manual_deep_model":            aiModelSpec("gpt-5.6-luna"),
+			"manual_deep_model":            aiModelSpec("gpt-5.2"),
 			"scan_interval_seconds":        positiveIntSpec(300),
 			"segment_min_messages":         positiveIntSpec(30),
 			"segment_quiet_seconds":        positiveIntSpec(600),
@@ -686,6 +732,12 @@ func normalizeWxbotConfigValue(value interface{}, spec wxbotConfigFieldSpec) (in
 			return nil, errors.New("config string field must be a string")
 		}
 		return normalizeAIModelName(text, spec.defaultValue.(string)), nil
+	case "aiProvider":
+		text, ok := value.(string)
+		if !ok {
+			return nil, errors.New("config string field must be a string")
+		}
+		return normalizeAIProviderName(text, spec.defaultValue.(string))
 	case "bool":
 		return normalizeWxbotBool(value, spec.defaultValue.(bool))
 	case "int":
@@ -835,6 +887,86 @@ func normalizeAIModelName(value string, defaultValue string) string {
 		return normalized
 	}
 	return model
+}
+
+func normalizeAIProviderName(value string, defaultValue string) (string, error) {
+	provider := strings.ToLower(strings.TrimSpace(value))
+	if provider == "" {
+		return defaultValue, nil
+	}
+	aliases := map[string]string{
+		"gpt":     aiProviderGPT,
+		"openai":  aiProviderGPT,
+		"chatgpt": aiProviderGPT,
+		"doubao":  aiProviderDoubao,
+		"dou bao": aiProviderDoubao,
+		"豆包":      aiProviderDoubao,
+	}
+	normalized, ok := aliases[provider]
+	if !ok {
+		return "", errors.New("AI 服务商仅支持 gpt 或 doubao")
+	}
+	return normalized, nil
+}
+
+func normalizeWxbotAIProviderConfig(source map[string]interface{}, config map[string]interface{}) error {
+	provider := toString(config["provider"])
+	if _, configured := source["provider"]; !configured && isDoubaoAPIBaseURL(toString(source["api_base_url"])) {
+		provider = aiProviderDoubao
+	}
+	normalized, err := normalizeAIProviderName(provider, aiProviderGPT)
+	if err != nil {
+		return err
+	}
+	config["provider"] = normalized
+
+	legacyBaseURL := normalizeAIBaseURL(toString(config["api_base_url"]))
+	legacyAPIKey := strings.TrimSpace(toString(config["api_key"]))
+	gptBaseURL := normalizeAIBaseURL(toString(config["gpt_api_base_url"]))
+	gptAPIKey := strings.TrimSpace(toString(config["gpt_api_key"]))
+	doubaoAPIKey := strings.TrimSpace(toString(config["doubao_api_key"]))
+
+	if normalized == aiProviderDoubao {
+		if doubaoAPIKey == "" {
+			doubaoAPIKey = legacyAPIKey
+		}
+		config["api_base_url"] = doubaoAPIBaseURL
+		config["api_key"] = doubaoAPIKey
+		config["doubao_api_key"] = doubaoAPIKey
+	} else {
+		if gptBaseURL == "" {
+			gptBaseURL = legacyBaseURL
+		}
+		if gptAPIKey == "" {
+			gptAPIKey = legacyAPIKey
+		}
+		config["api_base_url"] = gptBaseURL
+		config["api_key"] = gptAPIKey
+		config["gpt_api_base_url"] = gptBaseURL
+		config["gpt_api_key"] = gptAPIKey
+	}
+
+	for field, defaultValue := range aiProviderModelDefaults[normalized] {
+		config[field] = normalizeAIProviderModel(normalized, toString(config[field]), defaultValue)
+	}
+	return nil
+}
+
+func normalizeAIProviderModel(provider string, value string, defaultValue string) string {
+	model := normalizeAIModelName(value, "")
+	if _, ok := aiProviderModels[provider][model]; ok {
+		return model
+	}
+	return defaultValue
+}
+
+func normalizeAIBaseURL(value string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(value), "/")
+	return strings.TrimSuffix(baseURL, "/chat/completions")
+}
+
+func isDoubaoAPIBaseURL(value string) bool {
+	return strings.EqualFold(normalizeAIBaseURL(value), doubaoAPIBaseURL)
 }
 
 func validateWxbotConfig(cfg map[string]interface{}) error {

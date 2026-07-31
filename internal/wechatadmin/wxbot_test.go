@@ -75,7 +75,7 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if got := cfg["ai"]["merge_model"]; got != "gpt-5.5" {
 		t.Fatalf("merge_model = %#v, want normalized id", got)
 	}
-	if got := cfg["ai"]["manual_deep_model"]; got != "gpt-5.6-luna" {
+	if got := cfg["ai"]["manual_deep_model"]; got != "gpt-5.2" {
 		t.Fatalf("manual_deep_model = %#v, want normalized id", got)
 	}
 	if got := cfg["ai"]["group_whitelist"].([]interface{})[0]; got != "47759534463@chatroom" {
@@ -87,11 +87,75 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if _, ok := cfg["ai"]["mention_aliases"]; !ok {
 		t.Fatal("ai.mention_aliases default missing")
 	}
+	if got := cfg["ai"]["provider"]; got != aiProviderGPT {
+		t.Fatalf("provider = %#v, want %q", got, aiProviderGPT)
+	}
+	if _, ok := cfg["ai"]["profile_depth"]; ok {
+		t.Fatal("profile_depth should not be in normalized config")
+	}
 	if got := cfg["ai"]["scan_interval_seconds"]; got != float64(300) {
 		t.Fatalf("scan_interval_seconds = %#v, want default", got)
 	}
 	if _, ok := cfg["summary_reminder"]["jobs"]; !ok {
 		t.Fatal("summary_reminder.jobs default missing")
+	}
+}
+
+func TestNormalizeWxbotConfigConfiguresDoubaoProvider(t *testing.T) {
+	normalized, err := normalizeWxbotConfig(json.RawMessage(`{
+		"ai": {
+			"enabled": true,
+			"provider": "doubao",
+			"doubao_api_key": "ark-key"
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Config map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	ai := envelope.Config["ai"]
+	if got := ai["provider"]; got != aiProviderDoubao {
+		t.Fatalf("provider = %#v, want %q", got, aiProviderDoubao)
+	}
+	if got := ai["api_base_url"]; got != doubaoAPIBaseURL {
+		t.Fatalf("api_base_url = %#v, want %q", got, doubaoAPIBaseURL)
+	}
+	if got := ai["api_key"]; got != "ark-key" {
+		t.Fatalf("api_key = %#v, want active doubao key", got)
+	}
+	if got := ai["reply_model"]; got != aiProviderModelDefaults[aiProviderDoubao]["reply_model"] {
+		t.Fatalf("reply_model = %#v, want doubao default", got)
+	}
+}
+
+func TestNormalizeWxbotConfigReplacesModelsOutsideSelectedProvider(t *testing.T) {
+	normalized, err := normalizeWxbotConfig(json.RawMessage(`{
+		"ai": {
+			"provider": "doubao",
+			"reply_model": "gpt-5.5",
+			"summary_model": "doubao-seed-2-1-turbo-260628"
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Config map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	ai := envelope.Config["ai"]
+	if got := ai["reply_model"]; got != aiProviderModelDefaults[aiProviderDoubao]["reply_model"] {
+		t.Fatalf("reply_model = %#v, want %q", got, aiProviderModelDefaults[aiProviderDoubao]["reply_model"])
+	}
+	if got := ai["summary_model"]; got != "doubao-seed-2-1-turbo-260628" {
+		t.Fatalf("summary_model = %#v, want selected doubao model", got)
 	}
 }
 
@@ -109,6 +173,22 @@ func TestNormalizeWxbotConfigRejectsFutureVersion(t *testing.T) {
 	_, err := normalizeWxbotConfig(json.RawMessage(`{"schemaVersion":2,"config":{}}`))
 	if err == nil {
 		t.Fatal("expected future schema version to be rejected")
+	}
+}
+
+func TestNormalizeWxbotConfigDropsLegacyProfileDepth(t *testing.T) {
+	normalized, err := normalizeWxbotConfig(json.RawMessage(`{"ai":{"enabled":false,"profile_depth":"chaos"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Config map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := envelope.Config["ai"]["profile_depth"]; ok {
+		t.Fatal("legacy profile_depth should be dropped")
 	}
 }
 

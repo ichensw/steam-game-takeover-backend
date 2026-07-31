@@ -8,6 +8,7 @@ import (
 	"steam-game-takeover-backend/internal/config"
 	"steam-game-takeover-backend/internal/database"
 	"steam-game-takeover-backend/internal/httpapi"
+	"steam-game-takeover-backend/internal/wechatadmin"
 )
 
 func main() {
@@ -24,6 +25,9 @@ func main() {
 			log.Fatalf("open wechat bot database: %v", err)
 		}
 		defer wechatBotDB.Close()
+		if err := wechatadmin.EnsureAIStyleDefaults(context.Background(), wechatBotDB); err != nil {
+			log.Fatalf("ensure wechat AI style defaults: %v", err)
+		}
 	}
 	if _, err := httpapi.EnsureBotQueryUser(db, cfg); err != nil {
 		log.Fatalf("ensure bot query account: %v", err)
