@@ -1,6 +1,10 @@
 package wechatadmin
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestAIDedupeKeyMatchesWxbotRepository(t *testing.T) {
 	start, end := 1.5, 2.5
@@ -62,5 +66,39 @@ func TestValidAIReplyFeedback(t *testing.T) {
 	}
 	if validAIReplyFeedback("ignore") {
 		t.Fatal("unexpected feedback should be rejected")
+	}
+}
+
+func TestGroupBrainRoutesRequireAdminAuth(t *testing.T) {
+	handler := NewServer(Config{GatewaySharedSecret: "test-secret"}, nil)
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/ai/memory/facts"},
+		{http.MethodGet, "/api/ai/memory/relationships"},
+		{http.MethodGet, "/api/ai/memory/events"},
+		{http.MethodGet, "/api/ai/interventions"},
+		{http.MethodGet, "/api/ai/memory/feedbacks"},
+		{http.MethodGet, "/api/ai/config"},
+		{http.MethodPut, "/api/ai/config"},
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(route.method, route.path, nil))
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s = %d, want %d", route.method, route.path, recorder.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
+func TestProactiveConfigPayloadUsesDefaultsForInvalidValues(t *testing.T) {
+	got := proactiveConfigPayload(map[string]interface{}{
+		"proactive_enabled":                   true,
+		"proactive_observer_interval_seconds": float64(1),
+		"proactive_settle_seconds":            float64(30),
+		"proactive_timeout_seconds":           float64(2),
+	})
+	if got["proactiveEnabled"] != true || got["proactiveObserverIntervalSeconds"] != 60 || got["proactiveSettleSeconds"] != 30 || got["proactiveTimeoutSeconds"] != 45 {
+		t.Fatalf("proactive config = %#v", got)
 	}
 }

@@ -32,6 +32,10 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 			"auto_memory_enabled": false,
 			"reply_enabled": false,
 			"takeover_recruitment_enabled": true,
+			"proactive_enabled": true,
+			"proactive_observer_interval_seconds": 60,
+			"proactive_settle_seconds": 90,
+			"proactive_timeout_seconds": 45,
 			"api_base_url": "",
 			"api_key": "",
 			"reply_model": "",
@@ -83,6 +87,12 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	}
 	if got := cfg["ai"]["takeover_recruitment_enabled"]; got != true {
 		t.Fatalf("takeover_recruitment_enabled = %#v, want true", got)
+	}
+	if got := cfg["ai"]["proactive_enabled"]; got != true {
+		t.Fatalf("proactive_enabled = %#v, want true", got)
+	}
+	if got := cfg["ai"]["proactive_settle_seconds"]; got != float64(90) {
+		t.Fatalf("proactive_settle_seconds = %#v, want 90", got)
 	}
 	if _, ok := cfg["ai"]["mention_aliases"]; !ok {
 		t.Fatal("ai.mention_aliases default missing")

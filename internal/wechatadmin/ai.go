@@ -22,6 +22,7 @@ var aiJSONColumns = map[string]bool{
 	"decision_json":       true,
 	"evidence_msg_ids":    true,
 	"evidence_run_ids":    true,
+	"payload_json":        true,
 	"profile_json":        true,
 	"request_meta_json":   true,
 	"result_json":         true,
@@ -933,6 +934,355 @@ func (s *Server) aiMemoryRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiGroupFacts(w http.ResponseWriter, r *http.Request) {
+	roomID := strings.TrimSpace(r.URL.Query().Get("roomId"))
+	if roomID == "" {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "roomId is required")
+		return
+	}
+	if !tableExists(r.Context(), s.db, "ai_group_facts") {
+		ok(w, map[string]interface{}{"items": []map[string]interface{}{}})
+		return
+	}
+
+	conditions, args := []string{"room_id = ?"}, []interface{}{roomID}
+	if state := strings.TrimSpace(r.URL.Query().Get("state")); validFactState(state) {
+		conditions = append(conditions, "state = ?")
+		args = append(args, state)
+	} else {
+		conditions = append(conditions, "state IN ('active', 'disputed')")
+	}
+	if members := queryValues(r, "memberWxids"); len(members) > 0 {
+		conditions = append(conditions, "subject_key IN ("+placeholders(len(members))+")")
+		for _, member := range members {
+			args = append(args, member)
+		}
+	}
+	if query := strings.TrimSpace(r.URL.Query().Get("query")); query != "" {
+		conditions = append(conditions, "(content LIKE ? ESCAPE '\\\\' OR predicate LIKE ? ESCAPE '\\\\')")
+		args = append(args, likePattern(query), likePattern(query))
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_group_facts WHERE "+strings.Join(conditions, " AND ")+" ORDER BY CASE state WHEN 'active' THEN 0 ELSE 1 END, updated_at DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai facts failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiRelationships(w http.ResponseWriter, r *http.Request) {
+	roomID := strings.TrimSpace(r.URL.Query().Get("roomId"))
+	if roomID == "" {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "roomId is required")
+		return
+	}
+	if !tableExists(r.Context(), s.db, "ai_relationship_edges") {
+		ok(w, map[string]interface{}{"items": []map[string]interface{}{}})
+		return
+	}
+
+	conditions, args := []string{"room_id = ?"}, []interface{}{roomID}
+	members := queryValues(r, "memberWxids")
+	if len(members) == 1 {
+		conditions = append(conditions, "(left_member_wxid = ? OR right_member_wxid = ?)")
+		args = append(args, members[0], members[0])
+	} else if len(members) > 1 {
+		memberPlaceholders := placeholders(len(members))
+		conditions = append(conditions, "left_member_wxid IN ("+memberPlaceholders+")", "right_member_wxid IN ("+memberPlaceholders+")")
+		for _, member := range members {
+			args = append(args, member)
+		}
+		for _, member := range members {
+			args = append(args, member)
+		}
+	}
+	if state := strings.TrimSpace(r.URL.Query().Get("state")); validFactState(state) {
+		conditions = append(conditions, "state = ?")
+		args = append(args, state)
+	} else {
+		conditions = append(conditions, "state IN ('active', 'disputed')")
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_relationship_edges WHERE "+strings.Join(conditions, " AND ")+" ORDER BY updated_at DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai relationships failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiGroupEvents(w http.ResponseWriter, r *http.Request) {
+	roomID := strings.TrimSpace(r.URL.Query().Get("roomId"))
+	if roomID == "" {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "roomId is required")
+		return
+	}
+	if !tableExists(r.Context(), s.db, "ai_group_events") {
+		ok(w, map[string]interface{}{"items": []map[string]interface{}{}})
+		return
+	}
+
+	conditions, args := []string{"room_id = ?"}, []interface{}{roomID}
+	if state := strings.TrimSpace(r.URL.Query().Get("state")); validEventState(state) {
+		conditions = append(conditions, "state = ?")
+		args = append(args, state)
+	} else {
+		conditions = append(conditions, "state = 'active'")
+	}
+	if query := strings.TrimSpace(r.URL.Query().Get("query")); query != "" {
+		conditions = append(conditions, "(summary LIKE ? ESCAPE '\\\\' OR event_type LIKE ? ESCAPE '\\\\')")
+		args = append(args, likePattern(query), likePattern(query))
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_group_events WHERE "+strings.Join(conditions, " AND ")+" ORDER BY last_evidence_at DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai events failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiInterventions(w http.ResponseWriter, r *http.Request) {
+	if !tableExists(r.Context(), s.db, "ai_interventions") {
+		ok(w, map[string]interface{}{"items": []map[string]interface{}{}})
+		return
+	}
+	conditions, args := []string{}, []interface{}{}
+	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
+		conditions = append(conditions, "room_id = ?")
+		args = append(args, roomID)
+	}
+	if state := strings.TrimSpace(r.URL.Query().Get("state")); validInterventionState(state) {
+		conditions = append(conditions, "state = ?")
+		args = append(args, state)
+	}
+	where := "1=1"
+	if len(conditions) > 0 {
+		where = strings.Join(conditions, " AND ")
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_interventions WHERE "+where+" ORDER BY updated_at DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai interventions failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiMemoryFeedbacks(w http.ResponseWriter, r *http.Request) {
+	if !tableExists(r.Context(), s.db, "ai_memory_feedbacks") {
+		ok(w, map[string]interface{}{"items": []map[string]interface{}{}})
+		return
+	}
+	conditions, args := []string{}, []interface{}{}
+	if roomID := strings.TrimSpace(r.URL.Query().Get("roomId")); roomID != "" {
+		conditions = append(conditions, "room_id = ?")
+		args = append(args, roomID)
+	}
+	if status := strings.TrimSpace(r.URL.Query().Get("status")); validFeedbackStatus(status) {
+		conditions = append(conditions, "status = ?")
+		args = append(args, status)
+	}
+	where := "1=1"
+	if len(conditions) > 0 {
+		where = strings.Join(conditions, " AND ")
+	}
+	args = append(args, positiveInt(r.URL.Query().Get("limit"), 100, 1, 200))
+	items, err := s.listAIMaps(r.Context(), "SELECT * FROM ai_memory_feedbacks WHERE "+where+" ORDER BY created_at DESC LIMIT ?", args...)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai memory feedbacks failed")
+		return
+	}
+	ok(w, map[string]interface{}{"items": items})
+}
+
+func (s *Server) aiProactiveConfig(w http.ResponseWriter, r *http.Request) {
+	ai, err := s.latestDesiredAIConfig(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai config failed")
+		return
+	}
+	ok(w, proactiveConfigPayload(ai))
+}
+
+func (s *Server) updateAIProactiveConfig(w http.ResponseWriter, r *http.Request) {
+	var updates map[string]interface{}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&updates); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	if !validProactiveConfigUpdates(updates) {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid proactive ai config")
+		return
+	}
+	if err := s.ensureWxbotSchema(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SCHEMA_FAILED", "ensure wxbot schema failed")
+		return
+	}
+
+	var botID string
+	var raw json.RawMessage
+	err := s.db.QueryRowContext(r.Context(), `
+		SELECT bot_id, COALESCE(config_json, JSON_OBJECT())
+		FROM wxbot_agents
+		ORDER BY last_seen_at DESC, bot_id
+		LIMIT 1
+	`).Scan(&botID, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, http.StatusNotFound, "NOT_FOUND", "wxbot not found")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query wxbot config failed")
+		return
+	}
+	config, err := unwrapWxbotConfig(raw)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "parse wxbot config failed")
+		return
+	}
+	ai, _ := config["ai"].(map[string]interface{})
+	if ai == nil {
+		ai = map[string]interface{}{}
+	}
+	for key, value := range updates {
+		ai[key] = value
+	}
+	config["ai"] = ai
+	merged, _ := json.Marshal(config)
+	normalized, err := normalizeWxbotConfig(merged)
+	if err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", err.Error())
+		return
+	}
+	if _, err := s.db.ExecContext(r.Context(), `
+		UPDATE wxbot_agents
+		SET config_json = ?, config_updated_at = NOW(), updated_at = NOW()
+		WHERE bot_id = ?
+	`, string(normalized), botID); err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save ai config failed")
+		return
+	}
+	updated, err := unwrapWxbotConfig(normalized)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "parse saved ai config failed")
+		return
+	}
+	updatedAI, _ := updated["ai"].(map[string]interface{})
+	ok(w, proactiveConfigPayload(updatedAI))
+}
+
+func (s *Server) latestDesiredAIConfig(ctx context.Context) (map[string]interface{}, error) {
+	if !tableExists(ctx, s.db, "wxbot_agents") {
+		return map[string]interface{}{}, nil
+	}
+	var raw json.RawMessage
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(config_json, JSON_OBJECT())
+		FROM wxbot_agents
+		ORDER BY last_seen_at DESC, bot_id
+		LIMIT 1
+	`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return map[string]interface{}{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	config, err := unwrapWxbotConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	ai, _ := config["ai"].(map[string]interface{})
+	return ai, nil
+}
+
+func proactiveConfigPayload(ai map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"proactiveEnabled":                 boolValue(ai["proactive_enabled"]),
+		"proactiveObserverIntervalSeconds": proactiveConfigInt(ai["proactive_observer_interval_seconds"], 60, 30),
+		"proactiveSettleSeconds":           proactiveConfigInt(ai["proactive_settle_seconds"], 90, 30),
+		"proactiveTimeoutSeconds":          proactiveConfigInt(ai["proactive_timeout_seconds"], 45, 5),
+	}
+}
+
+func proactiveConfigInt(value interface{}, fallback, minimum int) int {
+	number := int64Value(value)
+	if number < int64(minimum) {
+		return fallback
+	}
+	return int(number)
+}
+
+func validProactiveConfigUpdates(updates map[string]interface{}) bool {
+	if len(updates) == 0 {
+		return false
+	}
+	if enabled, ok := updates["proactive_enabled"]; ok {
+		if _, ok := enabled.(bool); !ok {
+			return false
+		}
+	}
+	minimums := map[string]int{
+		"proactive_observer_interval_seconds": 30,
+		"proactive_settle_seconds":            30,
+		"proactive_timeout_seconds":           5,
+	}
+	for key, value := range updates {
+		minimum, allowed := minimums[key]
+		if key == "proactive_enabled" {
+			continue
+		}
+		if !allowed {
+			return false
+		}
+		number, ok := value.(float64)
+		if !ok || number != float64(int64Value(value)) || int64Value(value) < int64(minimum) {
+			return false
+		}
+	}
+	return true
+}
+
+func validFactState(value string) bool {
+	return value == "active" || value == "disputed" || value == "revised" || value == "retracted"
+}
+
+func validEventState(value string) bool {
+	return value == "active" || value == "resolved" || value == "expired"
+}
+
+func validInterventionState(value string) bool {
+	return value == "new" || value == "addressed" || value == "reopened"
+}
+
+func validFeedbackStatus(value string) bool {
+	return value == "pending" || value == "applied" || value == "rejected"
+}
+
+func queryValues(r *http.Request, key string) []string {
+	values, seen := []string{}, map[string]struct{}{}
+	for _, raw := range r.URL.Query()[key] {
+		for _, value := range strings.Split(raw, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if _, exists := seen[value]; exists {
+				continue
+			}
+			seen[value] = struct{}{}
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func placeholders(count int) string {
+	return strings.TrimRight(strings.Repeat("?,", count), ",")
 }
 
 func (s *Server) aiRoomPersona(w http.ResponseWriter, r *http.Request) {
