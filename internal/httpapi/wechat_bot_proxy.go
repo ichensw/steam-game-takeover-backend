@@ -86,7 +86,7 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 func aiWechatBotPathAllowed(method, path string) bool {
 	if method == http.MethodGet {
 		switch path {
-		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/observation", "/ai/role-card", "/ai/prompt-instructions", "/ai/reply-samples", "/ai/reply-conversation-samples", "/ai/reply-logs", "/ai/memory/runs", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates", "/ai/memory/persona-versions":
+		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/observation", "/ai/config", "/ai/role-card", "/ai/prompt-instructions", "/ai/reply-samples", "/ai/reply-conversation-samples", "/ai/reply-logs", "/ai/interventions", "/ai/memory/runs", "/ai/memory/facts", "/ai/memory/relationships", "/ai/memory/events", "/ai/memory/feedbacks", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates", "/ai/memory/persona-versions":
 			return true
 		}
 		return aiJobPathPattern.MatchString(path) || aiCandidateEvidencePath.MatchString(path) || aiReplySamplePathPattern.MatchString(path) || aiReplyConversationSamplePathPattern.MatchString(path)
@@ -95,7 +95,7 @@ func aiWechatBotPathAllowed(method, path string) bool {
 		return path == "/ai/jobs" || path == "/ai/history-learning" || path == "/ai/reply-samples" || path == "/ai/reply-conversation-samples" || aiHistoryActionPattern.MatchString(path) || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path) || aiVersionRollbackPattern.MatchString(path) || aiReplyLogFeedbackPattern.MatchString(path)
 	}
 	if method == http.MethodPut {
-		return path == "/ai/role-card" || path == "/ai/prompt-instructions"
+		return path == "/ai/config" || path == "/ai/role-card" || path == "/ai/prompt-instructions"
 	}
 	if method == http.MethodDelete {
 		return aiReplySamplePathPattern.MatchString(path) || aiReplyConversationSamplePathPattern.MatchString(path)
