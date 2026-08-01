@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -141,6 +142,7 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 			updated_at = NOW()
 	`, req.BotID, req.Name, req.Wxid, req.Status, req.Version, req.Host, req.PID, startedAt, string(emptyWxbotConfig()), string(currentConfig), effectiveWxbotSchemaVersion(req.ConfigSchemaVersion), lastConfigError, boolInt(hasCurrentConfig))
 	if err != nil {
+		log.Printf("wxbot heartbeat save failed: bot_id=%q error=%v", req.BotID, err)
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save wxbot heartbeat failed")
 		return
 	}
@@ -636,6 +638,11 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"profile_min_segments":                positiveIntSpec(3),
 			"max_segment_messages":                positiveIntSpec(800),
 			"reply_context_messages":              positiveIntSpec(100),
+			"summary_input_token_budget":          positiveIntSpec(12000),
+			"reply_input_token_budget":            positiveIntSpec(6000),
+			"memory_input_token_budget":           positiveIntSpec(8000),
+			"proactive_input_token_budget":        positiveIntSpec(4000),
+			"proactive_max_jobs_per_scan":         positiveIntSpec(1),
 			"worker_queue_size":                   positiveIntSpec(200),
 			"reply_timeout_seconds":               positiveIntSpec(20),
 			"summary_timeout_seconds":             positiveIntSpec(180),

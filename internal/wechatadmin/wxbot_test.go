@@ -49,6 +49,11 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 			"profile_min_segments": 0,
 			"max_segment_messages": 0,
 			"reply_context_messages": 0,
+			"summary_input_token_budget": 0,
+			"reply_input_token_budget": 0,
+			"memory_input_token_budget": 0,
+			"proactive_input_token_budget": 0,
+			"proactive_max_jobs_per_scan": 0,
 			"worker_queue_size": 0,
 			"reply_timeout_seconds": 0,
 			"summary_timeout_seconds": 0,
@@ -105,6 +110,9 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	}
 	if got := cfg["ai"]["scan_interval_seconds"]; got != float64(300) {
 		t.Fatalf("scan_interval_seconds = %#v, want default", got)
+	}
+	if got := cfg["ai"]["summary_input_token_budget"]; got != float64(12000) {
+		t.Fatalf("summary_input_token_budget = %#v, want default", got)
 	}
 	if _, ok := cfg["summary_reminder"]["jobs"]; !ok {
 		t.Fatal("summary_reminder.jobs default missing")
