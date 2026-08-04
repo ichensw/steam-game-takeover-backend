@@ -29,30 +29,14 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 		"ai": {
 			"enabled": false,
 			"group_whitelist": ["47759534463@chatroom"],
-			"auto_memory_enabled": false,
 			"reply_enabled": false,
-			"takeover_recruitment_enabled": true,
-			"proactive_enabled": true,
-			"proactive_observer_interval_seconds": 60,
-			"proactive_settle_seconds": 90,
-			"proactive_timeout_seconds": 45,
 			"api_base_url": "",
 			"api_key": "",
 			"reply_model": "",
-			"summary_model": "5.4 Mini",
-			"merge_model": "5.5",
-			"manual_deep_model": "5.6 Luna",
-			"scan_interval_seconds": 0,
-			"segment_min_messages": 0,
-			"segment_quiet_seconds": 0,
-			"segment_stale_seconds": 0,
-			"profile_min_segments": 0,
-			"max_segment_messages": 0,
 			"reply_context_messages": 0,
+			"reply_input_token_budget": 0,
 			"worker_queue_size": 0,
-			"reply_timeout_seconds": 0,
-			"summary_timeout_seconds": 0,
-			"merge_timeout_seconds": 0
+			"reply_timeout_seconds": 0
 		}
 	}`)
 	normalized, err := normalizeWxbotConfig(raw)
@@ -73,26 +57,8 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if got := cfg["ai"]["reply_model"]; got != "gpt-5.4-mini" {
 		t.Fatalf("reply_model = %#v, want default", got)
 	}
-	if got := cfg["ai"]["summary_model"]; got != "gpt-5.4-mini" {
-		t.Fatalf("summary_model = %#v, want normalized id", got)
-	}
-	if got := cfg["ai"]["merge_model"]; got != "gpt-5.5" {
-		t.Fatalf("merge_model = %#v, want normalized id", got)
-	}
-	if got := cfg["ai"]["manual_deep_model"]; got != "gpt-5.2" {
-		t.Fatalf("manual_deep_model = %#v, want normalized id", got)
-	}
 	if got := cfg["ai"]["group_whitelist"].([]interface{})[0]; got != "47759534463@chatroom" {
 		t.Fatalf("group_whitelist = %#v, want configured room", got)
-	}
-	if got := cfg["ai"]["takeover_recruitment_enabled"]; got != true {
-		t.Fatalf("takeover_recruitment_enabled = %#v, want true", got)
-	}
-	if got := cfg["ai"]["proactive_enabled"]; got != true {
-		t.Fatalf("proactive_enabled = %#v, want true", got)
-	}
-	if got := cfg["ai"]["proactive_settle_seconds"]; got != float64(90) {
-		t.Fatalf("proactive_settle_seconds = %#v, want 90", got)
 	}
 	if _, ok := cfg["ai"]["mention_aliases"]; !ok {
 		t.Fatal("ai.mention_aliases default missing")
@@ -103,11 +69,83 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if _, ok := cfg["ai"]["profile_depth"]; ok {
 		t.Fatal("profile_depth should not be in normalized config")
 	}
-	if got := cfg["ai"]["scan_interval_seconds"]; got != float64(300) {
-		t.Fatalf("scan_interval_seconds = %#v, want default", got)
-	}
 	if _, ok := cfg["summary_reminder"]["jobs"]; !ok {
 		t.Fatal("summary_reminder.jobs default missing")
+	}
+}
+
+func TestNormalizeWxbotConfigAcceptsVectorSettings(t *testing.T) {
+	normalized, err := normalizeWxbotConfig(json.RawMessage(`{
+		"ai": {
+			"vector_enabled": true,
+			"vector_qdrant_url": "https://qdrant.example.com/",
+			"vector_embedding_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+			"vector_embedding_model": "qwen3.7-text-embedding",
+			"vector_sync_interval_seconds": 60,
+			"vector_sync_batch_size": 32,
+			"vector_search_limit": 8,
+			"vector_min_score": 0.4
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Config map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	ai := envelope.Config["ai"]
+	if ai["vector_qdrant_url"] != "https://qdrant.example.com/" || ai["vector_min_score"] != float64(0.4) {
+		t.Fatalf("vector config = %#v", ai)
+	}
+}
+
+func TestNormalizeWxbotConfigAcceptsCurrentRobotAIFields(t *testing.T) {
+	normalized, err := normalizeWxbotConfig(json.RawMessage(`{
+		"ai": {
+			"enabled": true,
+			"api_base_url": "https://hairfree.work/v1",
+			"reply_input_token_budget": 6000,
+			"vector_enabled": true,
+			"vector_qdrant_url": "https://qdrant.rabbits.ink",
+			"vector_embedding_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+			"vector_embedding_model": "qwen3.7-text-embedding",
+			"vector_sync_interval_seconds": 60,
+			"vector_sync_batch_size": 32,
+			"vector_search_limit": 8,
+			"vector_min_score": 0.4
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Config map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if got := envelope.Config["ai"]["reply_input_token_budget"]; got != float64(6000) {
+		t.Fatalf("reply_input_token_budget = %#v", got)
+	}
+}
+
+func TestNormalizeWxbotCurrentConfigFallsBackToEmptyOnInvalidPayload(t *testing.T) {
+	currentConfig, hasCurrentConfig, lastConfigError := normalizeWxbotCurrentConfig(
+		json.RawMessage(`{"ai":{"unknown_future_field":true}}`),
+		"",
+	)
+
+	if hasCurrentConfig {
+		t.Fatal("invalid current config should not be marked as usable")
+	}
+	if len(currentConfig) == 0 || !json.Valid(currentConfig) {
+		t.Fatalf("fallback current config must be valid JSON: %q", string(currentConfig))
+	}
+	if lastConfigError == "" {
+		t.Fatal("invalid current config should keep a diagnostic error")
 	}
 }
 
@@ -147,8 +185,7 @@ func TestNormalizeWxbotConfigReplacesModelsOutsideSelectedProvider(t *testing.T)
 	normalized, err := normalizeWxbotConfig(json.RawMessage(`{
 		"ai": {
 			"provider": "doubao",
-			"reply_model": "gpt-5.5",
-			"summary_model": "doubao-seed-2-1-turbo-260628"
+			"reply_model": "gpt-5.5"
 		}
 	}`))
 	if err != nil {
@@ -163,9 +200,6 @@ func TestNormalizeWxbotConfigReplacesModelsOutsideSelectedProvider(t *testing.T)
 	ai := envelope.Config["ai"]
 	if got := ai["reply_model"]; got != aiProviderModelDefaults[aiProviderDoubao]["reply_model"] {
 		t.Fatalf("reply_model = %#v, want %q", got, aiProviderModelDefaults[aiProviderDoubao]["reply_model"])
-	}
-	if got := ai["summary_model"]; got != "doubao-seed-2-1-turbo-260628" {
-		t.Fatalf("summary_model = %#v, want selected doubao model", got)
 	}
 }
 

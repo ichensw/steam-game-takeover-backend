@@ -32,24 +32,17 @@ var aiJSONColumns = map[string]bool{
 }
 
 var manualAIJobTypes = map[string]bool{
-	"segment_summary":   true,
-	"profile_merge":     true,
-	"culture_update":    true,
-	"persona_candidate": true,
+	"vector_backfill": true,
 }
 
 const defaultAIRoleCard = "你是智能小助手，但在群里更像一个懂游戏和梗、偶尔冒泡的老群友。你的任务是把话接住，不是提供服务或主持讨论。优先短句、自然停顿和有来有回的接话，不机械复述问题。该接梗就接梗，该装傻就装傻；偶发夸张、胡说八道式整活可以，别把它当事实。不要为了显得有用主动总结、追问、教学或提醒。"
 
 var aiPromptInstructionKeys = []string{
-	"segment_summary",
-	"profile_merge",
-	"takeover_recruitment",
+	"reply",
 }
 
 var defaultAIPromptInstructions = map[string]string{
-	"segment_summary":      "把聊天片段沉淀成可持续使用的成员画像、群文化和游戏线索。成员画像尽量捕捉公开说过或多条消息支持的生活、工作、作息、身份、喜好、价值判断、现实情境和关系线索；每条都保留 fact/hypothesis/judgement、置信度和消息证据。单次玩笑、角色扮演、没有证据的揣测不能写成稳定结论。游戏只记录成员明确说过玩过、想玩或正在找队友的具体游戏。",
-	"profile_merge":        "用多个分段摘要合并深度成员画像，只保留有证据支持的公开事实、价值判断、现实假设、关系假设、行为模式和重要记忆。事实、假设和群聊印象必须区分；低置信度推断不能升格为事实，同一结论合并证据而不是重复堆积。成员本人明确纠正时，优先覆盖与之冲突的旧推断，但不要外推他没有说过的信息。",
-	"takeover_recruitment": "针对正在招募的接龙，根据成员已沉淀的具体游戏、别名、同系列、明显相关类型和联机/合作偏好挑选合适对象。只有存在可解释的相关偏好时才 @ 人；不能根据泛泛游戏聊天、未提供的信息或猜测招人。招呼要像自然群聊，不曝光成员画像，也不施压要求参加。",
+	"reply": "直接回答当前问题。历史聊天只能作为“谁在何时说过什么”的原始引用，找不到原话就说明没有查到，不要推断成员画像、关系或群结论。",
 }
 
 func EnsureAIStyleDefaults(ctx context.Context, db *sql.DB) error {
@@ -76,6 +69,15 @@ func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	aiCfg := s.latestAIConfig(r.Context())
+	vectorState := []map[string]interface{}{}
+	if tableExists(r.Context(), s.db, "ai_vector_sync_state") {
+		var stateErr error
+		vectorState, stateErr = s.listAIMaps(r.Context(), "SELECT * FROM ai_vector_sync_state ORDER BY updated_at DESC LIMIT 200")
+		if stateErr != nil {
+			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query vector sync state failed")
+			return
+		}
+	}
 	rooms, err := s.aiRooms(r.Context())
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query ai rooms failed")
@@ -91,16 +93,18 @@ func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ok(w, map[string]interface{}{
-		"enabled":           boolValue(aiCfg["enabled"]),
-		"configured":        strings.TrimSpace(stringValue(aiCfg["api_key"])) != "" || strings.TrimSpace(s.cfg.AIAPIKey) != "",
-		"running":           s.wxbotOnline(r.Context()),
-		"autoMemoryEnabled": boolValue(aiCfg["auto_memory_enabled"]),
-		"queues":            queues,
+		"enabled":    boolValue(aiCfg["enabled"]),
+		"configured": strings.TrimSpace(stringValue(aiCfg["api_key"])) != "" || strings.TrimSpace(s.cfg.AIAPIKey) != "",
+		"running":    s.wxbotOnline(r.Context()),
+		"queues":     queues,
 		"models": map[string]string{
-			"reply":      firstNonEmpty(stringValue(aiCfg["reply_model"]), s.cfg.AIModel),
-			"summary":    firstNonEmpty(stringValue(aiCfg["summary_model"]), s.cfg.AIModel),
-			"merge":      firstNonEmpty(stringValue(aiCfg["merge_model"]), s.cfg.AIModel),
-			"manualDeep": firstNonEmpty(stringValue(aiCfg["manual_deep_model"]), s.cfg.AIModel),
+			"reply": firstNonEmpty(stringValue(aiCfg["reply_model"]), s.cfg.AIModel),
+		},
+		"vector": map[string]interface{}{
+			"enabled":        boolValue(aiCfg["vector_enabled"]),
+			"configured":     boolValue(aiCfg["vector_enabled"]) && strings.TrimSpace(stringValue(aiCfg["vector_qdrant_url"])) != "" && strings.TrimSpace(stringValue(aiCfg["vector_embedding_base_url"])) != "",
+			"embeddingModel": firstNonEmpty(stringValue(aiCfg["vector_embedding_model"]), "qwen3.7-text-embedding"),
+			"syncStates":     vectorState,
 		},
 		"rooms":      rooms,
 		"recentJobs": recentJobs,
@@ -160,7 +164,7 @@ func (s *Server) createAIJob(w http.ResponseWriter, r *http.Request) {
 	}
 	var start, end *float64
 	var err error
-	if jobType == "segment_summary" {
+	if aiJobRequiresWindow(jobType) {
 		start, err = parseAITime(req.Start)
 		if err != nil || start == nil {
 			fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid start time")
@@ -173,6 +177,10 @@ func (s *Server) createAIJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	model := strings.TrimSpace(req.Model)
+	if jobType == "vector_backfill" && model != "" {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "vector backfill does not allow model override")
+		return
+	}
 	if model == "" {
 		model = s.modelForJob(r.Context(), jobType)
 	}
@@ -276,9 +284,9 @@ func (s *Server) createAIHistoryLearningTask(w http.ResponseWriter, r *http.Requ
 	result, err := s.db.ExecContext(r.Context(), `
 		INSERT INTO ai_history_learning_tasks
 			(room_id, status, stage, window_start, window_end, max_messages, total_msg_count,
-			 processed_msg_count, segment_job_count, cursor_time, cursor_msg_id, created_at, updated_at)
-		VALUES (?, 'queued', 'segment', ?, ?, ?, ?, 0, 0, ?, '', ?, ?)
-	`, roomID, startValue, endValue, maxMessages, total, startValue, now, now)
+			 processed_msg_count, created_at, updated_at)
+		VALUES (?, 'queued', 'vector_backfill', ?, ?, ?, ?, 0, ?, ?)
+	`, roomID, startValue, endValue, maxMessages, total, now, now)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "create history learning failed")
 		return
@@ -1667,25 +1675,23 @@ func (s *Server) latestAIConfig(ctx context.Context) map[string]interface{} {
 	if ai == nil {
 		return map[string]interface{}{}
 	}
-	for _, key := range []string{"reply_model", "summary_model", "merge_model", "manual_deep_model"} {
-		if value := normalizeAIModelName(stringValue(ai[key]), ""); value != "" {
-			ai[key] = value
-		}
+	if value := normalizeAIModelName(stringValue(ai["reply_model"]), ""); value != "" {
+		ai["reply_model"] = value
 	}
 	return ai
 }
 
 func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) {
-	whitelist, err := s.botGroupWhitelist(ctx)
-	if err != nil {
-		return nil, err
-	}
+	whitelist := aiGroupWhitelist(s.latestAIConfig(ctx))
 	if len(whitelist) == 0 {
 		return []map[string]interface{}{}, nil
 	}
 	allowed := botGroupWhitelistSet(whitelist)
 	roomIDs := map[string]struct{}{}
 	roomNames := map[string]string{}
+	for _, roomID := range whitelist {
+		roomIDs[roomID] = struct{}{}
+	}
 	addRooms := func(query string) error {
 		rows, err := s.db.QueryContext(ctx, query)
 		if err != nil {
@@ -1736,7 +1742,6 @@ func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) 
 		query string
 	}{
 		{"ai_jobs", "SELECT DISTINCT room_id FROM ai_jobs ORDER BY room_id LIMIT 200"},
-		{"ai_memory_runs", "SELECT DISTINCT room_id FROM ai_memory_runs ORDER BY room_id LIMIT 200"},
 		{"ai_history_learning_tasks", "SELECT DISTINCT room_id FROM ai_history_learning_tasks ORDER BY room_id LIMIT 200"},
 	} {
 		if tableExists(ctx, s.db, item.table) {
@@ -1763,6 +1768,31 @@ func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) 
 	return result, nil
 }
 
+func aiGroupWhitelist(ai map[string]interface{}) []string {
+	values, ok := ai["group_whitelist"].([]interface{})
+	if !ok {
+		if strings, ok := ai["group_whitelist"].([]string); ok {
+			values = make([]interface{}, len(strings))
+			for index, value := range strings {
+				values[index] = value
+			}
+		}
+	}
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		roomID := strings.TrimSpace(toString(value))
+		if !strings.HasSuffix(roomID, "@chatroom") {
+			continue
+		}
+		if _, exists := seen[roomID]; !exists {
+			seen[roomID] = struct{}{}
+			result = append(result, roomID)
+		}
+	}
+	return result
+}
+
 func (s *Server) wxbotOnline(ctx context.Context) bool {
 	if !tableExists(ctx, s.db, "wxbot_agents") {
 		return false
@@ -1786,10 +1816,14 @@ func tableExists(ctx context.Context, db *sql.DB, table string) bool {
 
 func (s *Server) modelForJob(ctx context.Context, jobType string) string {
 	cfg := s.latestAIConfig(ctx)
-	if jobType == "segment_summary" {
-		return normalizeAIModelName(firstNonEmpty(stringValue(cfg["summary_model"]), s.cfg.AIModel), "")
+	if jobType == "vector_backfill" {
+		return firstNonEmpty(stringValue(cfg["vector_embedding_model"]), "qwen3.7-text-embedding")
 	}
-	return normalizeAIModelName(firstNonEmpty(stringValue(cfg["merge_model"]), s.cfg.AIModel), "")
+	return normalizeAIModelName(firstNonEmpty(stringValue(cfg["reply_model"]), s.cfg.AIModel), "")
+}
+
+func aiJobRequiresWindow(jobType string) bool {
+	return jobType == "vector_backfill"
 }
 
 func (s *Server) countTextMessages(ctx context.Context, roomID string, start, end float64) (int, error) {

@@ -67,16 +67,10 @@ const (
 
 var aiProviderModelDefaults = map[string]map[string]string{
 	aiProviderGPT: {
-		"reply_model":       "gpt-5.4-mini",
-		"summary_model":     "gpt-5.5",
-		"merge_model":       "gpt-5.5",
-		"manual_deep_model": "gpt-5.2",
+		"reply_model": "gpt-5.4-mini",
 	},
 	aiProviderDoubao: {
-		"reply_model":       "doubao-seed-2-0-mini-260428",
-		"summary_model":     "doubao-seed-2-1-turbo-260628",
-		"merge_model":       "doubao-seed-2-1-pro-260628",
-		"manual_deep_model": "doubao-seed-2-1-pro-260628",
+		"reply_model": "doubao-seed-2-0-mini-260428",
 	},
 }
 
@@ -109,19 +103,7 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := nullTime(req.StartedAt)
-	currentConfig := emptyWxbotConfig()
-	hasCurrentConfig := len(bytes.TrimSpace(req.CurrentConfig)) > 0
-	lastConfigError := strings.TrimSpace(req.LastConfigError)
-	if hasCurrentConfig {
-		var err error
-		currentConfig, err = normalizeWxbotConfig(req.CurrentConfig)
-		if err != nil {
-			hasCurrentConfig = false
-			lastConfigError = err.Error()
-		} else if lastConfigError == "" {
-			lastConfigError = ""
-		}
-	}
+	currentConfig, hasCurrentConfig, lastConfigError := normalizeWxbotCurrentConfig(req.CurrentConfig, req.LastConfigError)
 	_, err := s.db.ExecContext(r.Context(), `
 		INSERT INTO wxbot_agents
 			(bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at, config_json, current_config_json, config_schema_version, last_config_error, config_updated_at, updated_at)
@@ -150,6 +132,17 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, record)
+}
+
+func normalizeWxbotCurrentConfig(raw json.RawMessage, lastError string) (json.RawMessage, bool, string) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return emptyWxbotConfig(), false, strings.TrimSpace(lastError)
+	}
+	currentConfig, err := normalizeWxbotConfig(raw)
+	if err != nil {
+		return emptyWxbotConfig(), false, err.Error()
+	}
+	return currentConfig, true, strings.TrimSpace(lastError)
 }
 
 func (s *Server) wxbotConfigForBot(w http.ResponseWriter, r *http.Request) {
@@ -538,6 +531,9 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 	positiveIntSpec := func(defaultValue int) wxbotConfigFieldSpec {
 		return wxbotConfigFieldSpec{kind: "positiveInt", defaultValue: defaultValue}
 	}
+	unitFloatSpec := func(defaultValue float64) wxbotConfigFieldSpec {
+		return wxbotConfigFieldSpec{kind: "float", defaultValue: defaultValue}
+	}
 	return map[string]map[string]wxbotConfigFieldSpec{
 		"bot": {
 			"name":            stringSpec,
@@ -609,37 +605,29 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"jobs":    summaryJobsSpec,
 		},
 		"ai": {
-			"enabled":                             boolSpec(false),
-			"group_whitelist":                     stringListSpec,
-			"mention_aliases":                     stringListSpec,
-			"auto_memory_enabled":                 boolSpec(true),
-			"reply_enabled":                       boolSpec(true),
-			"takeover_recruitment_enabled":        boolSpec(false),
-			"proactive_enabled":                   boolSpec(false),
-			"proactive_observer_interval_seconds": positiveIntSpec(60),
-			"proactive_settle_seconds":            positiveIntSpec(90),
-			"proactive_timeout_seconds":           positiveIntSpec(45),
-			"provider":                            aiProviderSpec,
-			"gpt_api_base_url":                    stringSpec,
-			"gpt_api_key":                         stringSpec,
-			"doubao_api_key":                      stringSpec,
-			"api_base_url":                        stringSpec,
-			"api_key":                             stringSpec,
-			"reply_model":                         aiModelSpec("gpt-5.4-mini"),
-			"summary_model":                       aiModelSpec("gpt-5.5"),
-			"merge_model":                         aiModelSpec("gpt-5.5"),
-			"manual_deep_model":                   aiModelSpec("gpt-5.2"),
-			"scan_interval_seconds":               positiveIntSpec(300),
-			"segment_min_messages":                positiveIntSpec(30),
-			"segment_quiet_seconds":               positiveIntSpec(600),
-			"segment_stale_seconds":               positiveIntSpec(21600),
-			"profile_min_segments":                positiveIntSpec(3),
-			"max_segment_messages":                positiveIntSpec(800),
-			"reply_context_messages":              positiveIntSpec(100),
-			"worker_queue_size":                   positiveIntSpec(200),
-			"reply_timeout_seconds":               positiveIntSpec(20),
-			"summary_timeout_seconds":             positiveIntSpec(180),
-			"merge_timeout_seconds":               positiveIntSpec(300),
+			"enabled":                      boolSpec(false),
+			"group_whitelist":              stringListSpec,
+			"mention_aliases":              stringListSpec,
+			"reply_enabled":                boolSpec(true),
+			"provider":                     aiProviderSpec,
+			"gpt_api_base_url":             stringSpec,
+			"gpt_api_key":                  stringSpec,
+			"doubao_api_key":               stringSpec,
+			"api_base_url":                 stringSpec,
+			"api_key":                      stringSpec,
+			"reply_model":                  aiModelSpec("gpt-5.4-mini"),
+			"reply_context_messages":       positiveIntSpec(100),
+			"reply_input_token_budget":     positiveIntSpec(6000),
+			"worker_queue_size":            positiveIntSpec(200),
+			"reply_timeout_seconds":        positiveIntSpec(20),
+			"vector_enabled":               boolSpec(false),
+			"vector_qdrant_url":            stringSpec,
+			"vector_embedding_base_url":    wxbotConfigFieldSpec{kind: "stringDefault", defaultValue: "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+			"vector_embedding_model":       wxbotConfigFieldSpec{kind: "stringDefault", defaultValue: "qwen3.7-text-embedding"},
+			"vector_sync_interval_seconds": positiveIntSpec(60),
+			"vector_sync_batch_size":       positiveIntSpec(32),
+			"vector_search_limit":          positiveIntSpec(8),
+			"vector_min_score":             unitFloatSpec(0.4),
 		},
 		"wxbot_control": {
 			"enabled":              boolSpec(true),
@@ -755,6 +743,8 @@ func normalizeWxbotConfigValue(value interface{}, spec wxbotConfigFieldSpec) (in
 			return spec.defaultValue, nil
 		}
 		return next, nil
+	case "float":
+		return normalizeWxbotUnitFloat(value, spec.defaultValue.(float64))
 	case "stringList":
 		return normalizeWxbotStringList(value)
 	case "summaryJobs":
@@ -803,6 +793,34 @@ func normalizeWxbotInt(value interface{}, defaultValue int) (int, error) {
 		}
 	}
 	return 0, errors.New("config int field must be an integer")
+}
+
+func normalizeWxbotUnitFloat(value interface{}, defaultValue float64) (float64, error) {
+	var next float64
+	switch v := value.(type) {
+	case float64:
+		next = v
+	case float32:
+		next = float64(v)
+	case int:
+		next = float64(v)
+	case string:
+		text := strings.TrimSpace(v)
+		if text == "" {
+			return defaultValue, nil
+		}
+		parsed, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return 0, errors.New("config float field must be a number")
+		}
+		next = parsed
+	default:
+		return 0, errors.New("config float field must be a number")
+	}
+	if next < 0 || next > 1 {
+		return 0, errors.New("config float field must be between 0 and 1")
+	}
+	return next, nil
 }
 
 func normalizeWxbotStringList(value interface{}) ([]string, error) {
@@ -1078,33 +1096,45 @@ func validateWxbotConfig(cfg map[string]interface{}) error {
 		for _, item := range []struct{ key, label string }{
 			{"api_base_url", "AI API Base URL"},
 			{"reply_model", "回复模型"},
-			{"summary_model", "总结模型"},
-			{"merge_model", "画像与文化模型"},
-			{"manual_deep_model", "手动深度模型"},
 		} {
 			if err := requireWxbotText(section, item.key, item.label); err != nil {
 				return err
 			}
 		}
 		for _, item := range []struct{ key, label string }{
-			{"proactive_observer_interval_seconds", "主动观察间隔"},
-			{"proactive_settle_seconds", "群友优先回答等待"},
-			{"proactive_timeout_seconds", "主动回复超时"},
-			{"scan_interval_seconds", "AI 扫描间隔"},
-			{"segment_min_messages", "AI 分段最少消息数"},
-			{"segment_quiet_seconds", "AI 安静阈值"},
-			{"segment_stale_seconds", "AI 最长未总结时间"},
-			{"profile_min_segments", "AI 画像最少片段数"},
-			{"max_segment_messages", "AI 分段消息上限"},
 			{"reply_context_messages", "AI 回复上下文消息数"},
+			{"reply_input_token_budget", "回复输入 token 预算"},
 			{"worker_queue_size", "AI 任务队列容量"},
 			{"reply_timeout_seconds", "AI 回复超时"},
-			{"summary_timeout_seconds", "AI 总结超时"},
-			{"merge_timeout_seconds", "AI 画像与人格超时"},
 		} {
 			if err := requireWxbotInt(section, item.key, item.label); err != nil {
 				return err
 			}
+		}
+	}
+	if section := wxbotSection(cfg, "ai"); boolValue(section["vector_enabled"]) {
+		for _, item := range []struct{ key, label string }{
+			{"vector_qdrant_url", "Qdrant 地址"},
+			{"vector_embedding_base_url", "Embedding API Base URL"},
+			{"vector_embedding_model", "Embedding 模型"},
+		} {
+			if err := requireWxbotText(section, item.key, item.label); err != nil {
+				return err
+			}
+		}
+		for _, item := range []struct{ key, label string }{
+			{"vector_sync_interval_seconds", "向量同步间隔"},
+			{"vector_sync_batch_size", "向量同步批量"},
+		} {
+			if err := requireWxbotInt(section, item.key, item.label); err != nil {
+				return err
+			}
+		}
+		if _, ok := section["vector_min_score"].(float64); !ok {
+			return errors.New("向量最低分数必须在 0 到 1 之间")
+		}
+		if limit, ok := section["vector_search_limit"].(int); !ok || limit < 1 || limit > 8 {
+			return errors.New("向量检索条数必须在 1 到 8 之间")
 		}
 	}
 	if section := wxbotSection(cfg, "wxbot_control"); wxbotEnabled(section) {

@@ -33,9 +33,6 @@ var (
 	aiJobPathPattern                     = regexp.MustCompile(`^/ai/jobs/[0-9]+$`)
 	aiHistoryActionPattern               = regexp.MustCompile(`^/ai/history-learning/[0-9]+/(pause|resume|cancel|retry)$`)
 	aiErrorActionPattern                 = regexp.MustCompile(`^/ai/errors/[0-9]+/(retry|resolve)$`)
-	aiCandidateActionPattern             = regexp.MustCompile(`^/ai/memory/persona-candidates/[0-9]+/(promote|reject)$`)
-	aiCandidateEvidencePath              = regexp.MustCompile(`^/ai/memory/persona-candidates/[0-9]+/evidence$`)
-	aiVersionRollbackPattern             = regexp.MustCompile(`^/ai/memory/persona-versions/[0-9]+/rollback$`)
 	aiReplySamplePathPattern             = regexp.MustCompile(`^/ai/reply-samples/[0-9]+$`)
 	aiReplyConversationSamplePathPattern = regexp.MustCompile(`^/ai/reply-conversation-samples/[0-9]+$`)
 	aiReplyLogFeedbackPattern            = regexp.MustCompile(`^/ai/reply-logs/[0-9]+/feedback$`)
@@ -86,16 +83,16 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 func aiWechatBotPathAllowed(method, path string) bool {
 	if method == http.MethodGet {
 		switch path {
-		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/observation", "/ai/config", "/ai/role-card", "/ai/prompt-instructions", "/ai/reply-samples", "/ai/reply-conversation-samples", "/ai/reply-logs", "/ai/interventions", "/ai/memory/runs", "/ai/memory/facts", "/ai/memory/relationships", "/ai/memory/events", "/ai/memory/feedbacks", "/ai/memory/room-persona", "/ai/memory/member-profiles", "/ai/memory/persona-candidates", "/ai/memory/persona-versions":
+		case "/ai/status", "/ai/jobs", "/ai/history-learning", "/ai/errors", "/ai/role-card", "/ai/prompt-instructions", "/ai/reply-samples", "/ai/reply-conversation-samples", "/ai/reply-logs":
 			return true
 		}
-		return aiJobPathPattern.MatchString(path) || aiCandidateEvidencePath.MatchString(path) || aiReplySamplePathPattern.MatchString(path) || aiReplyConversationSamplePathPattern.MatchString(path)
+		return aiJobPathPattern.MatchString(path) || aiReplySamplePathPattern.MatchString(path) || aiReplyConversationSamplePathPattern.MatchString(path)
 	}
 	if method == http.MethodPost {
-		return path == "/ai/jobs" || path == "/ai/history-learning" || path == "/ai/reply-samples" || path == "/ai/reply-conversation-samples" || aiHistoryActionPattern.MatchString(path) || aiErrorActionPattern.MatchString(path) || aiCandidateActionPattern.MatchString(path) || aiVersionRollbackPattern.MatchString(path) || aiReplyLogFeedbackPattern.MatchString(path)
+		return path == "/ai/jobs" || path == "/ai/history-learning" || path == "/ai/reply-samples" || path == "/ai/reply-conversation-samples" || aiHistoryActionPattern.MatchString(path) || aiErrorActionPattern.MatchString(path) || aiReplyLogFeedbackPattern.MatchString(path)
 	}
 	if method == http.MethodPut {
-		return path == "/ai/config" || path == "/ai/role-card" || path == "/ai/prompt-instructions"
+		return path == "/ai/role-card" || path == "/ai/prompt-instructions"
 	}
 	if method == http.MethodDelete {
 		return aiReplySamplePathPattern.MatchString(path) || aiReplyConversationSamplePathPattern.MatchString(path)
