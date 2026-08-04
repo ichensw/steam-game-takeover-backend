@@ -236,6 +236,33 @@ func TestNormalizeWxbotConfigDropsLegacyProfileDepth(t *testing.T) {
 	}
 }
 
+func TestVersionedWxbotConfigDropsRemovedLegacyFields(t *testing.T) {
+	normalized := versionedWxbotConfigRaw([]byte(`{
+		"ai": {
+			"enabled": true,
+			"api_base_url": "https://example.com/v1",
+			"reply_model": "gpt-5.4-mini",
+			"summary_model": "gpt-5.4-mini",
+			"merge_model": "gpt-5.4-mini",
+			"proactive_enabled": true
+		}
+	}`))
+	var envelope struct {
+		Config map[string]map[string]interface{} `json:"config"`
+	}
+	if err := json.Unmarshal(normalized, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"summary_model", "merge_model", "proactive_enabled"} {
+		if _, ok := envelope.Config["ai"][field]; ok {
+			t.Fatalf("legacy ai field %q should be removed", field)
+		}
+	}
+	if got := envelope.Config["ai"]["enabled"]; got != true {
+		t.Fatalf("enabled = %#v, want true", got)
+	}
+}
+
 func TestWxbotConfigSchemaFileMatchesNormalizer(t *testing.T) {
 	raw, err := os.ReadFile("../../docs/contracts/wxbot-config.schema.json")
 	if err != nil {

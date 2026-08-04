@@ -689,9 +689,39 @@ func emptyWxbotConfig() json.RawMessage {
 func versionedWxbotConfigRaw(raw []byte) []byte {
 	normalized, err := normalizeWxbotConfig(raw)
 	if err != nil {
-		return raw
+		normalized, err = normalizeLegacyWxbotConfig(raw)
+		if err != nil {
+			return raw
+		}
 	}
 	return normalized
+}
+
+// normalizeLegacyWxbotConfig lets old persisted configuration survive schema removals.
+// New config writes still go through normalizeWxbotConfig and reject unknown fields.
+func normalizeLegacyWxbotConfig(raw json.RawMessage) (json.RawMessage, error) {
+	cfg, err := unwrapWxbotConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	schema := wxbotConfigSchema()
+	filtered := make(map[string]interface{}, len(cfg))
+	for section, value := range cfg {
+		fields, ok := schema[section]
+		values, isObject := value.(map[string]interface{})
+		if !ok || !isObject {
+			continue
+		}
+		cleanSection := make(map[string]interface{}, len(values))
+		for field, fieldValue := range values {
+			if _, ok := fields[field]; ok {
+				cleanSection[field] = fieldValue
+			}
+		}
+		filtered[section] = cleanSection
+	}
+	clean, _ := json.Marshal(filtered)
+	return normalizeWxbotConfig(clean)
 }
 
 func effectiveWxbotSchemaVersion(version int) int {
