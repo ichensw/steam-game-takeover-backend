@@ -77,6 +77,9 @@ func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query vector sync state failed")
 			return
 		}
+		if vectorState == nil {
+			vectorState = []map[string]interface{}{}
+		}
 	}
 	rooms, err := s.aiRooms(r.Context())
 	if err != nil {
