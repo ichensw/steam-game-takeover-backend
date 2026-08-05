@@ -68,6 +68,10 @@ func NewServer(cfg Config, db *sql.DB) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /api/groups", s.trustedAdmin(http.HandlerFunc(s.groups)))
+	mux.Handle("GET /api/groups/manage", s.trustedAdmin(http.HandlerFunc(s.groupManagementList)))
+	mux.Handle("GET /api/groups/manage/{roomID}/members", s.trustedAdmin(http.HandlerFunc(s.groupManagementMembers)))
+	mux.Handle("GET /api/groups/manage/{roomID}/events", s.trustedAdmin(http.HandlerFunc(s.groupManagementEvents)))
+	mux.Handle("PUT /api/groups/manage/{roomID}/whitelist", s.trustedAdmin(http.HandlerFunc(s.updateGroupWhitelist)))
 	mux.Handle("GET /api/messages", s.trustedAdmin(http.HandlerFunc(s.messages)))
 	mux.Handle("POST /api/messages/summary", s.trustedAdmin(http.HandlerFunc(s.summary)))
 	mux.Handle("POST /api/messages/summary-jobs", s.trustedAdmin(http.HandlerFunc(s.createSummaryJob)))

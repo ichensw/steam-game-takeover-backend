@@ -19,6 +19,11 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		allowed bool
 	}{
 		{http.MethodGet, "/groups", []string{"wechat-messages", "wechat-summary"}, true},
+		{http.MethodGet, "/groups/manage", []string{"wechat-groups", "wechat-wxbot-control"}, true},
+		{http.MethodGet, "/groups/manage/123@chatroom/members", []string{"wechat-groups", "wechat-wxbot-control"}, true},
+		{http.MethodGet, "/groups/manage/123@chatroom/events", []string{"wechat-groups", "wechat-wxbot-control"}, true},
+		{http.MethodPut, "/groups/manage/123@chatroom/whitelist", []string{"wechat-groups", "wechat-wxbot-control"}, true},
+		{http.MethodDelete, "/groups/manage/123@chatroom/whitelist", nil, false},
 		{http.MethodGet, "/messages", []string{"wechat-messages"}, true},
 		{http.MethodPost, "/messages/summary", []string{"wechat-summary"}, true},
 		{http.MethodPost, "/messages/summary-jobs", []string{"wechat-summary"}, true},

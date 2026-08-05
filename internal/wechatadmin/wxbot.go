@@ -623,6 +623,7 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"group_whitelist":              stringListSpec,
 			"mention_aliases":              stringListSpec,
 			"reply_enabled":                boolSpec(true),
+			"private_reply_enabled":        boolSpec(false),
 			"provider":                     aiProviderSpec,
 			"gpt_api_base_url":             stringSpec,
 			"gpt_api_key":                  stringSpec,

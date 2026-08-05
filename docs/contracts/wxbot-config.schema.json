@@ -75,6 +75,7 @@
       "group_whitelist": "stringList",
       "mention_aliases": "stringList",
       "reply_enabled": "bool",
+      "private_reply_enabled": "bool",
       "provider": "aiProvider",
       "gpt_api_base_url": "string",
       "gpt_api_key": "string",

@@ -63,6 +63,9 @@ func TestNormalizeWxbotConfigAcceptsAISection(t *testing.T) {
 	if _, ok := cfg["ai"]["mention_aliases"]; !ok {
 		t.Fatal("ai.mention_aliases default missing")
 	}
+	if got := cfg["ai"]["private_reply_enabled"]; got != false {
+		t.Fatalf("private_reply_enabled = %#v, want false", got)
+	}
 	if got := cfg["ai"]["provider"]; got != aiProviderGPT {
 		t.Fatalf("provider = %#v, want %q", got, aiProviderGPT)
 	}
