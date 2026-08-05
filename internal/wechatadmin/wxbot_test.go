@@ -79,7 +79,9 @@ func TestNormalizeWxbotConfigAcceptsVectorSettings(t *testing.T) {
 		"ai": {
 			"vector_enabled": true,
 			"vector_qdrant_url": "https://qdrant.example.com/",
+			"vector_qdrant_api_key": "qdrant-key",
 			"vector_embedding_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+			"vector_embedding_api_key": "embedding-key",
 			"vector_embedding_model": "qwen3.7-text-embedding",
 			"vector_sync_interval_seconds": 60,
 			"vector_sync_batch_size": 32,
@@ -97,7 +99,7 @@ func TestNormalizeWxbotConfigAcceptsVectorSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	ai := envelope.Config["ai"]
-	if ai["vector_qdrant_url"] != "https://qdrant.example.com/" || ai["vector_min_score"] != float64(0.4) {
+	if ai["vector_qdrant_url"] != "https://qdrant.example.com/" || ai["vector_qdrant_api_key"] != "qdrant-key" || ai["vector_embedding_api_key"] != "embedding-key" || ai["vector_min_score"] != float64(0.4) {
 		t.Fatalf("vector config = %#v", ai)
 	}
 }
