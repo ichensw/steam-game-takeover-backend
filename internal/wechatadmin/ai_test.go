@@ -41,6 +41,19 @@ func TestNormalizeAIResolvedValueIsBoolean(t *testing.T) {
 	}
 }
 
+func TestProjectHistoryLearningProgressKeepsTheFurthestProgress(t *testing.T) {
+	task := map[string]interface{}{"processedMsgCount": int64(10)}
+	projectHistoryLearningProgress(task, map[string]interface{}{"inputMsgCount": int64(42)})
+	if got := int64Value(task["processedMsgCount"]); got != 42 {
+		t.Fatalf("processedMsgCount = %d, want 42", got)
+	}
+
+	projectHistoryLearningProgress(task, map[string]interface{}{"inputMsgCount": int64(20)})
+	if got := int64Value(task["processedMsgCount"]); got != 42 {
+		t.Fatalf("processedMsgCount regressed to %d", got)
+	}
+}
+
 func TestValidAIReplyFeedback(t *testing.T) {
 	for _, value := range []string{"human", "too_ai", "too_much"} {
 		if !validAIReplyFeedback(value) {

@@ -233,7 +233,24 @@ func (s *Server) aiHistoryLearningTasks(w http.ResponseWriter, r *http.Request) 
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query history learning failed")
 		return
 	}
+	for _, item := range items {
+		jobID := int64Value(item["currentJobId"])
+		if jobID <= 0 {
+			continue
+		}
+		job, err := s.oneAIMap(r.Context(), "SELECT status, input_msg_count FROM ai_jobs WHERE id = ?", jobID)
+		if err != nil || stringValue(job["status"]) != "running" {
+			continue
+		}
+		projectHistoryLearningProgress(item, job)
+	}
 	ok(w, map[string]interface{}{"items": items})
+}
+
+func projectHistoryLearningProgress(task, job map[string]interface{}) {
+	if processed := int64Value(job["inputMsgCount"]); processed > int64Value(task["processedMsgCount"]) {
+		task["processedMsgCount"] = processed
+	}
 }
 
 func (s *Server) createAIHistoryLearningTask(w http.ResponseWriter, r *http.Request) {
