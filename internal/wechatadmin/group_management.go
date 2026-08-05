@@ -17,10 +17,30 @@ type groupWhitelistUpdateRequest struct {
 }
 
 func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureWechatGroupIndexes(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "ensure group indexes failed")
+		return
+	}
 	botID := cleanBotID(r.URL.Query().Get("botId"))
 	whitelists, effectiveBotID, err := s.groupWhitelists(r.Context(), botID)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query group whitelist failed")
+		return
+	}
+	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
+	pageSize := positiveInt(r.URL.Query().Get("pageSize"), 20, 1, 200)
+	offset := (page - 1) * pageSize
+
+	var total int
+	if err := s.db.QueryRowContext(r.Context(), `
+		SELECT COUNT(*)
+		FROM (
+			SELECT room_id FROM group_info
+			UNION
+			SELECT room_id FROM group_messages WHERE room_id <> ''
+		) rooms
+	`).Scan(&total); err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "count managed groups failed")
 		return
 	}
 
@@ -40,7 +60,8 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 			GROUP BY room_id
 		) ms ON ms.room_id = rooms.room_id
 		ORDER BY COALESCE(gi.updated_at, ms.last_message_at, 0) DESC
-	`)
+		LIMIT ? OFFSET ?
+	`, pageSize, offset)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query managed groups failed")
 		return
@@ -78,10 +99,23 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query managed groups failed")
 		return
 	}
-	ok(w, map[string]interface{}{"botId": effectiveBotID, "items": items})
+	ok(w, map[string]interface{}{
+		"botId": effectiveBotID,
+		"items": items,
+		"pagination": map[string]int{
+			"page":       page,
+			"pageSize":   pageSize,
+			"totalItems": total,
+			"totalPages": (total + pageSize - 1) / pageSize,
+		},
+	})
 }
 
 func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureWechatGroupIndexes(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "ensure group indexes failed")
+		return
+	}
 	roomID := strings.TrimSpace(r.PathValue("roomID"))
 	if roomID == "" {
 		fail(w, http.StatusBadRequest, "PARAM_INVALID", "roomId is required")
@@ -93,13 +127,9 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 
 	var total int
 	if err := s.db.QueryRowContext(r.Context(), `
-		SELECT COUNT(*)
-		FROM (
-			SELECT sender_wxid
-			FROM group_messages
-			WHERE room_id = ? AND sender_wxid <> ''
-			GROUP BY sender_wxid
-		) t
+		SELECT COUNT(DISTINCT sender_wxid)
+		FROM group_messages
+		WHERE room_id = ? AND sender_wxid <> ''
 	`, roomID).Scan(&total); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "count members failed")
 		return
@@ -148,6 +178,10 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureWechatGroupIndexes(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "ensure group indexes failed")
+		return
+	}
 	roomID := strings.TrimSpace(r.PathValue("roomID"))
 	if roomID == "" {
 		fail(w, http.StatusBadRequest, "PARAM_INVALID", "roomId is required")
@@ -358,6 +392,45 @@ func updateStringList(values []string, value string, enabled bool) []string {
 func stringSetContains(set map[string]struct{}, value string) bool {
 	_, ok := set[strings.TrimSpace(value)]
 	return ok
+}
+
+func (s *Server) ensureWechatGroupIndexes(ctx context.Context) error {
+	for _, item := range []struct{ table, name, ddl string }{
+		{"group_messages", "idx_room_created", "ALTER TABLE group_messages ADD INDEX idx_room_created (room_id, created_at)"},
+		{"group_messages", "idx_room_sender_created", "ALTER TABLE group_messages ADD INDEX idx_room_sender_created (room_id, sender_wxid, created_at)"},
+		{"group_member_events", "idx_room_created", "ALTER TABLE group_member_events ADD INDEX idx_room_created (room_id, created_at)"},
+	} {
+		var count int
+		var err error
+		err = s.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.tables
+			WHERE table_schema = DATABASE()
+			  AND table_name = ?
+		`, item.table).Scan(&count)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			continue
+		}
+		err = s.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.statistics
+			WHERE table_schema = DATABASE()
+			  AND table_name = ?
+			  AND index_name = ?
+		`, item.table, item.name).Scan(&count)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := s.db.ExecContext(ctx, item.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func isEmptyConfig(raw json.RawMessage) bool {
