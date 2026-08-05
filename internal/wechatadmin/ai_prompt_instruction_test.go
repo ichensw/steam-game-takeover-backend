@@ -23,3 +23,14 @@ func TestDefaultAIPromptInstructionsCoverEveryAllowedKey(t *testing.T) {
 		}
 	}
 }
+
+func TestObsoleteAIPromptInstructionsAreNotExposed(t *testing.T) {
+	for _, key := range obsoleteAIPromptInstructionKeys {
+		if validAIPromptInstructionKey(key) {
+			t.Fatalf("obsolete instruction %q must not be editable", key)
+		}
+		if _, ok := defaultAIPromptInstructions[key]; ok {
+			t.Fatalf("obsolete instruction %q must not have a default", key)
+		}
+	}
+}

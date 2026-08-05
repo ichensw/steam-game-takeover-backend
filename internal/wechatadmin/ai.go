@@ -43,20 +43,23 @@ type aiPromptInstructionSpec struct {
 }
 
 var aiPromptInstructionSpecs = []aiPromptInstructionSpec{
-	{Key: "base_system", Label: "基础系统规则"},
-	{Key: "profile_system", Label: "画像任务系统规则"},
 	{Key: "reply_system", Label: "回复系统提示词", Placeholders: []string{"role_card", "reply_instruction"}},
 	{Key: "reply", Label: "回答规则"},
-	{Key: "segment_summary", Label: "分段总结提示词", Placeholders: []string{"retry", "messages"}},
-	{Key: "profile_merge", Label: "画像合并提示词", Placeholders: []string{"profiles", "summaries", "self_corrections"}},
-	{Key: "culture_update", Label: "群文化更新提示词", Placeholders: []string{"current_culture", "summaries", "profiles"}},
-	{Key: "persona_candidate", Label: "人格候选提示词", Placeholders: []string{"current_persona", "room_culture", "summaries", "profiles"}},
 	{Key: "reply_user", Label: "实时回复提示词", Placeholders: []string{"route", "trigger", "recent_context", "memory_context", "live_takeover_candidates_available", "takeover_candidates", "style_examples", "conversation_examples", "recent_bot_replies", "conversation_repair_required", "rewrite_reason"}},
-	{Key: "proactive_intervention", Label: "主动介入提示词", Placeholders: []string{"candidate", "recent_context", "memory_context", "recent_bot_replies"}},
-	{Key: "knowledge_reconcile", Label: "知识纠正提示词", Placeholders: []string{"feedbacks", "records", "source_messages"}},
-	{Key: "takeover_recruitment", Label: "接龙摇人提示词", Placeholders: []string{"candidate", "profiles", "room_culture", "bot_persona"}},
 	{Key: "takeover_query_match", Label: "接龙匹配提示词", Placeholders: []string{"trigger", "candidates"}},
 	{Key: "takeover_status_reply", Label: "接龙状态回复提示词", Placeholders: []string{"status"}},
+}
+
+var obsoleteAIPromptInstructionKeys = []string{
+	"base_system",
+	"profile_system",
+	"segment_summary",
+	"profile_merge",
+	"culture_update",
+	"persona_candidate",
+	"proactive_intervention",
+	"knowledge_reconcile",
+	"takeover_recruitment",
 }
 
 var aiPromptInstructionKeys = func() []string {
@@ -2072,6 +2075,11 @@ func (s *Server) ensureAIPromptInstructionDefaults(ctx context.Context) error {
 			INSERT IGNORE INTO ai_prompt_instructions (instruction_key, content, updated_at)
 			VALUES (?, ?, ?)
 		`, key, defaultAIPromptInstructions[key], now); err != nil {
+			return err
+		}
+	}
+	for _, key := range obsoleteAIPromptInstructionKeys {
+		if _, err := s.db.ExecContext(ctx, "DELETE FROM ai_prompt_instructions WHERE instruction_key = ?", key); err != nil {
 			return err
 		}
 	}
