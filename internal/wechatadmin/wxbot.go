@@ -630,6 +630,7 @@ func wxbotConfigSchema() map[string]map[string]wxbotConfigFieldSpec {
 			"api_base_url":                 stringSpec,
 			"api_key":                      stringSpec,
 			"reply_model":                  aiModelSpec("gpt-5.4-mini"),
+			"reply_temperature":            unitFloatSpec(0.6),
 			"reply_context_messages":       positiveIntSpec(100),
 			"reply_input_token_budget":     positiveIntSpec(6000),
 			"worker_queue_size":            positiveIntSpec(200),

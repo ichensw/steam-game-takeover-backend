@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -35,14 +36,59 @@ var manualAIJobTypes = map[string]bool{
 	"vector_backfill": true,
 }
 
-const defaultAIRoleCard = "你是群里的知心大姐姐，温柔、细腻、有耐心，像一个熟悉大家但不过度介入的朋友。你会认真听人说话，能察觉情绪，也会在需要时给出实际、有分寸的建议。别人问具体事情时先直接回答；别人表达委屈、犹豫或难过时，先回应感受，再说建议。说话自然、生活化、简短，不端着，不说教，不用心理咨询或客服腔。不吐槽、不阴阳怪气、不装傻、不玩梗、不恶搞，也不靠固定口癖制造人设。不刻意撒娇，不滥用亲昵称呼；亲近感来自认真回应细节，而不是甜话。不为了延续对话而追问；没有可靠记录时如实但委婉地说明没查到，不脑补，不把猜测说成事实。"
-
-var aiPromptInstructionKeys = []string{
-	"reply",
+type aiPromptInstructionSpec struct {
+	Key          string
+	Label        string
+	Placeholders []string
 }
 
-var defaultAIPromptInstructions = map[string]string{
-	"reply": "直接回答当前问题。历史聊天只能作为“谁在何时说过什么”的原始引用，找不到原话就说明没有查到，不要推断成员画像、关系或群结论。",
+var aiPromptInstructionSpecs = []aiPromptInstructionSpec{
+	{Key: "base_system", Label: "基础系统规则"},
+	{Key: "profile_system", Label: "画像任务系统规则"},
+	{Key: "reply_system", Label: "回复系统提示词", Placeholders: []string{"role_card", "reply_instruction"}},
+	{Key: "reply", Label: "回答规则"},
+	{Key: "segment_summary", Label: "分段总结提示词", Placeholders: []string{"retry", "messages"}},
+	{Key: "profile_merge", Label: "画像合并提示词", Placeholders: []string{"profiles", "summaries", "self_corrections"}},
+	{Key: "culture_update", Label: "群文化更新提示词", Placeholders: []string{"current_culture", "summaries", "profiles"}},
+	{Key: "persona_candidate", Label: "人格候选提示词", Placeholders: []string{"current_persona", "room_culture", "summaries", "profiles"}},
+	{Key: "reply_user", Label: "实时回复提示词", Placeholders: []string{"route", "trigger", "recent_context", "memory_context", "live_takeover_candidates_available", "takeover_candidates", "style_examples", "conversation_examples", "recent_bot_replies", "conversation_repair_required", "rewrite_reason"}},
+	{Key: "proactive_intervention", Label: "主动介入提示词", Placeholders: []string{"candidate", "recent_context", "memory_context", "recent_bot_replies"}},
+	{Key: "knowledge_reconcile", Label: "知识纠正提示词", Placeholders: []string{"feedbacks", "records", "source_messages"}},
+	{Key: "takeover_recruitment", Label: "接龙摇人提示词", Placeholders: []string{"candidate", "profiles", "room_culture", "bot_persona"}},
+	{Key: "takeover_query_match", Label: "接龙匹配提示词", Placeholders: []string{"trigger", "candidates"}},
+	{Key: "takeover_status_reply", Label: "接龙状态回复提示词", Placeholders: []string{"status"}},
+}
+
+var aiPromptInstructionKeys = func() []string {
+	keys := make([]string, 0, len(aiPromptInstructionSpecs))
+	for _, spec := range aiPromptInstructionSpecs {
+		keys = append(keys, spec.Key)
+	}
+	return keys
+}()
+
+//go:embed default_ai_prompts.json
+var defaultAIPromptResource []byte
+
+var defaultAIRoleCard, defaultAIPromptInstructions = loadAIPromptDefaults()
+
+func loadAIPromptDefaults() (string, map[string]string) {
+	var resource struct {
+		RoleCard     string            `json:"role_card"`
+		Instructions map[string]string `json:"instructions"`
+	}
+	if err := json.Unmarshal(defaultAIPromptResource, &resource); err != nil {
+		panic(fmt.Sprintf("invalid default AI prompt resource: %v", err))
+	}
+	if strings.TrimSpace(resource.RoleCard) == "" {
+		panic("default AI role card is empty")
+	}
+	for _, key := range aiPromptInstructionKeys {
+		if strings.TrimSpace(resource.Instructions[key]) == "" {
+			panic(fmt.Sprintf("missing default AI prompt template: %s", key))
+		}
+	}
+	return resource.RoleCard, resource.Instructions
 }
 
 func EnsureAIStyleDefaults(ctx context.Context, db *sql.DB) error {
@@ -643,9 +689,14 @@ func (s *Server) aiPromptInstructions(w http.ResponseWriter, r *http.Request) {
 		byKey[stringValue(row["instructionKey"])] = row
 	}
 	items := make([]map[string]interface{}, 0, len(aiPromptInstructionKeys))
-	for _, key := range aiPromptInstructionKeys {
-		item := map[string]interface{}{"key": key, "content": ""}
-		if row := byKey[key]; row != nil {
+	for _, spec := range aiPromptInstructionSpecs {
+		item := map[string]interface{}{
+			"key":          spec.Key,
+			"label":        spec.Label,
+			"placeholders": spec.Placeholders,
+			"content":      "",
+		}
+		if row := byKey[spec.Key]; row != nil {
 			item["content"] = stringValue(row["content"])
 			item["updatedAt"] = row["updatedAt"]
 		}
@@ -659,7 +710,7 @@ func (s *Server) updateAIPromptInstruction(w http.ResponseWriter, r *http.Reques
 		Key     string `json:"key"`
 		Content string `json:"content"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<10)).Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
 		return
 	}
@@ -676,7 +727,7 @@ func (s *Server) updateAIPromptInstruction(w http.ResponseWriter, r *http.Reques
 	if content == "" {
 		content = defaultAIPromptInstructions[key]
 	}
-	if len(content) > 4000 {
+	if len(content) > 16000 {
 		fail(w, http.StatusBadRequest, "PARAM_INVALID", "ai prompt instruction is too long")
 		return
 	}
@@ -2010,6 +2061,12 @@ func (s *Server) ensureAIStyleTables(ctx context.Context) error {
 
 func (s *Server) ensureAIPromptInstructionDefaults(ctx context.Context) error {
 	now := float64(time.Now().UnixNano()) / 1e9
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT IGNORE INTO ai_role_cards (id, content, updated_at)
+		VALUES (1, ?, ?)
+	`, defaultAIRoleCard, now); err != nil {
+		return err
+	}
 	for _, key := range aiPromptInstructionKeys {
 		if _, err := s.db.ExecContext(ctx, `
 			INSERT IGNORE INTO ai_prompt_instructions (instruction_key, content, updated_at)

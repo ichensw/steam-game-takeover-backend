@@ -82,6 +82,7 @@
       "api_base_url": "string",
       "api_key": "string",
       "reply_model": "aiModel",
+      "reply_temperature": "float",
       "reply_context_messages": "positiveInt",
       "reply_input_token_budget": "positiveInt",
       "worker_queue_size": "positiveInt",

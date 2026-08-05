@@ -11,7 +11,7 @@ func TestValidAIPromptInstructionKey(t *testing.T) {
 			t.Fatalf("expected key %q to be allowed", key)
 		}
 	}
-	if validAIPromptInstructionKey("reply_system") {
+	if validAIPromptInstructionKey("not_a_template") {
 		t.Fatal("unexpected prompt instruction key allowed")
 	}
 }
