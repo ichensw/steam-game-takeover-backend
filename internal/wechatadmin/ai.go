@@ -69,6 +69,24 @@ func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	aiCfg := s.latestAIConfig(r.Context())
+	botOnline := s.wxbotOnline(r.Context())
+	runtimeVector := s.latestAIVectorStatus(r.Context())
+	vectorEnabled := boolValue(aiCfg["vector_enabled"])
+	vectorConfigured := false
+	vectorReason := "waiting_for_bot_heartbeat"
+	vectorEmbeddingModel := firstNonEmpty(stringValue(aiCfg["vector_embedding_model"]), "qwen3.7-text-embedding")
+	if runtimeVector != nil {
+		vectorEnabled = boolValue(runtimeVector["enabled"])
+		vectorConfigured = boolValue(runtimeVector["configured"])
+		vectorReason = strings.TrimSpace(stringValue(runtimeVector["reason"]))
+		vectorEmbeddingModel = firstNonEmpty(stringValue(runtimeVector["embeddingModel"]), vectorEmbeddingModel)
+	}
+	if !botOnline {
+		vectorConfigured = false
+		vectorReason = "bot_offline"
+	} else if !vectorConfigured && vectorReason == "" {
+		vectorReason = "vector_unavailable"
+	}
 	vectorState := []map[string]interface{}{}
 	if tableExists(r.Context(), s.db, "ai_vector_sync_state") {
 		var stateErr error
@@ -98,15 +116,16 @@ func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]interface{}{
 		"enabled":    boolValue(aiCfg["enabled"]),
 		"configured": strings.TrimSpace(stringValue(aiCfg["api_key"])) != "" || strings.TrimSpace(s.cfg.AIAPIKey) != "",
-		"running":    s.wxbotOnline(r.Context()),
+		"running":    botOnline,
 		"queues":     queues,
 		"models": map[string]string{
 			"reply": firstNonEmpty(stringValue(aiCfg["reply_model"]), s.cfg.AIModel),
 		},
 		"vector": map[string]interface{}{
-			"enabled":        boolValue(aiCfg["vector_enabled"]),
-			"configured":     boolValue(aiCfg["vector_enabled"]) && strings.TrimSpace(stringValue(aiCfg["vector_qdrant_url"])) != "" && strings.TrimSpace(stringValue(aiCfg["vector_embedding_base_url"])) != "",
-			"embeddingModel": firstNonEmpty(stringValue(aiCfg["vector_embedding_model"]), "qwen3.7-text-embedding"),
+			"enabled":        vectorEnabled,
+			"configured":     vectorConfigured,
+			"reason":         vectorReason,
+			"embeddingModel": vectorEmbeddingModel,
 			"syncStates":     vectorState,
 		},
 		"rooms":      rooms,
@@ -1682,6 +1701,28 @@ func (s *Server) latestAIConfig(ctx context.Context) map[string]interface{} {
 		ai["reply_model"] = value
 	}
 	return ai
+}
+
+func (s *Server) latestAIVectorStatus(ctx context.Context) map[string]interface{} {
+	if !tableExists(ctx, s.db, "wxbot_agents") {
+		return nil
+	}
+	var raw json.RawMessage
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(ai_status_json, JSON_OBJECT())
+		FROM wxbot_agents
+		ORDER BY last_seen_at DESC, bot_id
+		LIMIT 1
+	`).Scan(&raw)
+	if err != nil {
+		return nil
+	}
+	var status map[string]interface{}
+	if json.Unmarshal(raw, &status) != nil {
+		return nil
+	}
+	vector, _ := status["vector"].(map[string]interface{})
+	return vector
 }
 
 func (s *Server) aiRooms(ctx context.Context) ([]map[string]interface{}, error) {

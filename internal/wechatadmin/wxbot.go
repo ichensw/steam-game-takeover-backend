@@ -26,6 +26,7 @@ type wxbotHeartbeatRequest struct {
 	ConfigSchemaVersion int             `json:"configSchemaVersion"`
 	LastConfigError     string          `json:"lastConfigError"`
 	CurrentConfig       json.RawMessage `json:"currentConfig"`
+	AIStatus            json.RawMessage `json:"aiStatus"`
 }
 
 type wxbotRecord struct {
@@ -104,10 +105,11 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	startedAt := nullTime(req.StartedAt)
 	currentConfig, hasCurrentConfig, lastConfigError := normalizeWxbotCurrentConfig(req.CurrentConfig, req.LastConfigError)
+	aiStatus := normalizeWxbotAIStatus(req.AIStatus)
 	_, err := s.db.ExecContext(r.Context(), `
 		INSERT INTO wxbot_agents
-			(bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at, config_json, current_config_json, config_schema_version, last_config_error, config_updated_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, NOW(), NOW())
+			(bot_id, name, wxid, status, version, host, pid, started_at, last_seen_at, config_json, current_config_json, ai_status_json, config_schema_version, last_config_error, config_updated_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			wxid = VALUES(wxid),
@@ -118,10 +120,11 @@ func (s *Server) wxbotHeartbeat(w http.ResponseWriter, r *http.Request) {
 			started_at = COALESCE(VALUES(started_at), started_at),
 			last_seen_at = NOW(),
 			current_config_json = IF(? = 1, VALUES(current_config_json), current_config_json),
+			ai_status_json = VALUES(ai_status_json),
 			config_schema_version = VALUES(config_schema_version),
 			last_config_error = VALUES(last_config_error),
 			updated_at = NOW()
-	`, req.BotID, req.Name, req.Wxid, req.Status, req.Version, req.Host, req.PID, startedAt, string(emptyWxbotConfig()), string(currentConfig), effectiveWxbotSchemaVersion(req.ConfigSchemaVersion), lastConfigError, boolInt(hasCurrentConfig))
+	`, req.BotID, req.Name, req.Wxid, req.Status, req.Version, req.Host, req.PID, startedAt, string(emptyWxbotConfig()), string(currentConfig), string(aiStatus), effectiveWxbotSchemaVersion(req.ConfigSchemaVersion), lastConfigError, boolInt(hasCurrentConfig))
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save wxbot heartbeat failed")
 		return
@@ -143,6 +146,15 @@ func normalizeWxbotCurrentConfig(raw json.RawMessage, lastError string) (json.Ra
 		return emptyWxbotConfig(), false, err.Error()
 	}
 	return currentConfig, true, strings.TrimSpace(lastError)
+}
+
+func normalizeWxbotAIStatus(raw json.RawMessage) json.RawMessage {
+	var value map[string]interface{}
+	if json.Unmarshal(raw, &value) != nil || value == nil {
+		return json.RawMessage(`{}`)
+	}
+	encoded, _ := json.Marshal(value)
+	return encoded
 }
 
 func (s *Server) wxbotConfigForBot(w http.ResponseWriter, r *http.Request) {
@@ -333,6 +345,7 @@ func (s *Server) ensureWxbotSchema(ctx context.Context) error {
 	var count int
 	for _, column := range []struct{ name, ddl string }{
 		{"current_config_json", `ALTER TABLE wxbot_agents ADD COLUMN current_config_json JSON NULL AFTER config_json`},
+		{"ai_status_json", `ALTER TABLE wxbot_agents ADD COLUMN ai_status_json JSON NULL AFTER current_config_json`},
 		{"config_schema_version", `ALTER TABLE wxbot_agents ADD COLUMN config_schema_version INT NOT NULL DEFAULT 1 AFTER current_config_json`},
 		{"last_config_error", `ALTER TABLE wxbot_agents ADD COLUMN last_config_error TEXT NULL AFTER config_schema_version`},
 	} {
@@ -368,6 +381,7 @@ CREATE TABLE IF NOT EXISTS wxbot_agents (
   last_seen_at DATETIME NULL,
   config_json JSON NOT NULL,
   current_config_json JSON NULL,
+  ai_status_json JSON NULL,
   config_schema_version INT NOT NULL DEFAULT 1,
   last_config_error TEXT NULL,
   config_updated_at DATETIME NULL,

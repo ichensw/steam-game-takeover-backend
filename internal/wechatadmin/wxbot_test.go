@@ -263,6 +263,15 @@ func TestVersionedWxbotConfigDropsRemovedLegacyFields(t *testing.T) {
 	}
 }
 
+func TestNormalizeWxbotAIStatusRequiresJSONObject(t *testing.T) {
+	if got := string(normalizeWxbotAIStatus(json.RawMessage(`[]`))); got != `{}` {
+		t.Fatalf("non-object status = %s, want {}", got)
+	}
+	if got := string(normalizeWxbotAIStatus(json.RawMessage(`{"vector":{"configured":true}}`))); got != `{"vector":{"configured":true}}` {
+		t.Fatalf("valid status = %s", got)
+	}
+}
+
 func TestWxbotConfigSchemaFileMatchesNormalizer(t *testing.T) {
 	raw, err := os.ReadFile("../../docs/contracts/wxbot-config.schema.json")
 	if err != nil {
