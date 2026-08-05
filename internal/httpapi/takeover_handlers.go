@@ -193,17 +193,32 @@ func (h *Handler) ListTakeoverRecruitmentCandidates(c *gin.Context) {
 	}
 
 	filter := "ttw_takeover.is_deleted = ? AND ttw_takeover.takeover_state = ? AND ttw_takeover.participant_limit > COALESCE(j.joined_count, 0)"
+	countQuery, err := applyTimeFilter(
+		h.takeoverListQuery(0).Where(filter, false, model.TakeoverStateNormal),
+		c,
+	)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+	listQuery, err := applyTimeFilter(
+		h.takeoverListQuery(0).Where(filter, false, model.TakeoverStateNormal),
+		c,
+	)
+	if err != nil {
+		fail(c, http.StatusBadRequest, CodeParamInvalid, err.Error())
+		return
+	}
+
 	var total int64
-	if err := h.takeoverListQuery(0).
-		Where(filter, false, model.TakeoverStateNormal).
-		Count(&total).Error; err != nil {
+	if err := countQuery.Count(&total).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
 
 	var rows []takeoverListRow
 	if err := applyTakeoverRecommendOrder(
-		h.takeoverListQuery(0).Where(filter, false, model.TakeoverStateNormal),
+		listQuery,
 		now,
 	).Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")

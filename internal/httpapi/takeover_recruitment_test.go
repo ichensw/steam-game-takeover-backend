@@ -1,10 +1,19 @@
 package httpapi
 
 import (
+	"database/sql"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"steam-game-takeover-backend/internal/model"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestTakeoverRecruitmentStatus(t *testing.T) {
@@ -114,6 +123,34 @@ func TestTakeoverRecruitmentCandidatePayload(t *testing.T) {
 	got := takeoverRecruitmentCandidate(row)
 	if got.ID != 123 || got.Description != description || got.MissingCount != 2 || got.ParticipantLimit != 4 {
 		t.Fatalf("candidate = %#v", got)
+	}
+}
+
+func TestTakeoverRecruitmentCandidatesAcceptTimeFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	conn, err := sql.Open("mysql", "gorm:gorm@tcp(localhost:9910)/gorm?charset=utf8&parseTime=True&loc=Local")
+	if err != nil {
+		t.Fatalf("open sql handle: %v", err)
+	}
+	defer conn.Close()
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		Conn:                      conn,
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("open dry-run db: %v", err)
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/takeovers/recruitment-candidates?timeFilter=tomorrow", nil)
+
+	query, err := applyTimeFilter(db.Table("ttw_takeover"), c)
+	if err != nil {
+		t.Fatalf("apply time filter: %v", err)
+	}
+	sqlText := query.Find(&[]takeoverListRow{}).Statement.SQL.String()
+	if !strings.Contains(sqlText, "schedule_type = ?") || !strings.Contains(sqlText, "start_date <= ?") || !strings.Contains(sqlText, "end_date >= ?") {
+		t.Fatalf("tomorrow filter SQL missing date hit clauses: %s", sqlText)
 	}
 }
 
