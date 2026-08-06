@@ -87,22 +87,23 @@ func TestManagedGroupOrderByKeepsSimpleSortWithoutWhitelist(t *testing.T) {
 
 func TestGroupMemberItemsKeepsResponseFields(t *testing.T) {
 	items := groupMemberItems([]groupMemberRow{{
-		MemberWxid:     "wxid_a",
-		DisplayName:    "群名片",
-		Nickname:       "阿白",
-		Alias:          "wechat_a",
-		MessageCount:   7,
-		FirstMessageAt: sql.NullFloat64{Float64: 1700000000, Valid: true},
-		LastMessageAt:  sql.NullFloat64{Float64: 1700003600, Valid: true},
+		MemberWxid:      "wxid_a",
+		DisplayName:     "群名片",
+		Nickname:        "阿白",
+		Alias:           "wechat_a",
+		ProfileSyncedAt: sql.NullString{String: "2026-08-06 17:00:00", Valid: true},
 	}}, time.UTC)
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
 	}
-	if items[0]["memberWxid"] != "wxid_a" || items[0]["displayName"] != "群名片" || items[0]["nickname"] != "阿白" || items[0]["alias"] != "wechat_a" || items[0]["messageCount"] != 7 {
+	if items[0]["memberWxid"] != "wxid_a" || items[0]["displayName"] != "群名片" || items[0]["nickname"] != "阿白" || items[0]["alias"] != "wechat_a" {
 		t.Fatalf("item fields = %#v", items[0])
 	}
-	if _, ok := items[0]["firstMessageAt"].(map[string]interface{}); !ok {
-		t.Fatalf("firstMessageAt should use unixJSON: %#v", items[0]["firstMessageAt"])
+	if _, ok := items[0]["messageCount"]; ok {
+		t.Fatalf("member list should not return message stats: %#v", items[0])
+	}
+	if items[0]["profileSyncedAt"] != "2026-08-06 17:00:00" {
+		t.Fatalf("profile synced at missing: %#v", items[0])
 	}
 }
 
@@ -123,28 +124,31 @@ func TestGroupMemberSearchKeywordAcceptsKeywordSearchAndQ(t *testing.T) {
 
 func TestGroupMemberCountQueryAddsSearch(t *testing.T) {
 	query, args := groupMemberCountQuery("room@chatroom", "橙_子")
-	if !strings.Contains(query, "FROM wechat_group_member_profiles") || !strings.Contains(query, "UNION") {
-		t.Fatalf("count query should include cached members: %s", query)
+	if !strings.Contains(query, "FROM wechat_group_member_profiles") {
+		t.Fatalf("count query should use profile cache: %s", query)
 	}
-	for _, field := range []string{"member_wxid", "display_name", "nickname", "alias", "remark", "sender_name"} {
+	if strings.Contains(query, "group_messages") || strings.Contains(query, "UNION") {
+		t.Fatalf("count query should not scan messages: %s", query)
+	}
+	for _, field := range []string{"member_wxid", "display_name", "nickname", "alias", "remark"} {
 		if !strings.Contains(query, field+" LIKE ? ESCAPE '\\\\'") {
 			t.Fatalf("count query should search %s: %s", field, query)
 		}
 	}
-	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "room@chatroom", "room@chatroom", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "room@chatroom", "%橙\\_子%"}) {
+	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%"}) {
 		t.Fatalf("args = %#v", args)
 	}
 }
 
-func TestGroupMemberRowsQueryJoinsProfilesAndKeepsFullStats(t *testing.T) {
+func TestGroupMemberRowsQueryUsesProfileCacheOnly(t *testing.T) {
 	query, args := groupMemberRowsQuery("room@chatroom", "橙子", 20, 40)
-	if !strings.Contains(query, "LEFT JOIN wechat_group_member_profiles p") || !strings.Contains(query, "COALESCE(NULLIF(TRIM(p.display_name), '')") {
+	if !strings.Contains(query, "FROM wechat_group_member_profiles p") || !strings.Contains(query, "COALESCE(NULLIF(TRIM(p.display_name), ''), '') AS display_name") {
 		t.Fatalf("rows query should prefer cached profile fields: %s", query)
 	}
-	if !strings.Contains(query, "COUNT(*) AS message_count") || !strings.Contains(query, "MAX(created_at) AS last_message_at") {
-		t.Fatalf("search rows query should aggregate all member messages after matching: %s", query)
+	if strings.Contains(query, "group_messages") || strings.Contains(query, "UNION") || strings.Contains(query, "GROUP BY") {
+		t.Fatalf("rows query should not scan message history: %s", query)
 	}
-	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "room@chatroom", "room@chatroom", "room@chatroom", "%橙子%", "%橙子%", "%橙子%", "%橙子%", "%橙子%", "room@chatroom", "%橙子%", 20, 40}) {
+	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "%橙子%", "%橙子%", "%橙子%", 20, 40}) {
 		t.Fatalf("args = %#v", args)
 	}
 }
