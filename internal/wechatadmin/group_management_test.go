@@ -1,9 +1,11 @@
 package wechatadmin
 
 import (
+	"database/sql"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestUpdateStringListTogglesAndDedupes(t *testing.T) {
@@ -80,4 +82,51 @@ func TestManagedGroupOrderByKeepsSimpleSortWithoutWhitelist(t *testing.T) {
 	if len(args) != 0 {
 		t.Fatalf("args = %#v", args)
 	}
+}
+
+func TestGroupMemberItemsKeepsResponseFields(t *testing.T) {
+	items := groupMemberItems([]groupMemberRow{{
+		MemberWxid:     "wxid_a",
+		DisplayName:    "阿白",
+		MessageCount:   7,
+		FirstMessageAt: 1700000000,
+		LastMessageAt:  1700003600,
+	}}, time.UTC)
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0]["memberWxid"] != "wxid_a" || items[0]["displayName"] != "阿白" || items[0]["messageCount"] != 7 {
+		t.Fatalf("item fields = %#v", items[0])
+	}
+	if _, ok := items[0]["firstMessageAt"].(map[string]interface{}); !ok {
+		t.Fatalf("firstMessageAt should use unixJSON: %#v", items[0]["firstMessageAt"])
+	}
+}
+
+func TestGroupMemberEventItemsKeepsResponseFields(t *testing.T) {
+	items := groupMemberEventItems([]groupMemberEventRow{{
+		ID:          9,
+		RoomID:      "room@chatroom",
+		RoomName:    "测试群",
+		Action:      "join",
+		MemberWxid:  "wxid_b",
+		MemberName:  "阿蓝",
+		MemberCount: sqlNullInt64(23),
+		RawPayload:  sqlNullString(`{"ok":true}`),
+		CreatedAt:   1700000000,
+	}}, time.UTC)
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	if items[0]["id"] != int64(9) || items[0]["memberCount"] != int64(23) || items[0]["rawPayload"] != `{"ok":true}` {
+		t.Fatalf("item fields = %#v", items[0])
+	}
+}
+
+func sqlNullInt64(value int64) sql.NullInt64 {
+	return sql.NullInt64{Int64: value, Valid: true}
+}
+
+func sqlNullString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: true}
 }

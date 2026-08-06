@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 )
 
 type groupWhitelistUpdateRequest struct {
@@ -29,6 +30,26 @@ type managedGroupMessageStats struct {
 	MessageCount  int
 	ActiveMembers int
 	LastMessageAt sql.NullFloat64
+}
+
+type groupMemberRow struct {
+	MemberWxid     string
+	DisplayName    string
+	MessageCount   int
+	FirstMessageAt float64
+	LastMessageAt  float64
+}
+
+type groupMemberEventRow struct {
+	ID          int64
+	RoomID      string
+	RoomName    string
+	Action      string
+	MemberWxid  string
+	MemberName  string
+	MemberCount sql.NullInt64
+	RawPayload  sql.NullString
+	CreatedAt   float64
 }
 
 const managedGroupVisibleWhere = "room_id <> '' AND TRIM(COALESCE(room_name, '')) <> ''"
@@ -228,6 +249,10 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
 	pageSize := positiveInt(r.URL.Query().Get("pageSize"), 50, 1, 200)
 	offset := (page - 1) * pageSize
+	if r.URL.Query().Get("fast") == "1" {
+		s.groupManagementMembersFast(w, r, roomID, page, pageSize, offset)
+		return
+	}
 
 	var total int
 	if err := s.db.QueryRowContext(r.Context(), `
@@ -253,25 +278,17 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 	}
 	defer rows.Close()
 
-	items := make([]map[string]interface{}, 0)
+	memberRows := make([]groupMemberRow, 0)
 	for rows.Next() {
-		var wxid, name string
-		var messageCount int
-		var firstMessageAt, lastMessageAt float64
-		if err := rows.Scan(&wxid, &name, &messageCount, &firstMessageAt, &lastMessageAt); err != nil {
+		var row groupMemberRow
+		if err := rows.Scan(&row.MemberWxid, &row.DisplayName, &row.MessageCount, &row.FirstMessageAt, &row.LastMessageAt); err != nil {
 			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "scan members failed")
 			return
 		}
-		items = append(items, map[string]interface{}{
-			"memberWxid":     wxid,
-			"displayName":    name,
-			"messageCount":   messageCount,
-			"firstMessageAt": unixJSON(firstMessageAt, s.cfg.Location),
-			"lastMessageAt":  unixJSON(lastMessageAt, s.cfg.Location),
-		})
+		memberRows = append(memberRows, row)
 	}
 	ok(w, map[string]interface{}{
-		"data": items,
+		"data": groupMemberItems(memberRows, s.cfg.Location),
 		"pagination": map[string]int{
 			"page":       page,
 			"pageSize":   pageSize,
@@ -279,6 +296,148 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 			"totalPages": (total + pageSize - 1) / pageSize,
 		},
 	})
+}
+
+func (s *Server) groupManagementMembersFast(w http.ResponseWriter, r *http.Request, roomID string, page, pageSize, offset int) {
+	memberIDs, err := s.recentGroupMemberIDs(r.Context(), roomID, offset, pageSize)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query members failed")
+		return
+	}
+	items, err := s.groupMemberStats(r.Context(), roomID, memberIDs)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query member stats failed")
+		return
+	}
+	total := offset + len(items)
+	if len(items) == pageSize {
+		total++
+	}
+	ok(w, map[string]interface{}{
+		"data": groupMemberItems(items, s.cfg.Location),
+		"pagination": map[string]int{
+			"page":       page,
+			"pageSize":   pageSize,
+			"totalItems": total,
+			"totalPages": (total + pageSize - 1) / pageSize,
+		},
+	})
+}
+
+func (s *Server) recentGroupMemberIDs(ctx context.Context, roomID string, offset, pageSize int) ([]string, error) {
+	needed := offset + pageSize
+	if needed <= 0 {
+		return []string{}, nil
+	}
+	scanLimit := needed * 50
+	if scanLimit < 1000 {
+		scanLimit = 1000
+	}
+	if scanLimit > 10000 {
+		scanLimit = 10000
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT sender_wxid
+		FROM group_messages FORCE INDEX (idx_room_created)
+		WHERE room_id = ? AND sender_wxid <> ''
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, roomID, scanLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	seen := make(map[string]struct{}, needed)
+	ordered := make([]string, 0, needed)
+	for rows.Next() {
+		var wxid string
+		if err := rows.Scan(&wxid); err != nil {
+			return nil, err
+		}
+		wxid = strings.TrimSpace(wxid)
+		if wxid == "" {
+			continue
+		}
+		if _, ok := seen[wxid]; ok {
+			continue
+		}
+		seen[wxid] = struct{}{}
+		ordered = append(ordered, wxid)
+		if len(ordered) >= needed {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if offset >= len(ordered) {
+		return []string{}, nil
+	}
+	end := offset + pageSize
+	if end > len(ordered) {
+		end = len(ordered)
+	}
+	return ordered[offset:end], nil
+}
+
+func (s *Server) groupMemberStats(ctx context.Context, roomID string, memberIDs []string) ([]groupMemberRow, error) {
+	if len(memberIDs) == 0 {
+		return []groupMemberRow{}, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(memberIDs)), ",")
+	args := make([]interface{}, 0, len(memberIDs)+1)
+	args = append(args, roomID)
+	for _, memberID := range memberIDs {
+		args = append(args, memberID)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT sender_wxid,
+		       COALESCE(SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(sender_name, '') ORDER BY created_at DESC SEPARATOR '\n'), '\n', 1), '') AS sender_name,
+		       COUNT(*) AS message_count,
+		       MIN(created_at) AS first_message_at,
+		       MAX(created_at) AS last_message_at
+		FROM group_messages FORCE INDEX (idx_room_sender_created)
+		WHERE room_id = ? AND sender_wxid IN (`+placeholders+`)
+		GROUP BY sender_wxid
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byID := make(map[string]groupMemberRow, len(memberIDs))
+	for rows.Next() {
+		var row groupMemberRow
+		if err := rows.Scan(&row.MemberWxid, &row.DisplayName, &row.MessageCount, &row.FirstMessageAt, &row.LastMessageAt); err != nil {
+			return nil, err
+		}
+		byID[row.MemberWxid] = row
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ordered := make([]groupMemberRow, 0, len(memberIDs))
+	for _, memberID := range memberIDs {
+		if row, ok := byID[memberID]; ok {
+			ordered = append(ordered, row)
+		}
+	}
+	return ordered, nil
+}
+
+func groupMemberItems(rows []groupMemberRow, loc *time.Location) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, map[string]interface{}{
+			"memberWxid":     row.MemberWxid,
+			"displayName":    row.DisplayName,
+			"messageCount":   row.MessageCount,
+			"firstMessageAt": unixJSON(row.FirstMessageAt, loc),
+			"lastMessageAt":  unixJSON(row.LastMessageAt, loc),
+		})
+	}
+	return items
 }
 
 func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
@@ -294,53 +453,23 @@ func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
 	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
 	pageSize := positiveInt(r.URL.Query().Get("pageSize"), 50, 1, 200)
 	offset := (page - 1) * pageSize
+	if r.URL.Query().Get("fast") == "1" {
+		s.groupManagementEventsFast(w, r, roomID, page, pageSize, offset)
+		return
+	}
 
 	var total int
 	if err := s.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM group_member_events WHERE room_id = ?`, roomID).Scan(&total); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "count member events failed")
 		return
 	}
-	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT id, room_id, room_name, action, member_wxid, member_name, member_count, raw_payload, created_at
-		FROM group_member_events
-		WHERE room_id = ?
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`, roomID, pageSize, offset)
+	eventRows, err := s.groupMemberEventRows(r.Context(), roomID, pageSize, offset)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query member events failed")
 		return
 	}
-	defer rows.Close()
-
-	items := make([]map[string]interface{}, 0)
-	for rows.Next() {
-		var id int64
-		var rowRoomID, roomName, action, memberWxid, memberName string
-		var memberCount sql.NullInt64
-		var rawPayload sql.NullString
-		var createdAt float64
-		if err := rows.Scan(&id, &rowRoomID, &roomName, &action, &memberWxid, &memberName, &memberCount, &rawPayload, &createdAt); err != nil {
-			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "scan member events failed")
-			return
-		}
-		item := map[string]interface{}{
-			"id":         id,
-			"roomId":     rowRoomID,
-			"roomName":   roomName,
-			"action":     action,
-			"memberWxid": memberWxid,
-			"memberName": memberName,
-			"rawPayload": nullString(rawPayload),
-			"createdAt":  unixJSON(createdAt, s.cfg.Location),
-		}
-		if memberCount.Valid {
-			item["memberCount"] = memberCount.Int64
-		}
-		items = append(items, item)
-	}
 	ok(w, map[string]interface{}{
-		"data": items,
+		"data": groupMemberEventItems(eventRows, s.cfg.Location),
 		"pagination": map[string]int{
 			"page":       page,
 			"pageSize":   pageSize,
@@ -348,6 +477,76 @@ func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
 			"totalPages": (total + pageSize - 1) / pageSize,
 		},
 	})
+}
+
+func (s *Server) groupManagementEventsFast(w http.ResponseWriter, r *http.Request, roomID string, page, pageSize, offset int) {
+	eventRows, err := s.groupMemberEventRows(r.Context(), roomID, pageSize+1, offset)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query member events failed")
+		return
+	}
+	hasNext := len(eventRows) > pageSize
+	if hasNext {
+		eventRows = eventRows[:pageSize]
+	}
+	total := offset + len(eventRows)
+	if hasNext {
+		total++
+	}
+	ok(w, map[string]interface{}{
+		"data": groupMemberEventItems(eventRows, s.cfg.Location),
+		"pagination": map[string]int{
+			"page":       page,
+			"pageSize":   pageSize,
+			"totalItems": total,
+			"totalPages": (total + pageSize - 1) / pageSize,
+		},
+	})
+}
+
+func (s *Server) groupMemberEventRows(ctx context.Context, roomID string, limit, offset int) ([]groupMemberEventRow, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, room_id, room_name, action, member_wxid, member_name, member_count, raw_payload, created_at
+		FROM group_member_events
+		WHERE room_id = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, roomID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]groupMemberEventRow, 0, limit)
+	for rows.Next() {
+		var item groupMemberEventRow
+		if err := rows.Scan(&item.ID, &item.RoomID, &item.RoomName, &item.Action, &item.MemberWxid, &item.MemberName, &item.MemberCount, &item.RawPayload, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func groupMemberEventItems(rows []groupMemberEventRow, loc *time.Location) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(rows))
+	for _, row := range rows {
+		item := map[string]interface{}{
+			"id":         row.ID,
+			"roomId":     row.RoomID,
+			"roomName":   row.RoomName,
+			"action":     row.Action,
+			"memberWxid": row.MemberWxid,
+			"memberName": row.MemberName,
+			"rawPayload": nullString(row.RawPayload),
+			"createdAt":  unixJSON(row.CreatedAt, loc),
+		}
+		if row.MemberCount.Valid {
+			item["memberCount"] = row.MemberCount.Int64
+		}
+		items = append(items, item)
+	}
+	return items
 }
 
 func (s *Server) updateGroupWhitelist(w http.ResponseWriter, r *http.Request) {
