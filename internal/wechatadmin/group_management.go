@@ -299,14 +299,9 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) groupManagementMembersFast(w http.ResponseWriter, r *http.Request, roomID string, page, pageSize, offset int) {
-	memberIDs, err := s.recentGroupMemberIDs(r.Context(), roomID, offset, pageSize)
+	items, err := s.recentGroupMembers(r.Context(), roomID, offset, pageSize)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query members failed")
-		return
-	}
-	items, err := s.groupMemberStats(r.Context(), roomID, memberIDs)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query member stats failed")
 		return
 	}
 	total := offset + len(items)
@@ -324,10 +319,10 @@ func (s *Server) groupManagementMembersFast(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func (s *Server) recentGroupMemberIDs(ctx context.Context, roomID string, offset, pageSize int) ([]string, error) {
+func (s *Server) recentGroupMembers(ctx context.Context, roomID string, offset, pageSize int) ([]groupMemberRow, error) {
 	needed := offset + pageSize
 	if needed <= 0 {
-		return []string{}, nil
+		return []groupMemberRow{}, nil
 	}
 	scanLimit := needed * 50
 	if scanLimit < 1000 {
@@ -337,7 +332,7 @@ func (s *Server) recentGroupMemberIDs(ctx context.Context, roomID string, offset
 		scanLimit = 10000
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT sender_wxid
+		SELECT sender_wxid, COALESCE(sender_name, ''), created_at
 		FROM group_messages FORCE INDEX (idx_room_created)
 		WHERE room_id = ? AND sender_wxid <> ''
 		ORDER BY created_at DESC
@@ -350,80 +345,60 @@ func (s *Server) recentGroupMemberIDs(ctx context.Context, roomID string, offset
 
 	seen := make(map[string]struct{}, needed)
 	ordered := make([]string, 0, needed)
+	stats := make(map[string]groupMemberRow, needed)
 	for rows.Next() {
-		var wxid string
-		if err := rows.Scan(&wxid); err != nil {
+		var wxid, name string
+		var createdAt float64
+		if err := rows.Scan(&wxid, &name, &createdAt); err != nil {
 			return nil, err
 		}
 		wxid = strings.TrimSpace(wxid)
 		if wxid == "" {
 			continue
 		}
+		row := stats[wxid]
+		if row.MemberWxid == "" {
+			row.MemberWxid = wxid
+			row.DisplayName = strings.TrimSpace(name)
+			row.FirstMessageAt = createdAt
+			row.LastMessageAt = createdAt
+		}
+		row.MessageCount++
+		if createdAt > row.LastMessageAt {
+			row.LastMessageAt = createdAt
+			if strings.TrimSpace(name) != "" {
+				row.DisplayName = strings.TrimSpace(name)
+			}
+		}
+		if createdAt < row.FirstMessageAt {
+			row.FirstMessageAt = createdAt
+		}
+		stats[wxid] = row
 		if _, ok := seen[wxid]; ok {
 			continue
 		}
 		seen[wxid] = struct{}{}
-		ordered = append(ordered, wxid)
-		if len(ordered) >= needed {
-			break
+		if len(ordered) < needed {
+			ordered = append(ordered, wxid)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	if offset >= len(ordered) {
-		return []string{}, nil
+		return []groupMemberRow{}, nil
 	}
 	end := offset + pageSize
 	if end > len(ordered) {
 		end = len(ordered)
 	}
-	return ordered[offset:end], nil
-}
-
-func (s *Server) groupMemberStats(ctx context.Context, roomID string, memberIDs []string) ([]groupMemberRow, error) {
-	if len(memberIDs) == 0 {
-		return []groupMemberRow{}, nil
-	}
-	placeholders := strings.TrimRight(strings.Repeat("?,", len(memberIDs)), ",")
-	args := make([]interface{}, 0, len(memberIDs)+1)
-	args = append(args, roomID)
-	for _, memberID := range memberIDs {
-		args = append(args, memberID)
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT sender_wxid,
-		       COALESCE(SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(sender_name, '') ORDER BY created_at DESC SEPARATOR '\n'), '\n', 1), '') AS sender_name,
-		       COUNT(*) AS message_count,
-		       MIN(created_at) AS first_message_at,
-		       MAX(created_at) AS last_message_at
-		FROM group_messages FORCE INDEX (idx_room_sender_created)
-		WHERE room_id = ? AND sender_wxid IN (`+placeholders+`)
-		GROUP BY sender_wxid
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	byID := make(map[string]groupMemberRow, len(memberIDs))
-	for rows.Next() {
-		var row groupMemberRow
-		if err := rows.Scan(&row.MemberWxid, &row.DisplayName, &row.MessageCount, &row.FirstMessageAt, &row.LastMessageAt); err != nil {
-			return nil, err
-		}
-		byID[row.MemberWxid] = row
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	ordered := make([]groupMemberRow, 0, len(memberIDs))
-	for _, memberID := range memberIDs {
-		if row, ok := byID[memberID]; ok {
-			ordered = append(ordered, row)
+	orderedRows := make([]groupMemberRow, 0, end-offset)
+	for _, memberID := range ordered[offset:end] {
+		if row, ok := stats[memberID]; ok {
+			orderedRows = append(orderedRows, row)
 		}
 	}
-	return ordered, nil
+	return orderedRows, nil
 }
 
 func groupMemberItems(rows []groupMemberRow, loc *time.Location) []map[string]interface{} {
