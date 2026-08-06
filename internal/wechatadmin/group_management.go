@@ -16,6 +16,22 @@ type groupWhitelistUpdateRequest struct {
 	Enabled bool   `json:"enabled"`
 }
 
+type managedGroupRow struct {
+	RoomID      string
+	RoomName    string
+	MemberCount int
+	OwnerWxid   string
+	UpdatedAt   float64
+}
+
+type managedGroupMessageStats struct {
+	MessageCount  int
+	ActiveMembers int
+	LastMessageAt sql.NullFloat64
+}
+
+const managedGroupVisibleWhere = "room_id <> '' AND TRIM(COALESCE(room_name, '')) <> ''"
+
 func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 	if err := s.ensureWechatGroupIndexes(r.Context()); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "ensure group indexes failed")
@@ -34,32 +50,18 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 	var total int
 	if err := s.db.QueryRowContext(r.Context(), `
 		SELECT COUNT(*)
-		FROM (
-			SELECT room_id FROM group_info
-			UNION
-			SELECT room_id FROM group_messages WHERE room_id <> ''
-		) rooms
+		FROM group_info
+		WHERE `+managedGroupVisibleWhere+`
 	`).Scan(&total); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "count managed groups failed")
 		return
 	}
 
 	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT rooms.room_id, COALESCE(gi.room_name, ''), COALESCE(gi.member_count, 0), COALESCE(gi.owner_wxid, ''),
-		       COALESCE(gi.updated_at, ms.last_message_at, 0),
-		       COALESCE(ms.message_count, 0), COALESCE(ms.active_members, 0), ms.last_message_at
-		FROM (
-			SELECT room_id FROM group_info
-			UNION
-			SELECT room_id FROM group_messages WHERE room_id <> ''
-		) rooms
-		LEFT JOIN group_info gi ON gi.room_id = rooms.room_id
-		LEFT JOIN (
-			SELECT room_id, COUNT(*) AS message_count, COUNT(DISTINCT NULLIF(sender_wxid, '')) AS active_members, MAX(created_at) AS last_message_at
-			FROM group_messages
-			GROUP BY room_id
-		) ms ON ms.room_id = rooms.room_id
-		ORDER BY COALESCE(gi.updated_at, ms.last_message_at, 0) DESC
+		SELECT room_id, room_name, COALESCE(member_count, 0), COALESCE(owner_wxid, ''), COALESCE(updated_at, 0)
+		FROM group_info
+		WHERE `+managedGroupVisibleWhere+`
+		ORDER BY updated_at DESC
 		LIMIT ? OFFSET ?
 	`, pageSize, offset)
 	if err != nil {
@@ -68,36 +70,46 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	items := make([]map[string]interface{}, 0)
+	groups := make([]managedGroupRow, 0, pageSize)
+	roomIDs := make([]string, 0, pageSize)
 	for rows.Next() {
-		var roomID, roomName, ownerWxid string
-		var memberCount int
-		var updatedAt float64
-		var messageCount, activeMembers int
-		var lastMessageAt sql.NullFloat64
-		if err := rows.Scan(&roomID, &roomName, &memberCount, &ownerWxid, &updatedAt, &messageCount, &activeMembers, &lastMessageAt); err != nil {
+		var group managedGroupRow
+		if err := rows.Scan(&group.RoomID, &group.RoomName, &group.MemberCount, &group.OwnerWxid, &group.UpdatedAt); err != nil {
 			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "scan managed groups failed")
 			return
 		}
-		item := map[string]interface{}{
-			"roomId":         roomID,
-			"roomName":       roomName,
-			"memberCount":    memberCount,
-			"ownerWxid":      ownerWxid,
-			"updatedAt":      unixJSON(updatedAt, s.cfg.Location),
-			"messageCount":   messageCount,
-			"activeMembers":  activeMembers,
-			"botWhitelisted": stringSetContains(whitelists["bot"], roomID),
-			"aiWhitelisted":  stringSetContains(whitelists["ai"], roomID),
-		}
-		if lastMessageAt.Valid {
-			item["lastMessageAt"] = unixJSON(lastMessageAt.Float64, s.cfg.Location)
-		}
-		items = append(items, item)
+		groups = append(groups, group)
+		roomIDs = append(roomIDs, group.RoomID)
 	}
 	if err := rows.Err(); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query managed groups failed")
 		return
+	}
+
+	stats, err := s.groupMessageStats(r.Context(), roomIDs)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query managed group stats failed")
+		return
+	}
+
+	items := make([]map[string]interface{}, 0, len(groups))
+	for _, group := range groups {
+		groupStats := stats[group.RoomID]
+		item := map[string]interface{}{
+			"roomId":         group.RoomID,
+			"roomName":       group.RoomName,
+			"memberCount":    group.MemberCount,
+			"ownerWxid":      group.OwnerWxid,
+			"updatedAt":      unixJSON(group.UpdatedAt, s.cfg.Location),
+			"messageCount":   groupStats.MessageCount,
+			"activeMembers":  groupStats.ActiveMembers,
+			"botWhitelisted": stringSetContains(whitelists["bot"], group.RoomID),
+			"aiWhitelisted":  stringSetContains(whitelists["ai"], group.RoomID),
+		}
+		if groupStats.LastMessageAt.Valid {
+			item["lastMessageAt"] = unixJSON(groupStats.LastMessageAt.Float64, s.cfg.Location)
+		}
+		items = append(items, item)
 	}
 	ok(w, map[string]interface{}{
 		"botId": effectiveBotID,
@@ -109,6 +121,42 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 			"totalPages": (total + pageSize - 1) / pageSize,
 		},
 	})
+}
+
+func (s *Server) groupMessageStats(ctx context.Context, roomIDs []string) (map[string]managedGroupMessageStats, error) {
+	result := make(map[string]managedGroupMessageStats, len(roomIDs))
+	if len(roomIDs) == 0 {
+		return result, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(roomIDs)), ",")
+	args := make([]interface{}, 0, len(roomIDs))
+	for _, roomID := range roomIDs {
+		args = append(args, roomID)
+	}
+	rows, err := s.db.QueryContext(ctx, managedGroupMessageStatsQuery(placeholders), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var roomID string
+		var stats managedGroupMessageStats
+		if err := rows.Scan(&roomID, &stats.MessageCount, &stats.ActiveMembers, &stats.LastMessageAt); err != nil {
+			return nil, err
+		}
+		result[roomID] = stats
+	}
+	return result, rows.Err()
+}
+
+func managedGroupMessageStatsQuery(placeholders string) string {
+	return `
+		SELECT room_id, COUNT(*) AS message_count, COUNT(DISTINCT NULLIF(sender_wxid, '')) AS active_members, MAX(created_at) AS last_message_at
+		FROM group_messages
+		WHERE room_id IN (` + placeholders + `)
+		GROUP BY room_id
+	`
 }
 
 func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) {
@@ -396,6 +444,7 @@ func stringSetContains(set map[string]struct{}, value string) bool {
 
 func (s *Server) ensureWechatGroupIndexes(ctx context.Context) error {
 	for _, item := range []struct{ table, name, ddl string }{
+		{"group_info", "idx_updated_at", "ALTER TABLE group_info ADD INDEX idx_updated_at (updated_at)"},
 		{"group_messages", "idx_room_created", "ALTER TABLE group_messages ADD INDEX idx_room_created (room_id, created_at)"},
 		{"group_messages", "idx_room_sender_created", "ALTER TABLE group_messages ADD INDEX idx_room_sender_created (room_id, sender_wxid, created_at)"},
 		{"group_member_events", "idx_room_created", "ALTER TABLE group_member_events ADD INDEX idx_room_created (room_id, created_at)"},
