@@ -361,26 +361,17 @@ func (h *Handler) AdminPenalizeUserCredit(c *gin.Context) {
 }
 
 func (h *Handler) AdminDashboardSummary(c *gin.Context) {
-	var takeoverTotal int64
-	if err := h.db.Model(&model.Takeover{}).Where("is_deleted = ?", false).Count(&takeoverTotal).Error; err != nil {
+	snapshot, cached, err := h.dashboardSnapshot()
+	if err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 		return
 	}
-	var userTotal int64
-	if err := h.db.Model(&model.User{}).Where("is_deleted = ?", false).Count(&userTotal).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
+	if cached {
+		c.Header("X-Dashboard-Cache", "HIT")
+	} else {
+		c.Header("X-Dashboard-Cache", "MISS")
 	}
-	var pendingReportTotal int64
-	if err := h.adminReportBaseQuery("pending").Count(&pendingReportTotal).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
-	}
-	ok(c, "success", gin.H{
-		"takeoverTotal":      takeoverTotal,
-		"userTotal":          userTotal,
-		"pendingReportTotal": pendingReportTotal,
-	})
+	ok(c, "success", snapshot)
 }
 
 // AdminUserSummary returns user totals for the admin dashboard.

@@ -21,6 +21,9 @@ type Handler struct {
 	kookChannelNames       map[string]string
 	kookChannelNamesUntil  time.Time
 	kookChannelNamesReload bool
+	dashboardMu            sync.Mutex
+	dashboardCache         dashboardSnapshot
+	dashboardCacheUntil    time.Time
 }
 
 func NewHandler(cfg config.Config, db *gorm.DB, wechatBotDB ...*sql.DB) *Handler {
