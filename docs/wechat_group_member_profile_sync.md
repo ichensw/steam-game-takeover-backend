@@ -103,11 +103,11 @@ Useful response fields:
 | Room ID | `roomId` |
 | Member wxid | request `memeberId` |
 | Group display name | `displayName` |
-| Nickname fallback | `nick` |
+| Nickname echo | `nick` |
 
 Notes:
 
-- If `displayName` is empty, display `nick`.
+- Group nickname display uses only `displayName`; do not use `nick` as a group nickname fallback.
 - If the endpoint returns an empty object, skip updating group-specific fields for that member.
 - The endpoint is fast enough for higher-concurrency batch sync, but it still runs in background jobs rather than page-load requests.
 
@@ -192,7 +192,7 @@ Flow:
 
 1. Call `get_room_members` or `get_chatroom_detail_cache` to discover current member wxids and low-cost nickname/avatar data.
 2. Upsert discovered members into `wechat_group_member_profiles`.
-3. Call `get_group_memeber_info` with higher concurrency to fetch group display names. Store `displayName`; if it is empty, keep `display_name` empty and let the UI display `nick` as fallback.
+3. Call `get_group_memeber_info` with higher concurrency to fetch group display names. Store `displayName`; if it is empty or absent, skip updating `display_name`.
 4. Enqueue per-member `get_group_member_contact` jobs for richer public/contact profile fields.
 5. Do not call `/get_contact` in the normal sync path.
 6. Run profile sync with controlled concurrency and persist cursor/errors so the run can resume.
