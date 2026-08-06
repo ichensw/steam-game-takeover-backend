@@ -58,7 +58,7 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderBy, orderArgs := managedGroupOrderBy(whitelists["bot"])
+	orderBy, orderArgs := managedGroupOrderBy(whitelists["bot"], whitelists["ai"])
 	listArgs := append(orderArgs, pageSize, offset)
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT room_id, room_name, COALESCE(member_count, 0), COALESCE(owner_wxid, ''), COALESCE(updated_at, 0)
@@ -126,27 +126,57 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func managedGroupOrderBy(botWhitelist map[string]struct{}) (string, []interface{}) {
-	if len(botWhitelist) == 0 {
+func managedGroupOrderBy(botWhitelist, aiWhitelist map[string]struct{}) (string, []interface{}) {
+	botRoomIDs := sortedStringSetValues(botWhitelist)
+	aiRoomIDs := sortedStringSetValues(aiWhitelist)
+	if len(botRoomIDs) == 0 && len(aiRoomIDs) == 0 {
 		return "updated_at DESC, room_id ASC", nil
 	}
-	roomIDs := make([]string, 0, len(botWhitelist))
-	for roomID := range botWhitelist {
-		roomID = strings.TrimSpace(roomID)
-		if roomID != "" {
-			roomIDs = append(roomIDs, roomID)
+
+	orderParts := []string{"CASE"}
+	args := make([]interface{}, 0, len(botRoomIDs)*2+len(aiRoomIDs)*2)
+	botClause, botArgs := roomIDInClause(botRoomIDs)
+	aiClause, aiArgs := roomIDInClause(aiRoomIDs)
+
+	if botClause != "" && aiClause != "" {
+		orderParts = append(orderParts, "WHEN "+botClause+" AND "+aiClause+" THEN 0")
+		args = append(args, botArgs...)
+		args = append(args, aiArgs...)
+	}
+	if botClause != "" {
+		orderParts = append(orderParts, "WHEN "+botClause+" THEN 1")
+		args = append(args, botArgs...)
+	}
+	if aiClause != "" {
+		orderParts = append(orderParts, "WHEN "+aiClause+" THEN 2")
+		args = append(args, aiArgs...)
+	}
+	orderParts = append(orderParts, "ELSE 3 END, updated_at DESC, room_id ASC")
+	return strings.Join(orderParts, " "), args
+}
+
+func sortedStringSetValues(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			result = append(result, value)
 		}
 	}
+	sort.Strings(result)
+	return result
+}
+
+func roomIDInClause(roomIDs []string) (string, []interface{}) {
 	if len(roomIDs) == 0 {
-		return "updated_at DESC, room_id ASC", nil
+		return "", nil
 	}
-	sort.Strings(roomIDs)
 	placeholders := strings.TrimRight(strings.Repeat("?,", len(roomIDs)), ",")
 	args := make([]interface{}, 0, len(roomIDs))
 	for _, roomID := range roomIDs {
 		args = append(args, roomID)
 	}
-	return "CASE WHEN room_id IN (" + placeholders + ") THEN 0 ELSE 1 END, updated_at DESC, room_id ASC", args
+	return "room_id IN (" + placeholders + ")", args
 }
 
 func (s *Server) groupMessageStats(ctx context.Context, roomIDs []string) (map[string]managedGroupMessageStats, error) {

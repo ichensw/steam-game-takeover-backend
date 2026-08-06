@@ -42,21 +42,38 @@ func TestManagedGroupMessageStatsQueryOnlyAggregatesRequestedRooms(t *testing.T)
 	}
 }
 
-func TestManagedGroupOrderByPrioritizesBotWhitelist(t *testing.T) {
-	orderBy, args := managedGroupOrderBy(map[string]struct{}{
-		"b@chatroom": {},
-		"a@chatroom": {},
-	})
-	if !strings.HasPrefix(orderBy, "CASE WHEN room_id IN (?,?) THEN 0 ELSE 1 END") {
-		t.Fatalf("order by should prioritize whitelisted rooms: %s", orderBy)
+func TestManagedGroupOrderByPrioritizesCombinedWhitelists(t *testing.T) {
+	orderBy, args := managedGroupOrderBy(
+		map[string]struct{}{
+			"b@chatroom": {},
+			"a@chatroom": {},
+		},
+		map[string]struct{}{
+			"c@chatroom": {},
+			"a@chatroom": {},
+		},
+	)
+	if !strings.Contains(orderBy, "WHEN room_id IN (?,?) AND room_id IN (?,?) THEN 0") {
+		t.Fatalf("order by should prioritize groups in both whitelists: %s", orderBy)
 	}
-	if !reflect.DeepEqual(args, []interface{}{"a@chatroom", "b@chatroom"}) {
+	if !strings.Contains(orderBy, "WHEN room_id IN (?,?) THEN 1") {
+		t.Fatalf("order by should keep bot-only groups before ai-only groups: %s", orderBy)
+	}
+	if !strings.Contains(orderBy, "WHEN room_id IN (?,?) THEN 2") {
+		t.Fatalf("order by should include ai-only groups before unlisted groups: %s", orderBy)
+	}
+	if !reflect.DeepEqual(args, []interface{}{
+		"a@chatroom", "b@chatroom",
+		"a@chatroom", "c@chatroom",
+		"a@chatroom", "b@chatroom",
+		"a@chatroom", "c@chatroom",
+	}) {
 		t.Fatalf("args = %#v", args)
 	}
 }
 
 func TestManagedGroupOrderByKeepsSimpleSortWithoutWhitelist(t *testing.T) {
-	orderBy, args := managedGroupOrderBy(nil)
+	orderBy, args := managedGroupOrderBy(nil, nil)
 	if orderBy != "updated_at DESC, room_id ASC" {
 		t.Fatalf("order by = %q", orderBy)
 	}
