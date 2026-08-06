@@ -25,6 +25,17 @@ type groupMemberProfileSyncRequest struct {
 	Mode string `json:"mode"`
 }
 
+type wxbotMemberProfileSyncProgressRequest struct {
+	BotID            string `json:"botId"`
+	RoomID           string `json:"roomId"`
+	Status           string `json:"status"`
+	SyncType         string `json:"syncType"`
+	CursorMemberWxid string `json:"cursorMemberWxid"`
+	ProcessedCount   int    `json:"processedCount"`
+	FailedCount      int    `json:"failedCount"`
+	ErrorMessage     string `json:"errorMessage"`
+}
+
 type hookRoomMembersResponse struct {
 	ChatroomUserName      string              `json:"chatroomUserName"`
 	ChatRoomOwner         string              `json:"chatRoomOwner"`
@@ -95,8 +106,8 @@ type hookStringValue struct {
 }
 
 type hookBaseResponse struct {
-	Ret    int    `json:"ret"`
-	ErrMsg string `json:"errMsg"`
+	Ret    int             `json:"ret"`
+	ErrMsg json.RawMessage `json:"errMsg"`
 }
 
 func (s *Server) startGroupMemberProfileSync(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +132,7 @@ func (s *Server) startGroupMemberProfileSync(w http.ResponseWriter, r *http.Requ
 		fail(w, http.StatusInternalServerError, "SCHEMA_FAILED", "ensure profile schema failed")
 		return
 	}
-	locked, err := s.acquireGroupMemberProfileSync(r.Context(), roomID, mode)
+	locked, err := s.acquireGroupMemberProfileSync(r.Context(), roomID, mode, "")
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "start profile sync failed")
 		return
@@ -130,7 +141,6 @@ func (s *Server) startGroupMemberProfileSync(w http.ResponseWriter, r *http.Requ
 		fail(w, http.StatusConflict, "SYNC_RUNNING", "member profile sync is already running")
 		return
 	}
-	go s.runGroupMemberProfileSync(context.Background(), roomID, mode, "")
 	state, err := s.groupMemberProfileSyncState(r.Context(), roomID)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query profile sync state failed")
@@ -168,7 +178,7 @@ func (s *Server) refreshGroupMemberProfile(w http.ResponseWriter, r *http.Reques
 		fail(w, http.StatusInternalServerError, "SCHEMA_FAILED", "ensure profile schema failed")
 		return
 	}
-	locked, err := s.acquireGroupMemberProfileSync(r.Context(), roomID, "incremental")
+	locked, err := s.acquireGroupMemberProfileSync(r.Context(), roomID, "member", memberWxid)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "start profile refresh failed")
 		return
@@ -177,7 +187,6 @@ func (s *Server) refreshGroupMemberProfile(w http.ResponseWriter, r *http.Reques
 		fail(w, http.StatusConflict, "SYNC_RUNNING", "member profile sync is already running")
 		return
 	}
-	go s.runGroupMemberProfileSync(context.Background(), roomID, "incremental", memberWxid)
 	state, err := s.groupMemberProfileSyncState(r.Context(), roomID)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query profile sync state failed")
@@ -186,7 +195,7 @@ func (s *Server) refreshGroupMemberProfile(w http.ResponseWriter, r *http.Reques
 	ok(w, state)
 }
 
-func (s *Server) acquireGroupMemberProfileSync(ctx context.Context, roomID, mode string) (bool, error) {
+func (s *Server) acquireGroupMemberProfileSync(ctx context.Context, roomID, mode, targetMemberWxid string) (bool, error) {
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO wechat_group_member_profile_sync_state
 			(room_id, status, sync_type, processed_count, failed_count, last_error, locked_until, updated_at)
@@ -197,15 +206,102 @@ func (s *Server) acquireGroupMemberProfileSync(ctx context.Context, roomID, mode
 	}
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE wechat_group_member_profile_sync_state
-		SET status = ?, sync_type = ?, cursor_member_wxid = '', processed_count = 0, failed_count = 0,
+		SET status = ?, sync_type = ?, cursor_member_wxid = ?, processed_count = 0, failed_count = 0,
 		    last_error = NULL, locked_until = DATE_ADD(NOW(), INTERVAL 15 MINUTE), updated_at = NOW()
 		WHERE room_id = ? AND (status <> ? OR locked_until IS NULL OR locked_until < NOW())
-	`, groupMemberProfileSyncStatusRunning, mode, roomID, groupMemberProfileSyncStatusRunning)
+	`, groupMemberProfileSyncStatusRunning, mode, targetMemberWxid, roomID, groupMemberProfileSyncStatusRunning)
 	if err != nil {
 		return false, err
 	}
 	affected, err := result.RowsAffected()
 	return affected > 0, err
+}
+
+func (s *Server) wxbotNextMemberProfileSyncTask(w http.ResponseWriter, r *http.Request) {
+	if err := s.ensureWechatGroupProfileSchema(r.Context()); err != nil {
+		fail(w, http.StatusInternalServerError, "SCHEMA_FAILED", "ensure profile schema failed")
+		return
+	}
+	row, err := s.oneMemberProfileSyncTask(r.Context())
+	if errors.Is(err, sql.ErrNoRows) {
+		ok(w, map[string]interface{}{"task": nil})
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query profile sync task failed")
+		return
+	}
+	ok(w, map[string]interface{}{"task": row})
+}
+
+func (s *Server) oneMemberProfileSyncTask(ctx context.Context) (map[string]interface{}, error) {
+	var roomID, syncType, cursor string
+	var processed, failed int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT room_id, sync_type, cursor_member_wxid, processed_count, failed_count
+		FROM wechat_group_member_profile_sync_state
+		WHERE status = ? AND (locked_until IS NULL OR locked_until < DATE_ADD(NOW(), INTERVAL 20 MINUTE))
+		ORDER BY updated_at ASC
+		LIMIT 1
+	`, groupMemberProfileSyncStatusRunning).Scan(&roomID, &syncType, &cursor, &processed, &failed)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE wechat_group_member_profile_sync_state
+		SET locked_until = DATE_ADD(NOW(), INTERVAL 15 MINUTE), updated_at = NOW()
+		WHERE room_id = ? AND status = ?
+	`, roomID, groupMemberProfileSyncStatusRunning)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"roomId":           roomID,
+		"syncType":         syncType,
+		"cursorMemberWxid": cursor,
+		"processedCount":   processed,
+		"failedCount":      failed,
+	}, nil
+}
+
+func (s *Server) wxbotMemberProfileSyncProgress(w http.ResponseWriter, r *http.Request) {
+	var req wxbotMemberProfileSyncProgressRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid json body")
+		return
+	}
+	req.RoomID = strings.TrimSpace(req.RoomID)
+	if req.RoomID == "" {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "roomId is required")
+		return
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = groupMemberProfileSyncStatusRunning
+	}
+	if status != groupMemberProfileSyncStatusRunning && status != groupMemberProfileSyncStatusSucceeded && status != groupMemberProfileSyncStatusFailed {
+		fail(w, http.StatusBadRequest, "PARAM_INVALID", "invalid status")
+		return
+	}
+	errText := shortSyncText(req.ErrorMessage)
+	lockedUntilExpr := "DATE_ADD(NOW(), INTERVAL 15 MINUTE)"
+	if status != groupMemberProfileSyncStatusRunning {
+		lockedUntilExpr = "NULL"
+	}
+	_, err := s.db.ExecContext(r.Context(), `
+		UPDATE wechat_group_member_profile_sync_state
+		SET status = ?, cursor_member_wxid = ?, processed_count = ?, failed_count = ?,
+		    last_error = NULLIF(?, ''),
+		    last_full_synced_at = IF(? = 'succeeded' AND sync_type = 'full', NOW(), last_full_synced_at),
+		    last_incremental_synced_at = IF(? = 'succeeded' AND sync_type <> 'full', NOW(), last_incremental_synced_at),
+		    locked_until = `+lockedUntilExpr+`, updated_at = NOW()
+		WHERE room_id = ?
+	`, status, strings.TrimSpace(req.CursorMemberWxid), nonNegativeInt(req.ProcessedCount), nonNegativeInt(req.FailedCount), errText, status, status, req.RoomID)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "SAVE_FAILED", "save profile sync progress failed")
+		return
+	}
+	ok(w, map[string]interface{}{"updated": true})
 }
 
 func (s *Server) groupMemberProfileSyncState(ctx context.Context, roomID string) (map[string]interface{}, error) {
@@ -563,12 +659,24 @@ func (s *Server) postHookJSON(ctx context.Context, baseURL, path string, payload
 
 func hookResponseError(ret int, errMsg string, base hookBaseResponse) error {
 	if base.Ret != 0 {
-		return fmt.Errorf("hook ret %d: %s", base.Ret, strings.TrimSpace(base.ErrMsg))
+		return fmt.Errorf("hook ret %d: %s", base.Ret, hookErrMessage(base.ErrMsg))
 	}
 	if ret != 0 {
 		return fmt.Errorf("hook ret %d: %s", ret, strings.TrimSpace(errMsg))
 	}
 	return nil
+}
+
+func hookErrMessage(raw json.RawMessage) string {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "{}" || text == "null" {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return strings.TrimSpace(value)
+	}
+	return text
 }
 
 func runProfileSyncWorkers(ctx context.Context, members []string, concurrency int, fn func(string) error) (int, int) {
@@ -629,11 +737,22 @@ func shortSyncError(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := strings.TrimSpace(err.Error())
+	return shortSyncText(err.Error())
+}
+
+func shortSyncText(text string) string {
+	msg := strings.TrimSpace(text)
 	if len(msg) > 500 {
 		return msg[:500]
 	}
 	return msg
+}
+
+func nonNegativeInt(value int) int {
+	if value < 0 {
+		return 0
+	}
+	return value
 }
 
 func firstNonEmptyWechatString(values ...string) string {

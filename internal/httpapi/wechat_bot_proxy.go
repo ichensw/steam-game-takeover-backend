@@ -41,6 +41,10 @@ func wxbotControlAllowed(method, path string) bool {
 		return method == http.MethodGet
 	case "/config/applied":
 		return method == http.MethodPost
+	case "/member-profiles/sync/next":
+		return method == http.MethodGet
+	case "/member-profiles/sync/progress":
+		return method == http.MethodPost
 	case "/ai/history-learning/next":
 		return method == http.MethodGet
 	default:

@@ -95,6 +95,8 @@ func NewServer(cfg Config, db *sql.DB) http.Handler {
 	mux.Handle("POST /api/wxbot/config/applied", s.wxbotAuth(http.HandlerFunc(s.wxbotConfigApplied)))
 	mux.Handle("GET /api/wxbot/ai/history-learning/next", s.wxbotAuth(http.HandlerFunc(s.wxbotNextHistoryLearningTask)))
 	mux.Handle("POST /api/wxbot/ai/history-learning/{id}/progress", s.wxbotAuth(http.HandlerFunc(s.wxbotHistoryLearningProgress)))
+	mux.Handle("GET /api/wxbot/member-profiles/sync/next", s.wxbotAuth(http.HandlerFunc(s.wxbotNextMemberProfileSyncTask)))
+	mux.Handle("POST /api/wxbot/member-profiles/sync/progress", s.wxbotAuth(http.HandlerFunc(s.wxbotMemberProfileSyncProgress)))
 	return mux
 }
 
