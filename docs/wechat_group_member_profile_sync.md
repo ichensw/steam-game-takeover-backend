@@ -75,20 +75,49 @@ Use this when group details are needed frequently. It returns cached group detai
 
 Use this as the source for group-specific member information, especially the member's group display name. The endpoint name is intentionally spelled `memeber` to match the Hook API path.
 
-Request shape still needs to be confirmed during debugging. Expected inputs are the room ID and member wxid.
+Request:
 
-Useful response fields to confirm:
+```json
+{
+  "roomId": "49767299448@chatroom",
+  "memeberId": "wxid_bktzp6cv7wxe12"
+}
+```
+
+The request parameter is intentionally spelled `memeberId` to match the Hook API.
+
+Example response:
+
+```json
+{
+  "displayName": "可耐的甜橙-880783846",
+  "nick": "橙子橙子",
+  "roomId": "46348533444@chatroom"
+}
+```
+
+Useful response fields:
 
 | Local meaning | Hook field |
 | --- | --- |
-| Room ID | To confirm |
-| Member wxid | To confirm |
-| Group display name | To confirm |
-| Member flag/status | To confirm |
+| Room ID | `roomId` |
+| Member wxid | request `memeberId` |
+| Group display name | `displayName` |
+| Nickname fallback | `nick` |
+
+Notes:
+
+- If `displayName` is empty, display `nick`.
+- If the endpoint returns an empty object, skip updating group-specific fields for that member.
+- The endpoint is fast enough for higher-concurrency batch sync, but it still runs in background jobs rather than page-load requests.
 
 ### `POST /api/get_member_nick`
 
 Use this only as a lightweight fallback when full contact data is not needed. It can return nickname, avatar, member flag, inviter, and status, but not the richer contact fields such as `alias`, region, or signature.
+
+### `/get_contact`
+
+Do not use this in the default group member profile sync. Most group members are not bot contacts, so this endpoint does not reliably return useful data for the member list.
 
 ## Proposed Local Tables
 
@@ -103,7 +132,7 @@ Recommended columns:
 | `room_id` | Chatroom ID |
 | `member_wxid` | Member wxid |
 | `nickname` | WeChat nickname |
-| `display_name` | Group display name from `get_group_memeber_info` |
+| `display_name` | Group display name from `get_group_memeber_info.displayName` |
 | `remark` | Bot account remark for this contact |
 | `alias` | Human WeChat ID when available |
 | `sex` | Raw WeChat sex value |
@@ -116,7 +145,7 @@ Recommended columns:
 | `add_chatroom_scene_xml` | Join trace XML if known |
 | `is_in_chat_room` | Current membership signal |
 | `last_seen_message_at` | Latest message observed locally |
-| `group_info_synced_at` | Last successful `get_group_memeber_info` sync |
+| `group_info_synced_at` | Last successful non-empty `get_group_memeber_info` sync |
 | `profile_synced_at` | Last successful `get_group_member_contact` sync |
 | `profile_sync_error` | Last sync error |
 | `raw_profile_json` | Full raw response/contact JSON |
@@ -163,11 +192,10 @@ Flow:
 
 1. Call `get_room_members` or `get_chatroom_detail_cache` to discover current member wxids and low-cost nickname/avatar data.
 2. Upsert discovered members into `wechat_group_member_profiles`.
-3. Call `get_group_memeber_info` to fetch group display names and other group-specific member fields.
+3. Call `get_group_memeber_info` with higher concurrency to fetch group display names. Store `displayName`; if it is empty, keep `display_name` empty and let the UI display `nick` as fallback.
 4. Enqueue per-member `get_group_member_contact` jobs for richer public/contact profile fields.
-5. If `alias` is still missing and the member can be queried as a contact, optionally call `/get_contact` as a second enrichment pass.
-6. Run with low concurrency, for example 1-3 workers per bot.
-7. Persist cursor and errors so the run can resume.
+5. Do not call `/get_contact` in the normal sync path.
+6. Run profile sync with controlled concurrency and persist cursor/errors so the run can resume.
 
 ### Event-driven incremental sync
 
@@ -239,7 +267,7 @@ Before implementation, manually verify the Hook API against a small known group.
 
 1. Pick one test room and 2-3 member wxids.
 2. Call `get_group_member_contact` for each member.
-3. Call `get_group_memeber_info` for the same members to confirm the exact group display-name response field.
+3. Call `get_group_memeber_info` for the same members using `roomId` and `memeberId`.
 4. Save sanitized JSON samples outside source control or under a redacted fixture name.
 5. Confirm which fields are stable:
    - `alias`
@@ -257,6 +285,7 @@ Before implementation, manually verify the Hook API against a small known group.
    - member not in contacts
    - member already left group if available
    - invalid wxid or room id
+   - `get_group_memeber_info` empty-object response
 7. Record actual error shape for:
    - Hook API timeout
    - nonzero `baseResponse.ret`
@@ -269,6 +298,5 @@ Do not log full signatures, remarks, avatar URLs, or raw profiles in production 
 - Does `get_group_member_contact` require the member to be a contact/friend, or does group membership suffice?
 - Is `alias` consistently present for users who set a WeChat ID?
 - Does `isInChatRoom` accurately reflect current membership?
-- What is the exact request and response shape for `get_group_memeber_info`?
-- What is the safe request rate for the Hook API on the production bot?
+- What is the safe request rate for `get_group_member_contact` on the production bot?
 - Should full sync be opt-in per group to avoid privacy and load surprises?
