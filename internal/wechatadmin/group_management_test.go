@@ -124,34 +124,31 @@ func TestGroupMemberSearchKeywordAcceptsKeywordSearchAndQ(t *testing.T) {
 
 func TestGroupMemberCountQueryAddsSearch(t *testing.T) {
 	query, args := groupMemberCountQuery("room@chatroom", "橙_子")
-	if !strings.Contains(query, "FROM wechat_group_member_profiles") || !strings.Contains(query, "UNION") || !strings.Contains(query, "FROM group_messages") {
-		t.Fatalf("count query should merge profile cache and message members: %s", query)
+	if !strings.Contains(query, "FROM wechat_group_member_profiles") {
+		t.Fatalf("count query should use profile cache: %s", query)
 	}
-	if strings.Contains(query, "COUNT(*) AS message_count") || strings.Contains(query, "GROUP BY") {
-		t.Fatalf("count query should not aggregate message stats: %s", query)
+	if strings.Contains(query, "group_messages") || strings.Contains(query, "UNION") {
+		t.Fatalf("count query should not scan messages: %s", query)
 	}
-	for _, field := range []string{"member_wxid", "display_name", "nickname", "alias", "remark", "sender_name"} {
+	for _, field := range []string{"member_wxid", "display_name", "nickname", "alias", "remark"} {
 		if !strings.Contains(query, field+" LIKE ? ESCAPE '\\\\'") {
 			t.Fatalf("count query should search %s: %s", field, query)
 		}
 	}
-	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "room@chatroom", "room@chatroom", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "room@chatroom", "%橙\\_子%"}) {
+	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%", "%橙\\_子%"}) {
 		t.Fatalf("args = %#v", args)
 	}
 }
 
-func TestGroupMemberRowsQueryMergesProfileCacheAndMessageMembers(t *testing.T) {
+func TestGroupMemberRowsQueryUsesProfileCacheOnly(t *testing.T) {
 	query, args := groupMemberRowsQuery("room@chatroom", "橙子", 20, 40)
-	if !strings.Contains(query, "FROM wechat_group_member_profiles") || !strings.Contains(query, "UNION") || !strings.Contains(query, "FROM group_messages") {
-		t.Fatalf("rows query should merge cached and message members: %s", query)
+	if !strings.Contains(query, "FROM wechat_group_member_profiles p") || !strings.Contains(query, "COALESCE(NULLIF(TRIM(p.display_name), ''), '') AS display_name") {
+		t.Fatalf("rows query should prefer cached profile fields: %s", query)
 	}
-	if !strings.Contains(query, "COALESCE(NULLIF(TRIM(p.display_name), ''), (") {
-		t.Fatalf("rows query should prefer cached profile fields with message-name fallback: %s", query)
+	if strings.Contains(query, "group_messages") || strings.Contains(query, "UNION") || strings.Contains(query, "GROUP BY") {
+		t.Fatalf("rows query should not scan message history: %s", query)
 	}
-	if strings.Contains(query, "COUNT(*) AS message_count") || strings.Contains(query, "MIN(created_at)") || strings.Contains(query, "MAX(created_at)") || strings.Contains(query, "GROUP BY") {
-		t.Fatalf("rows query should not aggregate message stats: %s", query)
-	}
-	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "room@chatroom", "room@chatroom", "room@chatroom", "%橙子%", "%橙子%", "%橙子%", "%橙子%", "%橙子%", "room@chatroom", "%橙子%", 20, 40}) {
+	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "%橙子%", "%橙子%", "%橙子%", 20, 40}) {
 		t.Fatalf("args = %#v", args)
 	}
 }

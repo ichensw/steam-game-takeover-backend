@@ -358,62 +358,40 @@ func groupMemberSearchKeyword(r *http.Request) string {
 func groupMemberCountQuery(roomID, keyword string) (string, []interface{}) {
 	query := `
 		SELECT COUNT(*)
-		FROM (
-			SELECT member_wxid
-			FROM wechat_group_member_profiles
-			WHERE room_id = ? AND member_wxid <> ''
-			UNION
-			SELECT sender_wxid AS member_wxid
-			FROM group_messages
-			WHERE room_id = ? AND sender_wxid <> ''
-		) members
-		LEFT JOIN wechat_group_member_profiles p ON p.room_id = ? AND p.member_wxid = members.member_wxid
+		FROM wechat_group_member_profiles p
+		WHERE p.room_id = ? AND p.member_wxid <> ''
 	`
-	args := []interface{}{roomID, roomID, roomID}
+	args := []interface{}{roomID}
 	if keyword != "" {
-		query += " WHERE " + groupMemberSearchCondition("members", "p")
-		args = append(args, groupMemberSearchArgs(roomID, keyword)...)
+		query += " AND " + groupMemberSearchCondition("p")
+		args = append(args, groupMemberSearchArgs(keyword)...)
 	}
 	return query, args
 }
 
 func groupMemberRowsQuery(roomID, keyword string, limit, offset int) (string, []interface{}) {
 	where := ""
-	args := []interface{}{roomID, roomID, roomID, roomID}
+	args := []interface{}{roomID}
 	if keyword != "" {
-		where = " WHERE " + groupMemberSearchCondition("members", "p")
-		args = append(args, groupMemberSearchArgs(roomID, keyword)...)
+		where = " AND " + groupMemberSearchCondition("p")
+		args = append(args, groupMemberSearchArgs(keyword)...)
 	}
 	args = append(args, limit, offset)
 	return `
-		SELECT members.member_wxid,
-		       COALESCE(NULLIF(TRIM(p.display_name), ''), (
-			       SELECT NULLIF(TRIM(gm.sender_name), '')
-			       FROM group_messages gm
-			       WHERE gm.room_id = ? AND gm.sender_wxid = members.member_wxid AND TRIM(gm.sender_name) <> ''
-			       ORDER BY gm.created_at DESC
-			       LIMIT 1
-		       ), '') AS display_name,
+		SELECT p.member_wxid,
+		       COALESCE(NULLIF(TRIM(p.display_name), ''), '') AS display_name,
 		       COALESCE(p.nickname, ''), COALESCE(p.alias, ''), COALESCE(p.remark, ''), p.sex,
 		       COALESCE(p.country, ''), COALESCE(p.province, ''), COALESCE(p.city, ''), COALESCE(p.signature, ''),
 		       COALESCE(p.big_head_img_url, ''), COALESCE(p.small_head_img_url, ''), COALESCE(p.head_img_md5, ''),
 		       p.is_in_chat_room, DATE_FORMAT(p.profile_synced_at, '%Y-%m-%d %H:%i:%s'), DATE_FORMAT(p.group_info_synced_at, '%Y-%m-%d %H:%i:%s'), COALESCE(p.profile_sync_error, '')
-		FROM (
-			SELECT member_wxid
-			FROM wechat_group_member_profiles
-			WHERE room_id = ? AND member_wxid <> ''
-			UNION
-			SELECT sender_wxid AS member_wxid
-			FROM group_messages
-			WHERE room_id = ? AND sender_wxid <> ''
-		) members
-		LEFT JOIN wechat_group_member_profiles p ON p.room_id = ? AND p.member_wxid = members.member_wxid
+		FROM wechat_group_member_profiles p
+		WHERE p.room_id = ? AND p.member_wxid <> ''
 		` + where + `
 		ORDER BY
 			CASE WHEN NULLIF(TRIM(p.display_name), '') IS NULL THEN 1 ELSE 0 END,
 			CASE WHEN NULLIF(TRIM(p.nickname), '') IS NULL THEN 1 ELSE 0 END,
-			COALESCE(p.updated_at, FROM_UNIXTIME(0)) DESC,
-			members.member_wxid ASC
+			p.updated_at DESC,
+			p.member_wxid ASC
 		LIMIT ? OFFSET ?
 	`, args
 }
@@ -439,28 +417,21 @@ func groupMemberMessageSearchArgs(keyword string) []interface{} {
 	return []interface{}{pattern, pattern}
 }
 
-func groupMemberSearchCondition(memberAlias, profileAlias string) string {
-	memberPrefix := ""
-	if memberAlias != "" {
-		memberPrefix = memberAlias + "."
-	}
+func groupMemberSearchCondition(profileAlias string) string {
 	profilePrefix := ""
 	if profileAlias != "" {
 		profilePrefix = profileAlias + "."
 	}
-	return "(" + memberPrefix + "member_wxid LIKE ? ESCAPE '\\\\'" +
+	return "(" + profilePrefix + "member_wxid LIKE ? ESCAPE '\\\\'" +
 		" OR " + profilePrefix + "display_name LIKE ? ESCAPE '\\\\'" +
 		" OR " + profilePrefix + "nickname LIKE ? ESCAPE '\\\\'" +
 		" OR " + profilePrefix + "alias LIKE ? ESCAPE '\\\\'" +
-		" OR " + profilePrefix + "remark LIKE ? ESCAPE '\\\\'" +
-		" OR EXISTS (" +
-		"SELECT 1 FROM group_messages gm WHERE gm.room_id = ? AND gm.sender_wxid = " + memberPrefix + "member_wxid AND gm.sender_name LIKE ? ESCAPE '\\\\'" +
-		"))"
+		" OR " + profilePrefix + "remark LIKE ? ESCAPE '\\\\')"
 }
 
-func groupMemberSearchArgs(roomID, keyword string) []interface{} {
+func groupMemberSearchArgs(keyword string) []interface{} {
 	pattern := likePattern(keyword)
-	return []interface{}{pattern, pattern, pattern, pattern, pattern, roomID, pattern}
+	return []interface{}{pattern, pattern, pattern, pattern, pattern}
 }
 
 func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
