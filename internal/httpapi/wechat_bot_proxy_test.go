@@ -18,15 +18,13 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		menus   []string
 		allowed bool
 	}{
-		{http.MethodGet, "/groups", []string{"wechat-messages", "wechat-summary"}, true},
+		{http.MethodGet, "/groups", []string{"wechat-messages"}, true},
 		{http.MethodGet, "/groups/manage", []string{"wechat-groups", "wechat-wxbot-control"}, true},
 		{http.MethodGet, "/groups/manage/123@chatroom/members", []string{"wechat-groups", "wechat-wxbot-control"}, true},
 		{http.MethodGet, "/groups/manage/123@chatroom/events", []string{"wechat-groups", "wechat-wxbot-control"}, true},
 		{http.MethodPut, "/groups/manage/123@chatroom/whitelist", []string{"wechat-groups", "wechat-wxbot-control"}, true},
 		{http.MethodDelete, "/groups/manage/123@chatroom/whitelist", nil, false},
 		{http.MethodGet, "/messages", []string{"wechat-messages"}, true},
-		{http.MethodPost, "/messages/summary", []string{"wechat-summary"}, true},
-		{http.MethodPost, "/messages/summary-jobs", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/ai/status", []string{"wechat-ai-memory"}, true},
 		{http.MethodPost, "/ai/jobs", []string{"wechat-ai-memory"}, true},
 		{http.MethodGet, "/ai/jobs/12", []string{"wechat-ai-memory"}, true},
@@ -52,10 +50,6 @@ func TestWechatBotProxyPolicy(t *testing.T) {
 		{http.MethodPost, "/ai/reply-logs/12/feedback", []string{"wechat-ai-memory"}, true},
 		{http.MethodPost, "/ai/history-learning/12/delete", nil, false},
 		{http.MethodDelete, "/ai/jobs/12", nil, false},
-		{http.MethodGet, "/messages/summary-jobs/12", []string{"wechat-summary"}, true},
-		{http.MethodGet, "/messages/summary/history", []string{"wechat-summary"}, true},
-		{http.MethodGet, "/messages/summary/12", []string{"wechat-summary"}, true},
-		{http.MethodGet, "/messages/summary/12/messages", []string{"wechat-summary"}, true},
 		{http.MethodGet, "/stats/daily", []string{"wechat-stats"}, true},
 		{http.MethodPost, "/stats/daily", nil, false},
 		{http.MethodGet, "/tables", []string{"wechat-database"}, true},

@@ -17,18 +17,10 @@ const (
 	wechatBotAdminIDHeader       = "X-Wechat-Bot-Admin-ID"
 	wechatBotAdminUsernameHeader = "X-Wechat-Bot-Admin-Username"
 	wxbotTokenHeader             = "X-Wxbot-Token"
-	wechatBotSummaryMaxHeader    = "X-Wechat-Bot-Summary-Max-Messages"
-	wechatBotSummaryPromptHeader = "X-Wechat-Bot-Summary-Prompt"
-	wechatBotSummaryStyleHeader  = "X-Wechat-Bot-Summary-Style"
-	wechatBotSummaryModelHeader  = "X-Wechat-Bot-Summary-Model"
-	wechatBotSummaryModelsHeader = "X-Wechat-Bot-Summary-Compare-Models"
-	wechatBotSummarySendHeader   = "X-Wechat-Bot-Summary-Auto-Send"
 )
 
 var (
 	tablePathPattern                     = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
-	summaryPathPattern                   = regexp.MustCompile(`^/messages/summary/[0-9]+(?:/messages)?$`)
-	summaryJobPathPattern                = regexp.MustCompile(`^/messages/summary-jobs(?:/[0-9]+)?$`)
 	groupManagePathPattern               = regexp.MustCompile(`^/groups/manage(?:/[^/]+/(?:members|events|whitelist))?$`)
 	wxbotPathPattern                     = regexp.MustCompile(`^/wxbots(?:/[A-Za-z0-9_-]+/config)?$`)
 	aiJobPathPattern                     = regexp.MustCompile(`^/ai/jobs/[0-9]+$`)
@@ -61,17 +53,11 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	case aiWechatBotPathAllowed(method, path):
 		return []string{"wechat-ai-memory"}, true
 	case method == http.MethodGet && path == "/groups":
-		return []string{"wechat-messages", "wechat-summary"}, true
+		return []string{"wechat-messages"}, true
 	case (method == http.MethodGet || method == http.MethodPut) && groupManagePathPattern.MatchString(path):
 		return []string{"wechat-groups", "wechat-wxbot-control"}, true
 	case method == http.MethodGet && path == "/messages":
 		return []string{"wechat-messages"}, true
-	case method == http.MethodPost && (path == "/messages/summary" || path == "/messages/summary-jobs"):
-		return []string{"wechat-summary"}, true
-	case method == http.MethodGet && summaryJobPathPattern.MatchString(path):
-		return []string{"wechat-summary"}, true
-	case method == http.MethodGet && (path == "/messages/summary/history" || summaryPathPattern.MatchString(path)):
-		return []string{"wechat-summary"}, true
 	case method == http.MethodGet && path == "/stats/daily":
 		return []string{"wechat-stats"}, true
 	case method == http.MethodGet && (path == "/tables" || tablePathPattern.MatchString(path)):
@@ -148,12 +134,6 @@ func (h *Handler) applyWechatBotHeaders(request *http.Request, adminID, username
 	request.Header.Set("Authorization", "Bearer "+h.wechatBotGatewaySecret())
 	request.Header.Set(wechatBotAdminIDHeader, adminID)
 	request.Header.Set(wechatBotAdminUsernameHeader, username)
-	request.Header.Set(wechatBotSummaryMaxHeader, strconv.Itoa(h.wechatSummaryMaxMessages()))
-	setHeaderIfNotEmpty(request, wechatBotSummaryPromptHeader, h.wechatSummaryPrompt())
-	setHeaderIfNotEmpty(request, wechatBotSummaryStyleHeader, h.wechatSummaryStyle())
-	setHeaderIfNotEmpty(request, wechatBotSummaryModelHeader, h.wechatSummaryModel())
-	setHeaderIfNotEmpty(request, wechatBotSummaryModelsHeader, h.wechatSummaryCompareModels())
-	request.Header.Set(wechatBotSummarySendHeader, strconv.FormatBool(h.wechatSummaryAutoSend()))
 }
 
 func setHeaderIfNotEmpty(request *http.Request, header, value string) {
@@ -180,7 +160,7 @@ func (h *Handler) serveWechatBot(c *gin.Context, path string, admin *model.Admin
 }
 
 func (h *Handler) wechatBotAdminConfig() wechatadmin.Config {
-	aiModel := firstNonEmptyString(h.wechatSummaryModel(), h.aiExtractModel(), "gpt-4o-mini")
+	aiModel := firstNonEmptyString(h.aiExtractModel(), "gpt-4o-mini")
 	aiBaseURL := firstNonEmptyString(h.aiExtractBaseURL(), h.cfg.AIBaseURL, "https://api.openai.com/v1")
 	aiAPIKey := firstNonEmptyString(h.aiExtractAPIKey(), h.cfg.AIAPIKey)
 	return wechatadmin.Config{
@@ -188,10 +168,7 @@ func (h *Handler) wechatBotAdminConfig() wechatadmin.Config {
 		AIAPIKey:            aiAPIKey,
 		AIBaseURL:           aiBaseURL,
 		AIModel:             aiModel,
-		AITimeout:           h.cfg.WechatBotSummaryTimeout,
-		SummaryMaxMessages:  h.wechatSummaryMaxMessages(),
-		WechatHookAPIURL:    h.cfg.WechatHookAPIURL,
-		WechatHookAPIToken:  h.cfg.WechatHookAPIToken,
+		AITimeout:           h.cfg.WechatBotAITimeout,
 		WxbotAPIToken:       firstNonEmptyString(h.cfg.WxbotAPIToken, h.cfg.WechatBotSharedSecret),
 		Location:            h.cfg.Location,
 	}

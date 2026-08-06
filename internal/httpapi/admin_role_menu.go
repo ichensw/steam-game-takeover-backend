@@ -13,11 +13,11 @@ var allAdminMenuKeys = []string{
 	"dashboard", "takeovers", "reports", "users", "user-blocks", "admin-users",
 	"kook-channels", "kook-roles", "kook-members", "kook-users",
 	"kook-voice-stats", "feedbacks", "announcements", "settings",
-	"wechat-messages", "wechat-summary", "wechat-ai-memory", "wechat-groups", "wechat-stats", "wechat-database", "wechat-wxbot-control",
+	"wechat-messages", "wechat-ai-memory", "wechat-groups", "wechat-stats", "wechat-database", "wechat-wxbot-control",
 }
 
 var superAdminRequiredMenuKeys = []string{
-	"user-blocks", "admin-users", "wechat-messages", "wechat-summary", "wechat-ai-memory", "wechat-groups", "wechat-stats", "wechat-database", "wechat-wxbot-control",
+	"user-blocks", "admin-users", "wechat-messages", "wechat-ai-memory", "wechat-groups", "wechat-stats", "wechat-database", "wechat-wxbot-control",
 }
 
 func defaultAdminMenuKeys(role string) []string {
@@ -104,7 +104,6 @@ func (h *Handler) AdminListRoleMenus(c *gin.Context) {
 			{"key": "announcements", "label": "公告管理"},
 			{"key": "settings", "label": "系统设置"},
 			{"key": "wechat-messages", "label": "微信消息查询"},
-			{"key": "wechat-summary", "label": "微信 AI 总结"},
 			{"key": "wechat-ai-memory", "label": "微信 AI 记忆"},
 			{"key": "wechat-groups", "label": "微信群管理"},
 			{"key": "wechat-stats", "label": "微信聊天统计"},

@@ -108,8 +108,7 @@ cp .env.example .env
 | `OSS_*` | 阿里云 OSS 上传配置 |
 | `WECHAT_BOT_GATEWAY_SHARED_SECRET` | 后台管理页进程内访问微信机器人管理模块的共享密钥 |
 | `WXBOT_API_TOKEN` | Windows 微信机器人访问 `/api/wxbot/*` 的 Bearer token |
-| `WECHAT_BOT_SUMMARY_TIMEOUT_SECONDS` | AI 总结请求超时秒数 |
-| `WECHAT_HOOK_API_URL` / `WECHAT_HOOK_API_TOKEN` | 可选：总结完成后推送到微信 Hook 的地址和 token |
+| `WECHAT_BOT_AI_TIMEOUT_SECONDS` | 微信 Bot AI 接口请求超时秒数 |
 
 ### 3. 启动服务
 

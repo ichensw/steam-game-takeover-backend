@@ -16,20 +16,8 @@ const (
 	GatewayAdminIDHeader       = "X-Wechat-Bot-Admin-ID"
 	GatewayAdminUsernameHeader = "X-Wechat-Bot-Admin-Username"
 	WxbotTokenHeader           = "X-Wxbot-Token"
-	SummaryMaxMessagesHeader   = "X-Wechat-Bot-Summary-Max-Messages"
-	SummaryPromptHeader        = "X-Wechat-Bot-Summary-Prompt"
-	SummaryStyleHeader         = "X-Wechat-Bot-Summary-Style"
-	SummaryModelHeader         = "X-Wechat-Bot-Summary-Model"
-	SummaryCompareModelsHeader = "X-Wechat-Bot-Summary-Compare-Models"
-	SummaryAutoSendHeader      = "X-Wechat-Bot-Summary-Auto-Send"
 
 	gatewayAdminUsernameHeader = GatewayAdminUsernameHeader
-	summaryMaxMessagesHeader   = SummaryMaxMessagesHeader
-	summaryPromptHeader        = SummaryPromptHeader
-	summaryStyleHeader         = SummaryStyleHeader
-	summaryModelHeader         = SummaryModelHeader
-	summaryCompareModelsHeader = SummaryCompareModelsHeader
-	summaryAutoSendHeader      = SummaryAutoSendHeader
 )
 
 type Config struct {
@@ -38,9 +26,6 @@ type Config struct {
 	AIBaseURL           string
 	AIModel             string
 	AITimeout           time.Duration
-	SummaryMaxMessages  int
-	WechatHookAPIURL    string
-	WechatHookAPIToken  string
 	WxbotAPIToken       string
 	Location            *time.Location
 }
@@ -73,12 +58,6 @@ func NewServer(cfg Config, db *sql.DB) http.Handler {
 	mux.Handle("GET /api/groups/manage/{roomID}/events", s.trustedAdmin(http.HandlerFunc(s.groupManagementEvents)))
 	mux.Handle("PUT /api/groups/manage/{roomID}/whitelist", s.trustedAdmin(http.HandlerFunc(s.updateGroupWhitelist)))
 	mux.Handle("GET /api/messages", s.trustedAdmin(http.HandlerFunc(s.messages)))
-	mux.Handle("POST /api/messages/summary", s.trustedAdmin(http.HandlerFunc(s.summary)))
-	mux.Handle("POST /api/messages/summary-jobs", s.trustedAdmin(http.HandlerFunc(s.createSummaryJob)))
-	mux.Handle("GET /api/messages/summary-jobs/{id}", s.trustedAdmin(http.HandlerFunc(s.summaryJobDetail)))
-	mux.Handle("GET /api/messages/summary/history", s.trustedAdmin(http.HandlerFunc(s.summaryHistory)))
-	mux.Handle("GET /api/messages/summary/{id}", s.trustedAdmin(http.HandlerFunc(s.summaryDetail)))
-	mux.Handle("GET /api/messages/summary/{id}/messages", s.trustedAdmin(http.HandlerFunc(s.summaryOriginalMessages)))
 	mux.Handle("GET /api/stats/daily", s.trustedAdmin(http.HandlerFunc(s.dailyStats)))
 	mux.Handle("GET /api/tables", s.trustedAdmin(http.HandlerFunc(s.tables)))
 	mux.Handle("GET /api/tables/{table}", s.trustedAdmin(http.HandlerFunc(s.tableDetail)))
@@ -666,6 +645,15 @@ func positiveInt(raw string, fallback, min, max int) int {
 	return value
 }
 
+func parseBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func validIdentifier(value string) bool {
 	if value == "" {
 		return false
@@ -703,4 +691,53 @@ func unixJSON(seconds float64, loc *time.Location) map[string]interface{} {
 	nsec := int64((seconds - float64(sec)) * 1e9)
 	t := time.Unix(sec, nsec).In(loc)
 	return map[string]interface{}{"unix": seconds, "text": t.Format("2006-01-02 15:04:05")}
+}
+
+func (s *Server) messagesByIDs(ctx context.Context, ids []string) ([]map[string]interface{}, error) {
+	if len(ids) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]interface{}, 0, len(ids)*2)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT msg_id, room_id, sender_wxid, sender_name, msg_type, content, xml_content,
+		       media_url, media_local_path, media_oss_key, created_at
+		FROM group_messages
+		WHERE msg_id IN (`+placeholders+`)
+		ORDER BY FIELD(msg_id, `+placeholders+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var messages []map[string]interface{}
+	for rows.Next() {
+		var msgID, roomID, senderWxid, senderName, mediaURL, mediaLocalPath, mediaOSSKey string
+		var msgType int
+		var content, xmlContent sql.NullString
+		var createdAt float64
+		if err := rows.Scan(&msgID, &roomID, &senderWxid, &senderName, &msgType, &content, &xmlContent, &mediaURL, &mediaLocalPath, &mediaOSSKey, &createdAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, map[string]interface{}{
+			"msgId":          msgID,
+			"roomId":         roomID,
+			"senderWxid":     senderWxid,
+			"senderName":     senderName,
+			"msgType":        msgType,
+			"content":        nullString(content),
+			"xmlContent":     nullString(xmlContent),
+			"mediaUrl":       mediaURL,
+			"mediaLocalPath": mediaLocalPath,
+			"mediaOssKey":    mediaOSSKey,
+			"createdAt":      unixJSON(createdAt, s.cfg.Location),
+		})
+	}
+	return messages, rows.Err()
 }

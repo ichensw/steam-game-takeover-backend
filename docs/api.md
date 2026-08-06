@@ -1711,9 +1711,8 @@ curl.exe -X POST "http://47.102.200.211:8081/api/uploads/image" `
 
 | 方法 | 路径 | 菜单权限 |
 | --- | --- | --- |
-| GET | `/api/admin/wechat-bot/groups` | `wechat-messages` 或 `wechat-summary` |
+| GET | `/api/admin/wechat-bot/groups` | `wechat-messages` |
 | GET | `/api/admin/wechat-bot/messages` | `wechat-messages` |
-| POST | `/api/admin/wechat-bot/messages/summary` | `wechat-summary` |
 | GET | `/api/admin/wechat-bot/tables` | `wechat-database` |
 | GET | `/api/admin/wechat-bot/tables/{table}` | `wechat-database` |
 | GET | `/api/admin/wechat-bot/tables/{table}/rows` | `wechat-database` |

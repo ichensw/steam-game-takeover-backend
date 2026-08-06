@@ -11,37 +11,35 @@ import (
 )
 
 type Config struct {
-	Addr                    string
-	DBDSN                   string
-	WechatBotDBDSN          string
-	JWTSecret               string
-	UserTokenTTL            time.Duration
-	AdminTokenSecret        string
-	AdminTokenTTL           time.Duration
-	WXAppID                 string
-	WXAppSecret             string
-	WXLoginMock             bool
-	ReminderTemplateID      string
-	ReminderMinutes         int
-	ContentSecurityEnabled  bool
-	BotQueryEnabled         bool
-	BotQuerySteamID         string
-	BotQueryNickname        string
-	BotQueryGender          uint8
-	BotQueryAvatarURL       string
-	OSSEndpoint             string
-	OSSBucket               string
-	OSSAccessKeyID          string
-	OSSAccessKeySecret      string
-	OSSBaseURL              string
-	WechatBotSharedSecret   string
-	WxbotAPIToken           string
-	WechatHookAPIURL        string
-	WechatHookAPIToken      string
-	AIBaseURL               string
-	AIAPIKey                string
-	WechatBotSummaryTimeout time.Duration
-	Location                *time.Location
+	Addr                   string
+	DBDSN                  string
+	WechatBotDBDSN         string
+	JWTSecret              string
+	UserTokenTTL           time.Duration
+	AdminTokenSecret       string
+	AdminTokenTTL          time.Duration
+	WXAppID                string
+	WXAppSecret            string
+	WXLoginMock            bool
+	ReminderTemplateID     string
+	ReminderMinutes        int
+	ContentSecurityEnabled bool
+	BotQueryEnabled        bool
+	BotQuerySteamID        string
+	BotQueryNickname       string
+	BotQueryGender         uint8
+	BotQueryAvatarURL      string
+	OSSEndpoint            string
+	OSSBucket              string
+	OSSAccessKeyID         string
+	OSSAccessKeySecret     string
+	OSSBaseURL             string
+	WechatBotSharedSecret  string
+	WxbotAPIToken          string
+	AIBaseURL              string
+	AIAPIKey               string
+	WechatBotAITimeout     time.Duration
+	Location               *time.Location
 }
 
 func Load() Config {
@@ -54,37 +52,35 @@ func Load() Config {
 	}
 
 	return Config{
-		Addr:                    env("APP_ADDR", ":8081"),
-		DBDSN:                   env("DB_DSN", "root:password@tcp(127.0.0.1:3306)/steam_takeover?charset=utf8mb4&parseTime=True&loc=Local"),
-		WechatBotDBDSN:          env("WECHAT_BOT_DB_DSN", ""),
-		JWTSecret:               env("JWT_SECRET", "change-me-user-token-secret"),
-		UserTokenTTL:            durationHours("USER_TOKEN_TTL_HOURS", 24*30),
-		AdminTokenSecret:        env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
-		AdminTokenTTL:           durationHours("ADMIN_TOKEN_TTL_HOURS", 2),
-		WXAppID:                 env("WX_APP_ID", ""),
-		WXAppSecret:             env("WX_APP_SECRET", ""),
-		WXLoginMock:             wxLoginMock,
-		ReminderTemplateID:      env("TAKEOVER_REMINDER_TEMPLATE_ID", "7ag6n1mjOoMCpyAE0E9SXpx72vwc_dij8HqD9kB-NeY"),
-		ReminderMinutes:         intValue("TAKEOVER_REMINDER_MINUTES", 15),
-		ContentSecurityEnabled:  envBool("CONTENT_SECURITY_ENABLED", !wxLoginMock),
-		BotQueryEnabled:         envBool("BOT_QUERY_ENABLED", true),
-		BotQuerySteamID:         env("BOT_QUERY_STEAM_ID", "wechat-bot-query"),
-		BotQueryNickname:        env("BOT_QUERY_NICKNAME", "WeChat Bot"),
-		BotQueryGender:          uint8Value("BOT_QUERY_GENDER", 1),
-		BotQueryAvatarURL:       env("BOT_QUERY_AVATAR_URL", ""),
-		OSSEndpoint:             env("OSS_ENDPOINT", ""),
-		OSSBucket:               env("OSS_BUCKET", ""),
-		OSSAccessKeyID:          env("OSS_ACCESS_KEY_ID", ""),
-		OSSAccessKeySecret:      env("OSS_ACCESS_KEY_SECRET", ""),
-		OSSBaseURL:              env("OSS_BASE_URL", ""),
-		WechatBotSharedSecret:   os.Getenv("WECHAT_BOT_GATEWAY_SHARED_SECRET"),
-		WxbotAPIToken:           os.Getenv("WXBOT_API_TOKEN"),
-		WechatHookAPIURL:        strings.TrimRight(os.Getenv("WECHAT_HOOK_API_URL"), "/"),
-		WechatHookAPIToken:      os.Getenv("WECHAT_HOOK_API_TOKEN"),
-		AIBaseURL:               strings.TrimRight(env("AI_BASE_URL", "https://api.openai.com/v1"), "/"),
-		AIAPIKey:                os.Getenv("AI_API_KEY"),
-		WechatBotSummaryTimeout: time.Duration(intValue("WECHAT_BOT_SUMMARY_TIMEOUT_SECONDS", 75)) * time.Second,
-		Location:                loc,
+		Addr:                   env("APP_ADDR", ":8081"),
+		DBDSN:                  env("DB_DSN", "root:password@tcp(127.0.0.1:3306)/steam_takeover?charset=utf8mb4&parseTime=True&loc=Local"),
+		WechatBotDBDSN:         env("WECHAT_BOT_DB_DSN", ""),
+		JWTSecret:              env("JWT_SECRET", "change-me-user-token-secret"),
+		UserTokenTTL:           durationHours("USER_TOKEN_TTL_HOURS", 24*30),
+		AdminTokenSecret:       env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
+		AdminTokenTTL:          durationHours("ADMIN_TOKEN_TTL_HOURS", 2),
+		WXAppID:                env("WX_APP_ID", ""),
+		WXAppSecret:            env("WX_APP_SECRET", ""),
+		WXLoginMock:            wxLoginMock,
+		ReminderTemplateID:     env("TAKEOVER_REMINDER_TEMPLATE_ID", "7ag6n1mjOoMCpyAE0E9SXpx72vwc_dij8HqD9kB-NeY"),
+		ReminderMinutes:        intValue("TAKEOVER_REMINDER_MINUTES", 15),
+		ContentSecurityEnabled: envBool("CONTENT_SECURITY_ENABLED", !wxLoginMock),
+		BotQueryEnabled:        envBool("BOT_QUERY_ENABLED", true),
+		BotQuerySteamID:        env("BOT_QUERY_STEAM_ID", "wechat-bot-query"),
+		BotQueryNickname:       env("BOT_QUERY_NICKNAME", "WeChat Bot"),
+		BotQueryGender:         uint8Value("BOT_QUERY_GENDER", 1),
+		BotQueryAvatarURL:      env("BOT_QUERY_AVATAR_URL", ""),
+		OSSEndpoint:            env("OSS_ENDPOINT", ""),
+		OSSBucket:              env("OSS_BUCKET", ""),
+		OSSAccessKeyID:         env("OSS_ACCESS_KEY_ID", ""),
+		OSSAccessKeySecret:     env("OSS_ACCESS_KEY_SECRET", ""),
+		OSSBaseURL:             env("OSS_BASE_URL", ""),
+		WechatBotSharedSecret:  os.Getenv("WECHAT_BOT_GATEWAY_SHARED_SECRET"),
+		WxbotAPIToken:          os.Getenv("WXBOT_API_TOKEN"),
+		AIBaseURL:              strings.TrimRight(env("AI_BASE_URL", "https://api.openai.com/v1"), "/"),
+		AIAPIKey:               os.Getenv("AI_API_KEY"),
+		WechatBotAITimeout:     time.Duration(intValue("WECHAT_BOT_AI_TIMEOUT_SECONDS", 75)) * time.Second,
+		Location:               loc,
 	}
 }
 

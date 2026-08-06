@@ -424,15 +424,6 @@ const (
 	AppConfigAIExtractBaseURL            = "ai_extract_base_url"
 	AppConfigAIExtractModel              = "ai_extract_model"
 	AppConfigDailyTakeoverExpirationDays = "daily_takeover_expiration_days"
-	AppConfigWechatSummaryMaxMessages    = "wechat_summary_max_messages"
-	AppConfigWechatSummaryPrompt         = "wechat_summary_prompt"
-	AppConfigWechatSummaryStyle          = "wechat_summary_style"
-	AppConfigWechatSummaryModel          = "wechat_summary_model"
-	AppConfigWechatSummaryCompareModels  = "wechat_summary_compare_models"
-	AppConfigWechatSummaryAutoSend       = "wechat_summary_auto_send"
-	AppConfigWechatSummaryAutoDaily      = "wechat_summary_auto_daily"
-	AppConfigWechatSummaryDailySchedules = "wechat_summary_daily_schedules"
-	AppConfigWechatSummaryLastRunKeys    = "wechat_summary_last_run_keys"
 )
 
 type AppConfig struct {
