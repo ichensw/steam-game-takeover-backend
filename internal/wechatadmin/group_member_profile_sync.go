@@ -599,9 +599,9 @@ func (s *Server) upsertGroupMemberContact(ctx context.Context, roomID, memberWxi
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO wechat_group_member_profiles
 			(room_id, member_wxid, nickname, remark, alias, sex, country, province, city, signature,
-			 big_head_img_url, small_head_img_url, head_img_md5, chatroom_member_flag, status, is_in_chat_room,
+			 big_head_img_url, small_head_img_url, head_img_md5, chatroom_member_flag, status,
 			 profile_synced_at, profile_sync_error, raw_profile_json, updated_at)
-		VALUES (?, ?, ?, ?, ?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0), ?, NOW(), NULL, ?, NOW())
+		VALUES (?, ?, ?, ?, ?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), NULLIF(?, 0), NOW(), NULL, ?, NOW())
 		ON DUPLICATE KEY UPDATE
 			nickname = VALUES(nickname),
 			remark = VALUES(remark),
@@ -616,12 +616,11 @@ func (s *Server) upsertGroupMemberContact(ctx context.Context, roomID, memberWxi
 			head_img_md5 = VALUES(head_img_md5),
 			chatroom_member_flag = COALESCE(VALUES(chatroom_member_flag), chatroom_member_flag),
 			status = COALESCE(VALUES(status), status),
-			is_in_chat_room = VALUES(is_in_chat_room),
 			profile_synced_at = NOW(),
 			profile_sync_error = NULL,
 			raw_profile_json = VALUES(raw_profile_json),
 			updated_at = NOW()
-	`, roomID, wxid, contact.NickName.String, contact.Remark.String, contact.Alias, contact.Sex, contact.Country, contact.Province, contact.City, contact.Signature, contact.BigHeadImgURL, contact.SmallHeadImgURL, contact.HeadImgMD5, contact.ContactType, contact.Status, contact.IsInChatRoom, string(raw))
+	`, roomID, wxid, contact.NickName.String, contact.Remark.String, contact.Alias, contact.Sex, contact.Country, contact.Province, contact.City, contact.Signature, contact.BigHeadImgURL, contact.SmallHeadImgURL, contact.HeadImgMD5, contact.ContactType, contact.Status, string(raw))
 	return err
 }
 
