@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS `wechat_group_member_profiles` (
   `room_id` varchar(128) NOT NULL,
   `member_wxid` varchar(128) NOT NULL,
   `nickname` varchar(255) NOT NULL DEFAULT '',
-  `display_name` varchar(255) NOT NULL DEFAULT '',
+  `display_name` varchar(255) DEFAULT NULL,
   `remark` varchar(255) NOT NULL DEFAULT '',
   `alias` varchar(255) NOT NULL DEFAULT '',
   `sex` int DEFAULT NULL,

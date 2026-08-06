@@ -895,7 +895,7 @@ CREATE TABLE IF NOT EXISTS wechat_group_member_profiles (
 	room_id VARCHAR(128) NOT NULL,
 	member_wxid VARCHAR(128) NOT NULL,
 	nickname VARCHAR(255) NOT NULL DEFAULT '',
-	display_name VARCHAR(255) NOT NULL DEFAULT '',
+	display_name VARCHAR(255) NULL DEFAULT NULL,
 	remark VARCHAR(255) NOT NULL DEFAULT '',
 	alias VARCHAR(255) NOT NULL DEFAULT '',
 	sex INT NULL,

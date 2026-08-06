@@ -551,7 +551,7 @@ func (s *Server) syncGroupMemberInfoBatch(ctx context.Context, baseURL, roomID s
 		if err := s.postHookJSON(ctx, baseURL, "/api/get_group_memeber_info", map[string]string{"roomId": roomID, "memeberId": memberWxid}, &resp); err != nil {
 			return err
 		}
-		displayName := strings.TrimSpace(resp.DisplayName)
+		displayName := normalizeGroupMemberDisplayName(resp.DisplayName)
 		if displayName == "" {
 			return nil
 		}
@@ -623,6 +623,16 @@ func (s *Server) upsertGroupMemberContact(ctx context.Context, roomID, memberWxi
 			updated_at = NOW()
 	`, roomID, wxid, contact.NickName.String, contact.Remark.String, contact.Alias, contact.Sex, contact.Country, contact.Province, contact.City, contact.Signature, contact.BigHeadImgURL, contact.SmallHeadImgURL, contact.HeadImgMD5, contact.ContactType, contact.Status, contact.IsInChatRoom, string(raw))
 	return err
+}
+
+func normalizeGroupMemberDisplayName(value string) string {
+	text := strings.TrimSpace(value)
+	switch text {
+	case "未设置群昵称", "未设置群名片":
+		return ""
+	default:
+		return text
+	}
 }
 
 func (s *Server) postHookJSON(ctx context.Context, baseURL, path string, payload interface{}, out interface{}) error {
