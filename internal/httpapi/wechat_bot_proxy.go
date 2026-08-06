@@ -21,7 +21,9 @@ const (
 
 var (
 	tablePathPattern                     = regexp.MustCompile(`^/tables/[A-Za-z0-9_]+(?:/rows)?$`)
-	groupManagePathPattern               = regexp.MustCompile(`^/groups/manage(?:/[^/]+/(?:members|events|whitelist))?$`)
+	groupManagePathPattern               = regexp.MustCompile(`^/groups/manage(?:/[^/]+/(?:members|events|whitelist|member-profiles/sync))?$`)
+	groupMemberProfileSyncPattern        = regexp.MustCompile(`^/groups/manage/[^/]+/member-profiles/sync$`)
+	groupMemberProfileRefreshPattern     = regexp.MustCompile(`^/groups/manage/[^/]+/members/[^/]+/profile/refresh$`)
 	wxbotPathPattern                     = regexp.MustCompile(`^/wxbots(?:/[A-Za-z0-9_-]+/config)?$`)
 	aiJobPathPattern                     = regexp.MustCompile(`^/ai/jobs/[0-9]+$`)
 	aiHistoryActionPattern               = regexp.MustCompile(`^/ai/history-learning/[0-9]+/(pause|resume|cancel|retry)$`)
@@ -55,6 +57,8 @@ func requiredWechatBotMenus(method, path string) ([]string, bool) {
 	case method == http.MethodGet && path == "/groups":
 		return []string{"wechat-messages"}, true
 	case (method == http.MethodGet || method == http.MethodPut) && groupManagePathPattern.MatchString(path):
+		return []string{"wechat-groups", "wechat-wxbot-control"}, true
+	case method == http.MethodPost && (groupMemberProfileSyncPattern.MatchString(path) || groupMemberProfileRefreshPattern.MatchString(path)):
 		return []string{"wechat-groups", "wechat-wxbot-control"}, true
 	case method == http.MethodGet && path == "/messages":
 		return []string{"wechat-messages"}, true

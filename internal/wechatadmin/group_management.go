@@ -33,11 +33,26 @@ type managedGroupMessageStats struct {
 }
 
 type groupMemberRow struct {
-	MemberWxid     string
-	DisplayName    string
-	MessageCount   int
-	FirstMessageAt float64
-	LastMessageAt  float64
+	MemberWxid      string
+	DisplayName     string
+	Nickname        string
+	Alias           string
+	Remark          string
+	Sex             sql.NullInt64
+	Country         string
+	Province        string
+	City            string
+	Signature       string
+	BigHeadImgURL   string
+	SmallHeadImgURL string
+	HeadImgMD5      string
+	IsInChatRoom    sql.NullBool
+	ProfileSyncedAt sql.NullString
+	GroupSyncedAt   sql.NullString
+	ProfileError    string
+	MessageCount    int
+	FirstMessageAt  sql.NullFloat64
+	LastMessageAt   sql.NullFloat64
 }
 
 type groupMemberEventRow struct {
@@ -237,7 +252,7 @@ func managedGroupMessageStatsQuery(placeholders string) string {
 }
 
 func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) {
-	if err := s.ensureWechatGroupIndexes(r.Context()); err != nil {
+	if err := s.ensureWechatGroupProfileSchema(r.Context()); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "ensure group indexes failed")
 		return
 	}
@@ -268,7 +283,12 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 	memberRows := make([]groupMemberRow, 0)
 	for rows.Next() {
 		var row groupMemberRow
-		if err := rows.Scan(&row.MemberWxid, &row.DisplayName, &row.MessageCount, &row.FirstMessageAt, &row.LastMessageAt); err != nil {
+		if err := rows.Scan(
+			&row.MemberWxid, &row.DisplayName, &row.Nickname, &row.Alias, &row.Remark, &row.Sex,
+			&row.Country, &row.Province, &row.City, &row.Signature, &row.BigHeadImgURL, &row.SmallHeadImgURL, &row.HeadImgMD5,
+			&row.IsInChatRoom, &row.ProfileSyncedAt, &row.GroupSyncedAt, &row.ProfileError,
+			&row.MessageCount, &row.FirstMessageAt, &row.LastMessageAt,
+		); err != nil {
 			fail(w, http.StatusInternalServerError, "QUERY_FAILED", "scan members failed")
 			return
 		}
@@ -288,13 +308,41 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 func groupMemberItems(rows []groupMemberRow, loc *time.Location) []map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, map[string]interface{}{
-			"memberWxid":     row.MemberWxid,
-			"displayName":    row.DisplayName,
-			"messageCount":   row.MessageCount,
-			"firstMessageAt": unixJSON(row.FirstMessageAt, loc),
-			"lastMessageAt":  unixJSON(row.LastMessageAt, loc),
-		})
+		item := map[string]interface{}{
+			"memberWxid":       row.MemberWxid,
+			"displayName":      row.DisplayName,
+			"nickname":         row.Nickname,
+			"alias":            row.Alias,
+			"remark":           row.Remark,
+			"country":          row.Country,
+			"province":         row.Province,
+			"city":             row.City,
+			"signature":        row.Signature,
+			"bigHeadImgUrl":    row.BigHeadImgURL,
+			"smallHeadImgUrl":  row.SmallHeadImgURL,
+			"headImgMd5":       row.HeadImgMD5,
+			"profileSyncError": row.ProfileError,
+			"messageCount":     row.MessageCount,
+		}
+		if row.Sex.Valid {
+			item["sex"] = row.Sex.Int64
+		}
+		if row.IsInChatRoom.Valid {
+			item["isInChatRoom"] = row.IsInChatRoom.Bool
+		}
+		if row.FirstMessageAt.Valid {
+			item["firstMessageAt"] = unixJSON(row.FirstMessageAt.Float64, loc)
+		}
+		if row.LastMessageAt.Valid {
+			item["lastMessageAt"] = unixJSON(row.LastMessageAt.Float64, loc)
+		}
+		if row.ProfileSyncedAt.Valid {
+			item["profileSyncedAt"] = row.ProfileSyncedAt.String
+		}
+		if row.GroupSyncedAt.Valid {
+			item["groupInfoSyncedAt"] = row.GroupSyncedAt.String
+		}
+		items = append(items, item)
 	}
 	return items
 }
@@ -310,46 +358,61 @@ func groupMemberSearchKeyword(r *http.Request) string {
 
 func groupMemberCountQuery(roomID, keyword string) (string, []interface{}) {
 	query := `
-		SELECT COUNT(DISTINCT sender_wxid)
-		FROM group_messages
-		WHERE room_id = ? AND sender_wxid <> ''
+		SELECT COUNT(*)
+		FROM (
+			SELECT sender_wxid AS member_wxid
+			FROM group_messages
+			WHERE room_id = ? AND sender_wxid <> ''
+			UNION
+			SELECT member_wxid
+			FROM wechat_group_member_profiles
+			WHERE room_id = ? AND member_wxid <> ''
+		) members
+		LEFT JOIN wechat_group_member_profiles p ON p.room_id = ? AND p.member_wxid = members.member_wxid
 	`
-	args := []interface{}{roomID}
+	args := []interface{}{roomID, roomID, roomID}
 	if keyword != "" {
-		query += " AND " + groupMemberMessageSearchCondition("")
-		args = append(args, groupMemberMessageSearchArgs(keyword)...)
+		query += " WHERE " + groupMemberSearchCondition("members", "p")
+		args = append(args, groupMemberSearchArgs(roomID, keyword)...)
 	}
 	return query, args
 }
 
 func groupMemberRowsQuery(roomID, keyword string, limit, offset int) (string, []interface{}) {
-	if keyword == "" {
-		return `
+	where := ""
+	args := []interface{}{roomID, roomID, roomID, roomID}
+	if keyword != "" {
+		where = "WHERE " + groupMemberSearchCondition("members", "p")
+		args = append(args, groupMemberSearchArgs(roomID, keyword)...)
+	}
+	args = append(args, limit, offset)
+	return `
+		SELECT members.member_wxid,
+		       COALESCE(NULLIF(TRIM(p.display_name), ''), NULLIF(TRIM(p.nickname), ''), msg.sender_name, '') AS display_name,
+		       COALESCE(p.nickname, ''), COALESCE(p.alias, ''), COALESCE(p.remark, ''), p.sex,
+		       COALESCE(p.country, ''), COALESCE(p.province, ''), COALESCE(p.city, ''), COALESCE(p.signature, ''),
+		       COALESCE(p.big_head_img_url, ''), COALESCE(p.small_head_img_url, ''), COALESCE(p.head_img_md5, ''),
+		       p.is_in_chat_room, DATE_FORMAT(p.profile_synced_at, '%Y-%m-%d %H:%i:%s'), DATE_FORMAT(p.group_info_synced_at, '%Y-%m-%d %H:%i:%s'), COALESCE(p.profile_sync_error, ''),
+		       COALESCE(msg.message_count, 0), msg.first_message_at, msg.last_message_at
+		FROM (
+			SELECT sender_wxid AS member_wxid
+			FROM group_messages
+			WHERE room_id = ? AND sender_wxid <> ''
+			UNION
+			SELECT member_wxid
+			FROM wechat_group_member_profiles
+			WHERE room_id = ? AND member_wxid <> ''
+		) members
+		LEFT JOIN (
 			SELECT sender_wxid, ` + latestGroupMemberNameExpr("") + ` AS sender_name,
 			       COUNT(*) AS message_count, MIN(created_at) AS first_message_at, MAX(created_at) AS last_message_at
 			FROM group_messages
 			WHERE room_id = ? AND sender_wxid <> ''
 			GROUP BY sender_wxid
-			ORDER BY last_message_at DESC
-			LIMIT ? OFFSET ?
-		`, []interface{}{roomID, limit, offset}
-	}
-
-	args := []interface{}{roomID}
-	args = append(args, groupMemberMessageSearchArgs(keyword)...)
-	args = append(args, roomID, limit, offset)
-	return `
-		SELECT gm.sender_wxid, ` + latestGroupMemberNameExpr("gm") + ` AS sender_name,
-		       COUNT(*) AS message_count, MIN(gm.created_at) AS first_message_at, MAX(gm.created_at) AS last_message_at
-		FROM group_messages gm
-		JOIN (
-			SELECT DISTINCT sender_wxid
-			FROM group_messages
-			WHERE room_id = ? AND sender_wxid <> '' AND ` + groupMemberMessageSearchCondition("") + `
-		) matched ON matched.sender_wxid = gm.sender_wxid
-		WHERE gm.room_id = ? AND gm.sender_wxid <> ''
-		GROUP BY gm.sender_wxid
-		ORDER BY last_message_at DESC
+		) msg ON msg.sender_wxid = members.member_wxid
+		LEFT JOIN wechat_group_member_profiles p ON p.room_id = ? AND p.member_wxid = members.member_wxid
+		` + where + `
+		ORDER BY msg.last_message_at DESC, members.member_wxid ASC
 		LIMIT ? OFFSET ?
 	`, args
 }
@@ -373,6 +436,24 @@ func groupMemberMessageSearchCondition(alias string) string {
 func groupMemberMessageSearchArgs(keyword string) []interface{} {
 	pattern := likePattern(keyword)
 	return []interface{}{pattern, pattern}
+}
+
+func groupMemberSearchCondition(memberAlias, profileAlias string) string {
+	memberPrefix := memberAlias + "."
+	profilePrefix := profileAlias + "."
+	return "(" + memberPrefix + "member_wxid LIKE ? ESCAPE '\\\\'" +
+		" OR " + profilePrefix + "display_name LIKE ? ESCAPE '\\\\'" +
+		" OR " + profilePrefix + "nickname LIKE ? ESCAPE '\\\\'" +
+		" OR " + profilePrefix + "alias LIKE ? ESCAPE '\\\\'" +
+		" OR " + profilePrefix + "remark LIKE ? ESCAPE '\\\\'" +
+		" OR EXISTS (" +
+		"SELECT 1 FROM group_messages gm WHERE gm.room_id = ? AND gm.sender_wxid = " + memberPrefix + "member_wxid AND gm.sender_name LIKE ? ESCAPE '\\\\'" +
+		"))"
+}
+
+func groupMemberSearchArgs(roomID, keyword string) []interface{} {
+	pattern := likePattern(keyword)
+	return []interface{}{pattern, pattern, pattern, pattern, pattern, roomID, pattern}
 }
 
 func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
@@ -680,6 +761,73 @@ func (s *Server) ensureWechatGroupIndexes(ctx context.Context) error {
 	}
 	return nil
 }
+
+func (s *Server) ensureWechatGroupProfileSchema(ctx context.Context) error {
+	if err := s.ensureWechatGroupIndexes(ctx); err != nil {
+		return err
+	}
+	for _, ddl := range []string{wechatGroupMemberProfilesSchemaSQL, wechatGroupMemberProfileSyncStateSchemaSQL} {
+		if _, err := s.db.ExecContext(ctx, ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const wechatGroupMemberProfilesSchemaSQL = `
+CREATE TABLE IF NOT EXISTS wechat_group_member_profiles (
+	room_id VARCHAR(128) NOT NULL,
+	member_wxid VARCHAR(128) NOT NULL,
+	nickname VARCHAR(255) NOT NULL DEFAULT '',
+	display_name VARCHAR(255) NOT NULL DEFAULT '',
+	remark VARCHAR(255) NOT NULL DEFAULT '',
+	alias VARCHAR(255) NOT NULL DEFAULT '',
+	sex INT NULL,
+	country VARCHAR(128) NOT NULL DEFAULT '',
+	province VARCHAR(128) NOT NULL DEFAULT '',
+	city VARCHAR(128) NOT NULL DEFAULT '',
+	signature TEXT NULL,
+	big_head_img_url TEXT NULL,
+	small_head_img_url TEXT NULL,
+	head_img_md5 VARCHAR(128) NOT NULL DEFAULT '',
+	chatroom_member_flag INT NULL,
+	status INT NULL,
+	inviter_user_name VARCHAR(128) NOT NULL DEFAULT '',
+	add_chatroom_scene_xml TEXT NULL,
+	is_in_chat_room BOOLEAN NULL,
+	last_seen_message_at DOUBLE NULL,
+	group_info_synced_at DATETIME NULL,
+	profile_synced_at DATETIME NULL,
+	profile_sync_error TEXT NULL,
+	raw_profile_json JSON NULL,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	PRIMARY KEY (room_id, member_wxid),
+	KEY idx_room_profile_synced_at (room_id, profile_synced_at),
+	KEY idx_room_last_seen_message_at (room_id, last_seen_message_at),
+	KEY idx_alias (alias),
+	KEY idx_nickname (nickname),
+	KEY idx_display_name (display_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+`
+
+const wechatGroupMemberProfileSyncStateSchemaSQL = `
+CREATE TABLE IF NOT EXISTS wechat_group_member_profile_sync_state (
+	room_id VARCHAR(128) NOT NULL,
+	status VARCHAR(32) NOT NULL DEFAULT 'idle',
+	sync_type VARCHAR(32) NOT NULL DEFAULT 'incremental',
+	cursor_member_wxid VARCHAR(128) NOT NULL DEFAULT '',
+	last_full_synced_at DATETIME NULL,
+	last_incremental_synced_at DATETIME NULL,
+	processed_count INT NOT NULL DEFAULT 0,
+	failed_count INT NOT NULL DEFAULT 0,
+	last_error TEXT NULL,
+	locked_until DATETIME NULL,
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	PRIMARY KEY (room_id),
+	KEY idx_status_locked_until (status, locked_until)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+`
 
 func isEmptyConfig(raw json.RawMessage) bool {
 	cfg, err := unwrapWxbotConfig(raw)
