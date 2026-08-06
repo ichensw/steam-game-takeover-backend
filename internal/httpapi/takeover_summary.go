@@ -90,6 +90,7 @@ func (h *Handler) extractTakeoverSummaryWithAI(t model.Takeover) (string, error)
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.1,
+		"store":       false,
 		"response_format": map[string]string{
 			"type": "json_object",
 		},
