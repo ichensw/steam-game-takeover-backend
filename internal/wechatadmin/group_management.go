@@ -249,29 +249,16 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
 	pageSize := positiveInt(r.URL.Query().Get("pageSize"), 50, 1, 200)
 	offset := (page - 1) * pageSize
-	if r.URL.Query().Get("fast") == "1" {
-		s.groupManagementMembersFast(w, r, roomID, page, pageSize, offset)
-		return
-	}
+	keyword := groupMemberSearchKeyword(r)
 
 	var total int
-	if err := s.db.QueryRowContext(r.Context(), `
-		SELECT COUNT(DISTINCT sender_wxid)
-		FROM group_messages
-		WHERE room_id = ? AND sender_wxid <> ''
-	`, roomID).Scan(&total); err != nil {
+	countQuery, countArgs := groupMemberCountQuery(roomID, keyword)
+	if err := s.db.QueryRowContext(r.Context(), countQuery, countArgs...).Scan(&total); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "count members failed")
 		return
 	}
-	rows, err := s.db.QueryContext(r.Context(), `
-		SELECT sender_wxid, SUBSTRING_INDEX(GROUP_CONCAT(sender_name ORDER BY created_at DESC SEPARATOR '\n'), '\n', 1) AS sender_name,
-		       COUNT(*) AS message_count, MIN(created_at) AS first_message_at, MAX(created_at) AS last_message_at
-		FROM group_messages
-		WHERE room_id = ? AND sender_wxid <> ''
-		GROUP BY sender_wxid
-		ORDER BY last_message_at DESC
-		LIMIT ? OFFSET ?
-	`, roomID, pageSize, offset)
+	listQuery, listArgs := groupMemberRowsQuery(roomID, keyword, pageSize, offset)
+	rows, err := s.db.QueryContext(r.Context(), listQuery, listArgs...)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query members failed")
 		return
@@ -298,109 +285,6 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (s *Server) groupManagementMembersFast(w http.ResponseWriter, r *http.Request, roomID string, page, pageSize, offset int) {
-	items, err := s.recentGroupMembers(r.Context(), roomID, offset, pageSize)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query members failed")
-		return
-	}
-	total := offset + len(items)
-	if len(items) == pageSize {
-		total++
-	}
-	ok(w, map[string]interface{}{
-		"data": groupMemberItems(items, s.cfg.Location),
-		"pagination": map[string]int{
-			"page":       page,
-			"pageSize":   pageSize,
-			"totalItems": total,
-			"totalPages": (total + pageSize - 1) / pageSize,
-		},
-	})
-}
-
-func (s *Server) recentGroupMembers(ctx context.Context, roomID string, offset, pageSize int) ([]groupMemberRow, error) {
-	needed := offset + pageSize
-	if needed <= 0 {
-		return []groupMemberRow{}, nil
-	}
-	scanLimit := needed * 50
-	if scanLimit < 1000 {
-		scanLimit = 1000
-	}
-	if scanLimit > 10000 {
-		scanLimit = 10000
-	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT sender_wxid, COALESCE(sender_name, ''), created_at
-		FROM group_messages FORCE INDEX (idx_room_created)
-		WHERE room_id = ? AND sender_wxid <> ''
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, roomID, scanLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	seen := make(map[string]struct{}, needed)
-	ordered := make([]string, 0, needed)
-	stats := make(map[string]groupMemberRow, needed)
-	for rows.Next() {
-		var wxid, name string
-		var createdAt float64
-		if err := rows.Scan(&wxid, &name, &createdAt); err != nil {
-			return nil, err
-		}
-		wxid = strings.TrimSpace(wxid)
-		if wxid == "" {
-			continue
-		}
-		row := stats[wxid]
-		if row.MemberWxid == "" {
-			row.MemberWxid = wxid
-			row.DisplayName = strings.TrimSpace(name)
-			row.FirstMessageAt = createdAt
-			row.LastMessageAt = createdAt
-		}
-		row.MessageCount++
-		if createdAt > row.LastMessageAt {
-			row.LastMessageAt = createdAt
-			if strings.TrimSpace(name) != "" {
-				row.DisplayName = strings.TrimSpace(name)
-			}
-		}
-		if createdAt < row.FirstMessageAt {
-			row.FirstMessageAt = createdAt
-		}
-		stats[wxid] = row
-		if _, ok := seen[wxid]; ok {
-			continue
-		}
-		seen[wxid] = struct{}{}
-		if len(ordered) < needed {
-			ordered = append(ordered, wxid)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if offset >= len(ordered) {
-		return []groupMemberRow{}, nil
-	}
-	end := offset + pageSize
-	if end > len(ordered) {
-		end = len(ordered)
-	}
-	orderedRows := make([]groupMemberRow, 0, end-offset)
-	for _, memberID := range ordered[offset:end] {
-		if row, ok := stats[memberID]; ok {
-			orderedRows = append(orderedRows, row)
-		}
-	}
-	return orderedRows, nil
-}
-
 func groupMemberItems(rows []groupMemberRow, loc *time.Location) []map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
@@ -413,6 +297,82 @@ func groupMemberItems(rows []groupMemberRow, loc *time.Location) []map[string]in
 		})
 	}
 	return items
+}
+
+func groupMemberSearchKeyword(r *http.Request) string {
+	for _, key := range []string{"keyword", "search", "q"} {
+		if value := strings.TrimSpace(r.URL.Query().Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func groupMemberCountQuery(roomID, keyword string) (string, []interface{}) {
+	query := `
+		SELECT COUNT(DISTINCT sender_wxid)
+		FROM group_messages
+		WHERE room_id = ? AND sender_wxid <> ''
+	`
+	args := []interface{}{roomID}
+	if keyword != "" {
+		query += " AND " + groupMemberMessageSearchCondition("")
+		args = append(args, groupMemberMessageSearchArgs(keyword)...)
+	}
+	return query, args
+}
+
+func groupMemberRowsQuery(roomID, keyword string, limit, offset int) (string, []interface{}) {
+	if keyword == "" {
+		return `
+			SELECT sender_wxid, ` + latestGroupMemberNameExpr("") + ` AS sender_name,
+			       COUNT(*) AS message_count, MIN(created_at) AS first_message_at, MAX(created_at) AS last_message_at
+			FROM group_messages
+			WHERE room_id = ? AND sender_wxid <> ''
+			GROUP BY sender_wxid
+			ORDER BY last_message_at DESC
+			LIMIT ? OFFSET ?
+		`, []interface{}{roomID, limit, offset}
+	}
+
+	args := []interface{}{roomID}
+	args = append(args, groupMemberMessageSearchArgs(keyword)...)
+	args = append(args, roomID, limit, offset)
+	return `
+		SELECT gm.sender_wxid, ` + latestGroupMemberNameExpr("gm") + ` AS sender_name,
+		       COUNT(*) AS message_count, MIN(gm.created_at) AS first_message_at, MAX(gm.created_at) AS last_message_at
+		FROM group_messages gm
+		JOIN (
+			SELECT DISTINCT sender_wxid
+			FROM group_messages
+			WHERE room_id = ? AND sender_wxid <> '' AND ` + groupMemberMessageSearchCondition("") + `
+		) matched ON matched.sender_wxid = gm.sender_wxid
+		WHERE gm.room_id = ? AND gm.sender_wxid <> ''
+		GROUP BY gm.sender_wxid
+		ORDER BY last_message_at DESC
+		LIMIT ? OFFSET ?
+	`, args
+}
+
+func latestGroupMemberNameExpr(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return "COALESCE(SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(TRIM(" + prefix + "sender_name), '') ORDER BY " + prefix + "created_at DESC SEPARATOR '|#|'), '|#|', 1), '')"
+}
+
+func groupMemberMessageSearchCondition(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return "(" + prefix + "sender_wxid LIKE ? ESCAPE '\\\\' OR " + prefix + "sender_name LIKE ? ESCAPE '\\\\')"
+}
+
+func groupMemberMessageSearchArgs(keyword string) []interface{} {
+	pattern := likePattern(keyword)
+	return []interface{}{pattern, pattern}
 }
 
 func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
@@ -428,17 +388,15 @@ func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
 	page := positiveInt(r.URL.Query().Get("page"), 1, 1, 100000)
 	pageSize := positiveInt(r.URL.Query().Get("pageSize"), 50, 1, 200)
 	offset := (page - 1) * pageSize
-	if r.URL.Query().Get("fast") == "1" {
-		s.groupManagementEventsFast(w, r, roomID, page, pageSize, offset)
-		return
-	}
+	keyword := groupMemberSearchKeyword(r)
 
 	var total int
-	if err := s.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM group_member_events WHERE room_id = ?`, roomID).Scan(&total); err != nil {
+	countQuery, countArgs := groupMemberEventCountQuery(roomID, keyword)
+	if err := s.db.QueryRowContext(r.Context(), countQuery, countArgs...).Scan(&total); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "count member events failed")
 		return
 	}
-	eventRows, err := s.groupMemberEventRows(r.Context(), roomID, pageSize, offset)
+	eventRows, err := s.groupMemberEventRows(r.Context(), roomID, keyword, pageSize, offset)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query member events failed")
 		return
@@ -454,39 +412,9 @@ func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) groupManagementEventsFast(w http.ResponseWriter, r *http.Request, roomID string, page, pageSize, offset int) {
-	eventRows, err := s.groupMemberEventRows(r.Context(), roomID, pageSize+1, offset)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query member events failed")
-		return
-	}
-	hasNext := len(eventRows) > pageSize
-	if hasNext {
-		eventRows = eventRows[:pageSize]
-	}
-	total := offset + len(eventRows)
-	if hasNext {
-		total++
-	}
-	ok(w, map[string]interface{}{
-		"data": groupMemberEventItems(eventRows, s.cfg.Location),
-		"pagination": map[string]int{
-			"page":       page,
-			"pageSize":   pageSize,
-			"totalItems": total,
-			"totalPages": (total + pageSize - 1) / pageSize,
-		},
-	})
-}
-
-func (s *Server) groupMemberEventRows(ctx context.Context, roomID string, limit, offset int) ([]groupMemberEventRow, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, room_id, room_name, action, member_wxid, member_name, member_count, raw_payload, created_at
-		FROM group_member_events
-		WHERE room_id = ?
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`, roomID, limit, offset)
+func (s *Server) groupMemberEventRows(ctx context.Context, roomID, keyword string, limit, offset int) ([]groupMemberEventRow, error) {
+	query, args := groupMemberEventRowsQuery(roomID, keyword, limit, offset)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -501,6 +429,47 @@ func (s *Server) groupMemberEventRows(ctx context.Context, roomID string, limit,
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func groupMemberEventCountQuery(roomID, keyword string) (string, []interface{}) {
+	where, args := groupMemberEventWhere(roomID, keyword)
+	return `
+		SELECT COUNT(*)
+		FROM group_member_events e
+		WHERE ` + where + `
+	`, args
+}
+
+func groupMemberEventRowsQuery(roomID, keyword string, limit, offset int) (string, []interface{}) {
+	where, args := groupMemberEventWhere(roomID, keyword)
+	args = append(args, limit, offset)
+	return `
+		SELECT e.id, e.room_id, e.room_name, e.action, e.member_wxid, e.member_name, e.member_count, e.raw_payload, e.created_at
+		FROM group_member_events e
+		WHERE ` + where + `
+		ORDER BY e.created_at DESC
+		LIMIT ? OFFSET ?
+	`, args
+}
+
+func groupMemberEventWhere(roomID, keyword string) (string, []interface{}) {
+	where := "e.room_id = ?"
+	args := []interface{}{roomID}
+	if keyword == "" {
+		return where, args
+	}
+	pattern := likePattern(keyword)
+	where += ` AND (
+		e.member_wxid LIKE ? ESCAPE '\\'
+		OR e.member_name LIKE ? ESCAPE '\\'
+		OR e.member_wxid IN (
+			SELECT DISTINCT sender_wxid
+			FROM group_messages
+			WHERE room_id = ? AND sender_wxid <> '' AND sender_name LIKE ? ESCAPE '\\'
+		)
+	)`
+	args = append(args, pattern, pattern, roomID, pattern)
+	return where, args
 }
 
 func groupMemberEventItems(rows []groupMemberEventRow, loc *time.Location) []map[string]interface{} {

@@ -2,6 +2,7 @@ package wechatadmin
 
 import (
 	"database/sql"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -100,6 +101,68 @@ func TestGroupMemberItemsKeepsResponseFields(t *testing.T) {
 	}
 	if _, ok := items[0]["firstMessageAt"].(map[string]interface{}); !ok {
 		t.Fatalf("firstMessageAt should use unixJSON: %#v", items[0]["firstMessageAt"])
+	}
+}
+
+func TestGroupMemberSearchKeywordAcceptsKeywordSearchAndQ(t *testing.T) {
+	req := httptest.NewRequest("GET", "/?search=%20%E6%A9%99%E5%AD%90%20", nil)
+	if got := groupMemberSearchKeyword(req); got != "橙子" {
+		t.Fatalf("search keyword = %q", got)
+	}
+	req = httptest.NewRequest("GET", "/?q=wxid_a", nil)
+	if got := groupMemberSearchKeyword(req); got != "wxid_a" {
+		t.Fatalf("q keyword = %q", got)
+	}
+	req = httptest.NewRequest("GET", "/?keyword=display", nil)
+	if got := groupMemberSearchKeyword(req); got != "display" {
+		t.Fatalf("keyword = %q", got)
+	}
+}
+
+func TestGroupMemberCountQueryAddsSearch(t *testing.T) {
+	query, args := groupMemberCountQuery("room@chatroom", "橙_子")
+	if !strings.Contains(query, "COUNT(DISTINCT sender_wxid)") {
+		t.Fatalf("count query should count distinct members: %s", query)
+	}
+	if !strings.Contains(query, "sender_wxid LIKE ? ESCAPE '\\\\'") || !strings.Contains(query, "sender_name LIKE ? ESCAPE '\\\\'") {
+		t.Fatalf("count query should search wxid and names: %s", query)
+	}
+	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "%橙\\_子%", "%橙\\_子%"}) {
+		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestGroupMemberRowsQuerySearchesMatchedMembersAndKeepsFullStats(t *testing.T) {
+	query, args := groupMemberRowsQuery("room@chatroom", "橙子", 20, 40)
+	if !strings.Contains(query, "JOIN (") || !strings.Contains(query, "SELECT DISTINCT sender_wxid") {
+		t.Fatalf("search rows query should first match member ids: %s", query)
+	}
+	if !strings.Contains(query, "COUNT(*) AS message_count") || !strings.Contains(query, "MAX(gm.created_at) AS last_message_at") {
+		t.Fatalf("search rows query should aggregate all member messages after matching: %s", query)
+	}
+	if !reflect.DeepEqual(args, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "room@chatroom", 20, 40}) {
+		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestGroupMemberEventQueriesSearchWxidEventNameAndMessageNames(t *testing.T) {
+	countQuery, countArgs := groupMemberEventCountQuery("room@chatroom", "橙子")
+	if !strings.Contains(countQuery, "COUNT(*)") || !strings.Contains(countQuery, "e.member_wxid LIKE ? ESCAPE '\\\\'") || !strings.Contains(countQuery, "e.member_name LIKE ? ESCAPE '\\\\'") {
+		t.Fatalf("event count query should search wxid and event member name: %s", countQuery)
+	}
+	if !strings.Contains(countQuery, "FROM group_messages") || !strings.Contains(countQuery, "sender_name LIKE ? ESCAPE '\\\\'") {
+		t.Fatalf("event count query should include known message names: %s", countQuery)
+	}
+	if !reflect.DeepEqual(countArgs, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "room@chatroom", "%橙子%"}) {
+		t.Fatalf("count args = %#v", countArgs)
+	}
+
+	listQuery, listArgs := groupMemberEventRowsQuery("room@chatroom", "橙子", 20, 0)
+	if !strings.Contains(listQuery, "ORDER BY e.created_at DESC") {
+		t.Fatalf("event list query should keep created_at sort: %s", listQuery)
+	}
+	if !reflect.DeepEqual(listArgs, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "room@chatroom", "%橙子%", 20, 0}) {
+		t.Fatalf("list args = %#v", listArgs)
 	}
 }
 
