@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -57,13 +58,15 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	orderBy, orderArgs := managedGroupOrderBy(whitelists["bot"])
+	listArgs := append(orderArgs, pageSize, offset)
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT room_id, room_name, COALESCE(member_count, 0), COALESCE(owner_wxid, ''), COALESCE(updated_at, 0)
 		FROM group_info
 		WHERE `+managedGroupVisibleWhere+`
-		ORDER BY updated_at DESC
+		ORDER BY `+orderBy+`
 		LIMIT ? OFFSET ?
-	`, pageSize, offset)
+	`, listArgs...)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "query managed groups failed")
 		return
@@ -121,6 +124,29 @@ func (s *Server) groupManagementList(w http.ResponseWriter, r *http.Request) {
 			"totalPages": (total + pageSize - 1) / pageSize,
 		},
 	})
+}
+
+func managedGroupOrderBy(botWhitelist map[string]struct{}) (string, []interface{}) {
+	if len(botWhitelist) == 0 {
+		return "updated_at DESC, room_id ASC", nil
+	}
+	roomIDs := make([]string, 0, len(botWhitelist))
+	for roomID := range botWhitelist {
+		roomID = strings.TrimSpace(roomID)
+		if roomID != "" {
+			roomIDs = append(roomIDs, roomID)
+		}
+	}
+	if len(roomIDs) == 0 {
+		return "updated_at DESC, room_id ASC", nil
+	}
+	sort.Strings(roomIDs)
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(roomIDs)), ",")
+	args := make([]interface{}, 0, len(roomIDs))
+	for _, roomID := range roomIDs {
+		args = append(args, roomID)
+	}
+	return "CASE WHEN room_id IN (" + placeholders + ") THEN 0 ELSE 1 END, updated_at DESC, room_id ASC", args
 }
 
 func (s *Server) groupMessageStats(ctx context.Context, roomIDs []string) (map[string]managedGroupMessageStats, error) {

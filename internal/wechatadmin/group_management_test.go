@@ -41,3 +41,26 @@ func TestManagedGroupMessageStatsQueryOnlyAggregatesRequestedRooms(t *testing.T)
 		t.Fatalf("stats query should not union group_info and group_messages: %s", query)
 	}
 }
+
+func TestManagedGroupOrderByPrioritizesBotWhitelist(t *testing.T) {
+	orderBy, args := managedGroupOrderBy(map[string]struct{}{
+		"b@chatroom": {},
+		"a@chatroom": {},
+	})
+	if !strings.HasPrefix(orderBy, "CASE WHEN room_id IN (?,?) THEN 0 ELSE 1 END") {
+		t.Fatalf("order by should prioritize whitelisted rooms: %s", orderBy)
+	}
+	if !reflect.DeepEqual(args, []interface{}{"a@chatroom", "b@chatroom"}) {
+		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestManagedGroupOrderByKeepsSimpleSortWithoutWhitelist(t *testing.T) {
+	orderBy, args := managedGroupOrderBy(nil)
+	if orderBy != "updated_at DESC, room_id ASC" {
+		t.Fatalf("order by = %q", orderBy)
+	}
+	if len(args) != 0 {
+		t.Fatalf("args = %#v", args)
+	}
+}
