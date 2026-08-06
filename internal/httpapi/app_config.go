@@ -22,16 +22,15 @@ const (
 )
 
 var aiExtractModelDefaults = map[string]string{
-	aiExtractProviderGPT:    "codex-mini-latest",
+	aiExtractProviderGPT:    "gpt-5.4-mini",
 	aiExtractProviderDoubao: "doubao-seed-2-0-mini-260428",
 }
 
 var aiExtractModels = map[string]map[string]struct{}{
 	aiExtractProviderGPT: {
-		"codex-mini-latest": {},
-		"gpt-5.4-mini":      {},
-		"gpt-5.5":           {},
-		"gpt-5.2":           {},
+		"gpt-5.4-mini": {},
+		"gpt-5.5":      {},
+		"gpt-5.2":      {},
 	},
 	aiExtractProviderDoubao: {
 		"doubao-seed-2-0-mini-260428":  {},

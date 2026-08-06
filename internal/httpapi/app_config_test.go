@@ -103,9 +103,8 @@ func TestNormalizeAIExtractModel(t *testing.T) {
 		model    string
 		want     string
 	}{
-		{aiExtractProviderGPT, "codex-mini-latest", "codex-mini-latest"},
 		{aiExtractProviderGPT, "gpt-5.5", "gpt-5.5"},
-		{aiExtractProviderGPT, "", "codex-mini-latest"},
+		{aiExtractProviderGPT, "", "gpt-5.4-mini"},
 		{aiExtractProviderDoubao, "doubao-seed-2-1-turbo-260628", "doubao-seed-2-1-turbo-260628"},
 		{aiExtractProviderDoubao, "", "doubao-seed-2-0-mini-260428"},
 	} {
