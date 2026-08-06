@@ -161,7 +161,7 @@ func TestGroupMemberEventQueriesSearchWxidEventNameAndMessageNames(t *testing.T)
 	if !strings.Contains(countQuery, "FROM group_messages") || !strings.Contains(countQuery, "sender_name LIKE ? ESCAPE '\\\\'") {
 		t.Fatalf("event count query should include known message names: %s", countQuery)
 	}
-	if !reflect.DeepEqual(countArgs, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "room@chatroom", "%橙子%"}) {
+	if !reflect.DeepEqual(countArgs, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "%橙子%", "room@chatroom", "%橙子%"}) {
 		t.Fatalf("count args = %#v", countArgs)
 	}
 
@@ -169,28 +169,36 @@ func TestGroupMemberEventQueriesSearchWxidEventNameAndMessageNames(t *testing.T)
 	if !strings.Contains(listQuery, "ORDER BY e.created_at DESC") {
 		t.Fatalf("event list query should keep created_at sort: %s", listQuery)
 	}
-	if !reflect.DeepEqual(listArgs, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "room@chatroom", "%橙子%", 20, 0}) {
+	if !reflect.DeepEqual(listArgs, []interface{}{"room@chatroom", "%橙子%", "%橙子%", "%橙子%", "room@chatroom", "%橙子%", 20, 0}) {
 		t.Fatalf("list args = %#v", listArgs)
 	}
 }
 
 func TestGroupMemberEventItemsKeepsResponseFields(t *testing.T) {
 	items := groupMemberEventItems([]groupMemberEventRow{{
-		ID:          9,
-		RoomID:      "room@chatroom",
-		RoomName:    "测试群",
-		Action:      "join",
-		MemberWxid:  "wxid_b",
-		MemberName:  "阿蓝",
-		MemberCount: sqlNullInt64(23),
-		RawPayload:  sqlNullString(`{"ok":true}`),
-		CreatedAt:   1700000000,
+		ID:             9,
+		RoomID:         "room@chatroom",
+		RoomName:       "测试群",
+		Action:         "join",
+		MemberWxid:     "wxid_b",
+		MemberName:     "阿蓝",
+		MemberRoomName: "蓝蓝群昵称",
+		Alias:          "ablue",
+		Province:       "Guangdong",
+		City:           "Shenzhen",
+		MemberCount:    sqlNullInt64(23),
+		RawPayload:     sqlNullString(`{"data":{"roomid":"room@chatroom","roomname":"测试群","memberlist":{"userName":{"String":"wxid_b"},"nickName":{"String":"阿蓝"},"displayName":{"String":"蓝蓝群昵称"}},"inviterUserName":"wxid_inviter","inviterNickName":"邀请人"}}`),
+		CreatedAt:      1700000000,
 	}}, time.UTC)
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
 	}
-	if items[0]["id"] != int64(9) || items[0]["memberCount"] != int64(23) || items[0]["rawPayload"] != `{"ok":true}` {
+	if items[0]["id"] != int64(9) || items[0]["memberCount"] != int64(23) || items[0]["memberRoomName"] != "蓝蓝群昵称" || items[0]["alias"] != "ablue" {
 		t.Fatalf("item fields = %#v", items[0])
+	}
+	details, ok := items[0]["rawDetails"].(map[string]string)
+	if !ok || details["rawMemberWxid"] != "wxid_b" || details["inviterName"] != "邀请人" {
+		t.Fatalf("raw details = %#v", items[0]["rawDetails"])
 	}
 }
 

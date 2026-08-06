@@ -53,15 +53,25 @@ type groupMemberRow struct {
 }
 
 type groupMemberEventRow struct {
-	ID          int64
-	RoomID      string
-	RoomName    string
-	Action      string
-	MemberWxid  string
-	MemberName  string
-	MemberCount sql.NullInt64
-	RawPayload  sql.NullString
-	CreatedAt   float64
+	ID              int64
+	RoomID          string
+	RoomName        string
+	Action          string
+	MemberWxid      string
+	MemberName      string
+	MemberRoomName  string
+	Alias           string
+	Remark          string
+	Sex             sql.NullInt64
+	Country         string
+	Province        string
+	City            string
+	BigHeadImgURL   string
+	SmallHeadImgURL string
+	ProfileSyncedAt sql.NullString
+	MemberCount     sql.NullInt64
+	RawPayload      sql.NullString
+	CreatedAt       float64
 }
 
 const managedGroupVisibleWhere = "room_id <> '' AND TRIM(COALESCE(room_name, '')) <> ''"
@@ -425,7 +435,7 @@ func groupMemberSearchArgs(keyword string) []interface{} {
 }
 
 func (s *Server) groupManagementEvents(w http.ResponseWriter, r *http.Request) {
-	if err := s.ensureWechatGroupIndexes(r.Context()); err != nil {
+	if err := s.ensureWechatGroupProfileSchema(r.Context()); err != nil {
 		fail(w, http.StatusInternalServerError, "QUERY_FAILED", "ensure group indexes failed")
 		return
 	}
@@ -472,7 +482,11 @@ func (s *Server) groupMemberEventRows(ctx context.Context, roomID, keyword strin
 	items := make([]groupMemberEventRow, 0, limit)
 	for rows.Next() {
 		var item groupMemberEventRow
-		if err := rows.Scan(&item.ID, &item.RoomID, &item.RoomName, &item.Action, &item.MemberWxid, &item.MemberName, &item.MemberCount, &item.RawPayload, &item.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&item.ID, &item.RoomID, &item.RoomName, &item.Action, &item.MemberWxid, &item.MemberName, &item.MemberRoomName,
+			&item.Alias, &item.Remark, &item.Sex, &item.Country, &item.Province, &item.City, &item.BigHeadImgURL, &item.SmallHeadImgURL, &item.ProfileSyncedAt,
+			&item.MemberCount, &item.RawPayload, &item.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -493,8 +507,14 @@ func groupMemberEventRowsQuery(roomID, keyword string, limit, offset int) (strin
 	where, args := groupMemberEventWhere(roomID, keyword)
 	args = append(args, limit, offset)
 	return `
-		SELECT e.id, e.room_id, e.room_name, e.action, e.member_wxid, e.member_name, e.member_count, e.raw_payload, e.created_at
+		SELECT e.id, e.room_id, e.room_name, e.action, e.member_wxid, e.member_name, COALESCE(e.member_room_name, ''),
+		       COALESCE(p.alias, ''), COALESCE(p.remark, ''), p.sex,
+		       COALESCE(p.country, ''), COALESCE(p.province, ''), COALESCE(p.city, ''),
+		       COALESCE(p.big_head_img_url, ''), COALESCE(p.small_head_img_url, ''),
+		       DATE_FORMAT(p.profile_synced_at, '%Y-%m-%d %H:%i:%s'),
+		       e.member_count, e.raw_payload, e.created_at
 		FROM group_member_events e
+		LEFT JOIN wechat_group_member_profiles p ON p.room_id = e.room_id AND p.member_wxid = e.member_wxid
 		WHERE ` + where + `
 		ORDER BY e.created_at DESC
 		LIMIT ? OFFSET ?
@@ -511,28 +531,49 @@ func groupMemberEventWhere(roomID, keyword string) (string, []interface{}) {
 	where += ` AND (
 		e.member_wxid LIKE ? ESCAPE '\\'
 		OR e.member_name LIKE ? ESCAPE '\\'
+		OR e.member_room_name LIKE ? ESCAPE '\\'
 		OR e.member_wxid IN (
 			SELECT DISTINCT sender_wxid
 			FROM group_messages
 			WHERE room_id = ? AND sender_wxid <> '' AND sender_name LIKE ? ESCAPE '\\'
 		)
 	)`
-	args = append(args, pattern, pattern, roomID, pattern)
+	args = append(args, pattern, pattern, pattern, roomID, pattern)
 	return where, args
 }
 
 func groupMemberEventItems(rows []groupMemberEventRow, loc *time.Location) []map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
+		rawPayload := ""
+		if row.RawPayload.Valid {
+			rawPayload = row.RawPayload.String
+		}
+		details := groupMemberEventRawDetails(rawPayload)
 		item := map[string]interface{}{
-			"id":         row.ID,
-			"roomId":     row.RoomID,
-			"roomName":   row.RoomName,
-			"action":     row.Action,
-			"memberWxid": row.MemberWxid,
-			"memberName": row.MemberName,
-			"rawPayload": nullString(row.RawPayload),
-			"createdAt":  unixJSON(row.CreatedAt, loc),
+			"id":              row.ID,
+			"roomId":          row.RoomID,
+			"roomName":        row.RoomName,
+			"action":          row.Action,
+			"memberWxid":      row.MemberWxid,
+			"memberName":      row.MemberName,
+			"memberRoomName":  row.MemberRoomName,
+			"alias":           row.Alias,
+			"remark":          row.Remark,
+			"country":         row.Country,
+			"province":        row.Province,
+			"city":            row.City,
+			"bigHeadImgUrl":   row.BigHeadImgURL,
+			"smallHeadImgUrl": row.SmallHeadImgURL,
+			"rawPayload":      rawPayload,
+			"rawDetails":      details,
+			"createdAt":       unixJSON(row.CreatedAt, loc),
+		}
+		if row.Sex.Valid {
+			item["sex"] = row.Sex.Int64
+		}
+		if row.ProfileSyncedAt.Valid {
+			item["profileSyncedAt"] = row.ProfileSyncedAt.String
 		}
 		if row.MemberCount.Valid {
 			item["memberCount"] = row.MemberCount.Int64
@@ -540,6 +581,80 @@ func groupMemberEventItems(rows []groupMemberEventRow, loc *time.Location) []map
 		items = append(items, item)
 	}
 	return items
+}
+
+func groupMemberEventRawDetails(raw string) map[string]string {
+	result := map[string]string{}
+	if strings.TrimSpace(raw) == "" {
+		return result
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return result
+	}
+	data := payload
+	if nested, ok := payload["data"].(map[string]interface{}); ok {
+		data = nested
+	}
+	member := firstMap(data, "memberlist", "memberList", "members", "member")
+	pairs := []struct {
+		out  string
+		src  map[string]interface{}
+		keys []string
+	}{
+		{"rawRoomId", data, []string{"roomid", "room_id", "roomId", "chatroom_id", "chatroomId"}},
+		{"rawRoomName", data, []string{"roomname", "room_name", "roomName", "chatroom_name"}},
+		{"rawMemberWxid", member, []string{"userName", "username", "wxid", "member_wxid", "memberWxid"}},
+		{"rawMemberName", member, []string{"nickName", "nickname", "displayName", "remark"}},
+		{"rawMemberRoomName", member, []string{"displayName", "chatroomNickName", "chatroom_nick_name", "roomNickName", "room_nick_name"}},
+		{"inviterWxid", data, []string{"inviterUserName", "inviter_username", "inviterWxid", "inviter_wxid", "inviteUserName", "invite_user_name"}},
+		{"inviterName", data, []string{"inviterNickName", "inviter_nickname", "inviterName", "inviter_name", "inviteNickName", "invite_nick_name"}},
+		{"operatorWxid", data, []string{"operatorUserName", "operator_username", "operatorWxid", "operator_wxid", "adminUserName", "admin_user_name"}},
+		{"operatorName", data, []string{"operatorNickName", "operator_nickname", "operatorName", "operator_name", "adminNickName", "admin_nick_name"}},
+		{"eventType", data, []string{"type", "event", "eventType", "event_type"}},
+	}
+	for _, pair := range pairs {
+		if value := firstText(pair.src, pair.keys...); value != "" {
+			result[pair.out] = value
+		}
+	}
+	return result
+}
+
+func firstMap(data map[string]interface{}, keys ...string) map[string]interface{} {
+	for _, key := range keys {
+		value := data[key]
+		if items, ok := value.([]interface{}); ok {
+			if len(items) == 0 {
+				continue
+			}
+			value = items[0]
+		}
+		if item, ok := value.(map[string]interface{}); ok {
+			return item
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func firstText(data map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		value, ok := data[key]
+		if !ok || value == nil {
+			continue
+		}
+		if item, ok := value.(map[string]interface{}); ok {
+			value = item["String"]
+			if value == nil {
+				value = item["string"]
+			}
+		}
+		text := strings.TrimSpace(toString(value))
+		if text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func (s *Server) updateGroupWhitelist(w http.ResponseWriter, r *http.Request) {
@@ -691,11 +806,15 @@ func stringSetContains(set map[string]struct{}, value string) bool {
 }
 
 func (s *Server) ensureWechatGroupIndexes(ctx context.Context) error {
+	if err := s.ensureColumnIfTableExists(ctx, "group_member_events", "member_room_name", "ALTER TABLE group_member_events ADD COLUMN member_room_name VARCHAR(255) NOT NULL DEFAULT '' AFTER member_name"); err != nil {
+		return err
+	}
 	for _, item := range []struct{ table, name, ddl string }{
 		{"group_info", "idx_updated_at", "ALTER TABLE group_info ADD INDEX idx_updated_at (updated_at)"},
 		{"group_messages", "idx_room_created", "ALTER TABLE group_messages ADD INDEX idx_room_created (room_id, created_at)"},
 		{"group_messages", "idx_room_sender_created", "ALTER TABLE group_messages ADD INDEX idx_room_sender_created (room_id, sender_wxid, created_at)"},
 		{"group_member_events", "idx_room_created", "ALTER TABLE group_member_events ADD INDEX idx_room_created (room_id, created_at)"},
+		{"group_member_events", "idx_member_events_room_name", "ALTER TABLE group_member_events ADD INDEX idx_member_events_room_name (room_id, member_room_name)"},
 	} {
 		var count int
 		var err error
@@ -728,6 +847,35 @@ func (s *Server) ensureWechatGroupIndexes(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Server) ensureColumnIfTableExists(ctx context.Context, table, column, ddl string) error {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.tables
+		WHERE table_schema = DATABASE()
+		  AND table_name = ?
+	`, table).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.columns
+		WHERE table_schema = DATABASE()
+		  AND table_name = ?
+		  AND column_name = ?
+	`, table, column).Scan(&count); err != nil {
+		return err
+	}
+	if count != 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, ddl)
+	return err
 }
 
 func (s *Server) ensureWechatGroupProfileSchema(ctx context.Context) error {
