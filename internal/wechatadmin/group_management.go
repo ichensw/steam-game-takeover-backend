@@ -314,15 +314,16 @@ func (s *Server) groupManagementMembers(w http.ResponseWriter, r *http.Request) 
 func groupMemberItems(rows []groupMemberRow, _ *time.Location) []map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
+		country, province, city := normalizeWechatRegion(row.Country, row.Province, row.City)
 		item := map[string]interface{}{
 			"memberWxid":       row.MemberWxid,
 			"displayName":      row.DisplayName,
 			"nickname":         row.Nickname,
 			"alias":            row.Alias,
 			"remark":           row.Remark,
-			"country":          row.Country,
-			"province":         row.Province,
-			"city":             row.City,
+			"country":          country,
+			"province":         province,
+			"city":             city,
 			"signature":        row.Signature,
 			"bigHeadImgUrl":    row.BigHeadImgURL,
 			"smallHeadImgUrl":  row.SmallHeadImgURL,
@@ -545,6 +546,7 @@ func groupMemberEventWhere(roomID, keyword string) (string, []interface{}) {
 func groupMemberEventItems(rows []groupMemberEventRow, loc *time.Location) []map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(rows))
 	for _, row := range rows {
+		country, province, city := normalizeWechatRegion(row.Country, row.Province, row.City)
 		rawPayload := ""
 		if row.RawPayload.Valid {
 			rawPayload = row.RawPayload.String
@@ -560,9 +562,9 @@ func groupMemberEventItems(rows []groupMemberEventRow, loc *time.Location) []map
 			"memberRoomName":  row.MemberRoomName,
 			"alias":           row.Alias,
 			"remark":          row.Remark,
-			"country":         row.Country,
-			"province":        row.Province,
-			"city":            row.City,
+			"country":         country,
+			"province":        province,
+			"city":            city,
 			"bigHeadImgUrl":   row.BigHeadImgURL,
 			"smallHeadImgUrl": row.SmallHeadImgURL,
 			"rawPayload":      rawPayload,

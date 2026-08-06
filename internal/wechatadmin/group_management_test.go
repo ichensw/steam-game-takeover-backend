@@ -91,6 +91,9 @@ func TestGroupMemberItemsKeepsResponseFields(t *testing.T) {
 		DisplayName:     "群名片",
 		Nickname:        "阿白",
 		Alias:           "wechat_a",
+		Country:         "CN",
+		Province:        "Guangdong",
+		City:            "Shantou",
 		ProfileSyncedAt: sql.NullString{String: "2026-08-06 17:00:00", Valid: true},
 	}}, time.UTC)
 	if len(items) != 1 {
@@ -104,6 +107,9 @@ func TestGroupMemberItemsKeepsResponseFields(t *testing.T) {
 	}
 	if items[0]["profileSyncedAt"] != "2026-08-06 17:00:00" {
 		t.Fatalf("profile synced at missing: %#v", items[0])
+	}
+	if items[0]["country"] != "中国" || items[0]["province"] != "广东" || items[0]["city"] != "汕头" {
+		t.Fatalf("region should be normalized: %#v", items[0])
 	}
 }
 
@@ -195,6 +201,9 @@ func TestGroupMemberEventItemsKeepsResponseFields(t *testing.T) {
 	}
 	if items[0]["id"] != int64(9) || items[0]["memberCount"] != int64(23) || items[0]["memberRoomName"] != "蓝蓝群昵称" || items[0]["alias"] != "ablue" {
 		t.Fatalf("item fields = %#v", items[0])
+	}
+	if items[0]["province"] != "广东" || items[0]["city"] != "深圳" {
+		t.Fatalf("event region should be normalized: %#v", items[0])
 	}
 	details, ok := items[0]["rawDetails"].(map[string]string)
 	if !ok || details["rawMemberWxid"] != "wxid_b" || details["inviterName"] != "邀请人" {
