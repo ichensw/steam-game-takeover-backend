@@ -166,6 +166,9 @@ func TestTakeoverDTOIncludesKookInviteURL(t *testing.T) {
 	if dto.KookInviteURL != url {
 		t.Fatalf("KookInviteURL = %q, want %q", dto.KookInviteURL, url)
 	}
+	if dto.KookJumpURL != url {
+		t.Fatalf("KookJumpURL = %q, want stored invite URL %q", dto.KookJumpURL, url)
+	}
 	if dto.TakeoverState != model.TakeoverStateNormal {
 		t.Fatalf("TakeoverState = %d, want %d", dto.TakeoverState, model.TakeoverStateNormal)
 	}

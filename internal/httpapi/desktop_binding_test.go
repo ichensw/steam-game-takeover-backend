@@ -32,14 +32,3 @@ func TestDesktopTokenClaims(t *testing.T) {
 		t.Fatalf("unexpected claims: %#v", claims)
 	}
 }
-
-func TestKookChannelJumpURL(t *testing.T) {
-	got := kookChannelJumpURL("guild 1", "channel/2")
-	want := "https://www.kookapp.cn/app/channels/guild%201/channel%2F2"
-	if got != want {
-		t.Fatalf("url = %q, want %q", got, want)
-	}
-	if got := kookChannelJumpURL("", "channel"); got != "" {
-		t.Fatalf("url without guild = %q", got)
-	}
-}

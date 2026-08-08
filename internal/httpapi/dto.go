@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -198,6 +197,7 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 	if next, ok := nextTakeoverPlayAt(t, time.Now()); ok {
 		nextPlayAt = next.Format(time.RFC3339)
 	}
+	kookInviteURL := stringValue(t.KookInviteURL)
 	return takeoverDTO{
 		ID:               t.ID,
 		CreatorUserID:    t.CreatorUserID,
@@ -214,7 +214,8 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 		Description:      stringValue(t.Description),
 		KookChannelID:    stringValue(t.KookChannelID),
 		KookChannelName:  stringValue(t.KookChannelName),
-		KookInviteURL:    stringValue(t.KookInviteURL),
+		KookInviteURL:    kookInviteURL,
+		KookJumpURL:      kookInviteURL,
 		NextPlayAt:       nextPlayAt,
 		SummaryName:      stringValue(t.SummaryName),
 		SummarySource:    stringValue(t.SummarySource),
@@ -225,16 +226,7 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 }
 
 func (h *Handler) takeoverDTOWithCreator(t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {
-	dto := toTakeoverDTOWithCreator(h.db, t, joinedCount, hasJoined)
-	dto.KookJumpURL = kookChannelJumpURL(h.kookGuildID(), dto.KookChannelID)
-	return dto
-}
-
-func kookChannelJumpURL(guildID, channelID string) string {
-	if guildID == "" || channelID == "" {
-		return ""
-	}
-	return "https://www.kookapp.cn/app/channels/" + url.PathEscape(guildID) + "/" + url.PathEscape(channelID)
+	return toTakeoverDTOWithCreator(h.db, t, joinedCount, hasJoined)
 }
 
 func toTakeoverDTOWithCreator(db *gorm.DB, t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {
