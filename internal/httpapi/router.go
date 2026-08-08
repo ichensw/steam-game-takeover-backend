@@ -55,6 +55,10 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.GET("/kook/channels", h.UserAuth(), h.ListKookChannels)
 	api.GET("/kook/channels/all", h.UserAuth(), h.ListAllKookChannels)
 	api.GET("/kook/channel-tree", h.UserAuth(), h.ListKookChannelTree)
+	danmaku := api.Group("/kook/danmaku", h.UserAuth())
+	danmaku.GET("/members", h.ListKookDanmakuMembers)
+	danmaku.GET("/member-channel", h.GetKookDanmakuMemberChannel)
+	danmaku.GET("/stream", h.StreamKookDanmaku)
 	api.POST("/kook/webhook", h.KookWebhook)
 	api.Any("/wxbot/*path", h.ProxyWechatBotControl)
 

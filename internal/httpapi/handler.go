@@ -13,6 +13,7 @@ import (
 type Handler struct {
 	cfg                    config.Config
 	db                     *gorm.DB
+	danmaku                *kookDanmakuHub
 	wechatBotDB            *sql.DB
 	tokenMu                sync.Mutex
 	wxToken                string
@@ -34,6 +35,7 @@ func NewHandler(cfg config.Config, db *gorm.DB, wechatBotDB ...*sql.DB) *Handler
 	return &Handler{
 		cfg:         cfg,
 		db:          db,
+		danmaku:     newKookDanmakuHub(),
 		wechatBotDB: wxDB,
 	}
 }

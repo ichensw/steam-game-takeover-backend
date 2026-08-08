@@ -490,6 +490,8 @@ func (h *Handler) KookWebhook(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "save failed")
 			return
 		}
+	default:
+		h.publishKookDanmaku(payload)
 	}
 	ok(c, "success", nil)
 }
