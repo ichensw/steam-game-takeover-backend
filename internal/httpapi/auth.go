@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	contextUserKey  = "current_user"
-	contextAdminKey = "current_admin"
-	tokenTypeUser   = "user"
-	tokenTypeAdmin  = "admin"
+	contextUserKey          = "current_user"
+	contextAdminKey         = "current_admin"
+	contextDesktopDeviceKey = "current_desktop_device_id"
+	tokenTypeUser           = "user"
+	tokenTypeDesktop        = "desktop"
+	tokenTypeAdmin          = "admin"
 )
 
 var errTokenUserMissing = errors.New("token user missing")
@@ -25,6 +27,7 @@ var errTokenUserMissing = errors.New("token user missing")
 type tokenClaims struct {
 	TokenType string `json:"typ"`
 	UserID    uint64 `json:"uid,omitempty"`
+	DeviceID  uint64 `json:"did,omitempty"`
 	AdminID   uint64 `json:"aid,omitempty"`
 	jwt.RegisteredClaims
 }
@@ -42,9 +45,22 @@ func (h *Handler) signUserToken(userID uint64) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(h.cfg.JWTSecret))
 }
 
+func (h *Handler) signDesktopToken(userID, deviceID uint64, expiresAt time.Time) (string, error) {
+	claims := tokenClaims{
+		TokenType: tokenTypeDesktop,
+		UserID:    userID,
+		DeviceID:  deviceID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(h.cfg.JWTSecret))
+}
+
 func (h *Handler) UserAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user, authErr := h.currentUserFromRequest(c)
+		user, desktopDeviceID, authErr := h.currentUserAndDesktopDeviceFromRequest(c)
 		if authErr != nil {
 			fail(c, http.StatusUnauthorized, CodeUnauthorized, "unauthorized")
 			c.Abort()
@@ -56,6 +72,9 @@ func (h *Handler) UserAuth() gin.HandlerFunc {
 			return
 		}
 		c.Set(contextUserKey, user)
+		if desktopDeviceID != 0 {
+			c.Set(contextDesktopDeviceKey, desktopDeviceID)
+		}
 		c.Next()
 	}
 }
@@ -66,9 +85,12 @@ func (h *Handler) OptionalUserAuth() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		user, err := h.currentUserFromRequest(c)
+		user, desktopDeviceID, err := h.currentUserAndDesktopDeviceFromRequest(c)
 		if err == nil {
 			c.Set(contextUserKey, user)
+			if desktopDeviceID != 0 {
+				c.Set(contextDesktopDeviceKey, desktopDeviceID)
+			}
 		}
 		c.Next()
 	}
@@ -88,22 +110,37 @@ func (h *Handler) AdminAuth() gin.HandlerFunc {
 }
 
 func (h *Handler) currentUserFromRequest(c *gin.Context) (model.User, error) {
+	user, _, err := h.currentUserAndDesktopDeviceFromRequest(c)
+	return user, err
+}
+
+func (h *Handler) currentUserAndDesktopDeviceFromRequest(c *gin.Context) (model.User, uint64, error) {
 	tokenValue := bearerToken(c)
 	if tokenValue == "" {
-		return model.User{}, errors.New("missing token")
+		return model.User{}, 0, errors.New("missing token")
 	}
 	claims, err := parseToken(tokenValue, h.cfg.JWTSecret)
-	if err != nil || claims.TokenType != tokenTypeUser || claims.UserID == 0 {
-		return model.User{}, errors.New("invalid token")
+	if err != nil || claims.UserID == 0 || (claims.TokenType != tokenTypeUser && claims.TokenType != tokenTypeDesktop) {
+		return model.User{}, 0, errors.New("invalid token")
+	}
+
+	if claims.TokenType == tokenTypeDesktop {
+		if claims.DeviceID == 0 {
+			return model.User{}, 0, errors.New("invalid desktop token")
+		}
+		var device model.DesktopDevice
+		if err := h.db.Where("id = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?", claims.DeviceID, claims.UserID, time.Now()).First(&device).Error; err != nil {
+			return model.User{}, 0, errors.New("desktop token revoked")
+		}
 	}
 	var user model.User
 	if err := h.db.Where("id = ? AND is_deleted = ?", claims.UserID, false).First(&user).Error; err != nil {
 		if isNotFound(err) {
-			return model.User{}, errTokenUserMissing
+			return model.User{}, 0, errTokenUserMissing
 		}
-		return model.User{}, err
+		return model.User{}, 0, err
 	}
-	return user, nil
+	return user, claims.DeviceID, nil
 }
 
 func currentUser(c *gin.Context) (model.User, bool) {
@@ -113,6 +150,18 @@ func currentUser(c *gin.Context) (model.User, bool) {
 	}
 	typed, okAuth := user.(model.User)
 	return typed, okAuth
+}
+
+func currentDesktopDeviceID(c *gin.Context) uint64 {
+	value, ok := c.Get(contextDesktopDeviceKey)
+	if !ok {
+		return 0
+	}
+	deviceID, ok := value.(uint64)
+	if !ok {
+		return 0
+	}
+	return deviceID
 }
 
 func currentAdmin(c *gin.Context) (model.AdminUser, bool) {

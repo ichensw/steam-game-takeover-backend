@@ -218,6 +218,33 @@ type AdminToken struct {
 
 func (AdminToken) TableName() string { return "ttw_admin_token" }
 
+type DesktopBinding struct {
+	ID              uint64     `gorm:"primaryKey;column:id"`
+	SessionID       string     `gorm:"column:session_id;size:64;uniqueIndex:uk_session_id"`
+	ClaimSecretHash string     `gorm:"column:claim_secret_hash;size:64"`
+	DeviceName      string     `gorm:"column:device_name;size:64"`
+	UserID          *uint64    `gorm:"column:user_id;index:idx_user_id"`
+	ExpiresAt       time.Time  `gorm:"column:expires_at;index:idx_expires_at"`
+	ApprovedAt      *time.Time `gorm:"column:approved_at"`
+	ClaimedAt       *time.Time `gorm:"column:claimed_at"`
+	GmtCreate       time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified     time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (DesktopBinding) TableName() string { return "ttw_desktop_binding" }
+
+type DesktopDevice struct {
+	ID          uint64     `gorm:"primaryKey;column:id"`
+	UserID      uint64     `gorm:"column:user_id;index:idx_user_id"`
+	DeviceName  string     `gorm:"column:device_name;size:64"`
+	ExpiresAt   time.Time  `gorm:"column:expires_at;index:idx_expires_at"`
+	RevokedAt   *time.Time `gorm:"column:revoked_at;index:idx_revoked_at"`
+	GmtCreate   time.Time  `gorm:"column:gmt_create;autoCreateTime"`
+	GmtModified time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
+}
+
+func (DesktopDevice) TableName() string { return "ttw_desktop_device" }
+
 type AdminRoleMenu struct {
 	Role        string    `gorm:"primaryKey;column:role;size:32"`
 	MenuKeys    string    `gorm:"column:menu_keys;type:json"`

@@ -102,7 +102,7 @@ func (h *Handler) GetMeSummary(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 			return
 		}
-		dto := toTakeoverDTOWithCreator(h.db, takeover, joined, hasJoined)
+		dto := h.takeoverDTOWithCreator(takeover, joined, hasJoined)
 		dto.IsCreator = isTakeoverCreator(user, takeover)
 		members, err := h.takeoverMembers(takeover.ID, false, 5)
 		if err != nil {
@@ -156,7 +156,7 @@ func (h *Handler) ListMyTakeovers(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 			return
 		}
-		dto := toTakeoverDTOWithCreator(h.db, takeover, joined, hasJoined)
+		dto := h.takeoverDTOWithCreator(takeover, joined, hasJoined)
 		dto.IsCreator = isTakeoverCreator(user, takeover)
 		members, err := h.takeoverMembers(takeover.ID, false, 5)
 		if err != nil {

@@ -112,7 +112,7 @@ func (h *Handler) ListTakeovers(c *gin.Context) {
 	for _, row := range rows {
 		takeover := row.Takeover
 		hasJoined := row.HasJoined == 1
-		dto := toTakeoverDTOWithCreator(h.db, takeover, row.JoinedCount, hasJoined)
+		dto := h.takeoverDTOWithCreator(takeover, row.JoinedCount, hasJoined)
 		dto.IsCreator = isTakeoverCreator(user, takeover)
 		dto.CanManage = canManageTakeover(user, takeover)
 		dto.RecommendTags = takeoverRecommendTags(takeover, row.JoinedCount, hasJoined, now)
@@ -631,7 +631,7 @@ func (h *Handler) getTakeoverDetail(c *gin.Context, includeOpenID bool, user mod
 			activities[index].HasReported = reportedUserIDs[activities[index].UserID]
 		}
 	}
-	dto := toTakeoverDTOWithCreator(h.db, takeover, joinedCount, hasJoined)
+	dto := h.takeoverDTOWithCreator(takeover, joinedCount, hasJoined)
 	dto.IsCreator = isTakeoverCreator(user, takeover)
 	dto.CanManage = canManageTakeover(user, takeover)
 	dto.CurrentMemberState = currentMemberState
@@ -751,7 +751,7 @@ func (h *Handler) UpdateTakeover(c *gin.Context) {
 	takeover.KookChannelName = parsed.KookChannelName
 	takeover.KookInviteURL = parsed.KookInviteURL
 	h.refreshTakeoverSummary(&takeover)
-	ok(c, "saved", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, true))
+	ok(c, "saved", h.takeoverDTOWithCreator(takeover, joinedCount, true))
 }
 
 func (h *Handler) DeleteTakeover(c *gin.Context) {

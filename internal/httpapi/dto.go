@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -101,6 +102,8 @@ type takeoverDTO struct {
 	KookChannelID       string              `json:"kookChannelId"`
 	KookChannelName     string              `json:"kookChannelName"`
 	KookInviteURL       string              `json:"kookInviteUrl"`
+	KookJumpURL         string              `json:"kookJumpUrl"`
+	NextPlayAt          string              `json:"nextPlayAt"`
 	SummaryName         string              `json:"summaryName"`
 	SummarySource       string              `json:"summarySource"`
 	SummaryUpdatedAt    string              `json:"summaryUpdatedAt"`
@@ -191,6 +194,10 @@ func toAdminUserDTO(admin model.AdminUser) adminUserDTO {
 }
 
 func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {
+	nextPlayAt := ""
+	if next, ok := nextTakeoverPlayAt(t, time.Now()); ok {
+		nextPlayAt = next.Format(time.RFC3339)
+	}
 	return takeoverDTO{
 		ID:               t.ID,
 		CreatorUserID:    t.CreatorUserID,
@@ -208,12 +215,27 @@ func toTakeoverDTO(t model.Takeover, joinedCount int64, hasJoined bool) takeover
 		KookChannelID:    stringValue(t.KookChannelID),
 		KookChannelName:  stringValue(t.KookChannelName),
 		KookInviteURL:    stringValue(t.KookInviteURL),
+		NextPlayAt:       nextPlayAt,
 		SummaryName:      stringValue(t.SummaryName),
 		SummarySource:    stringValue(t.SummarySource),
 		SummaryUpdatedAt: timeString(t.SummaryUpdatedAt),
 		SummaryError:     stringValue(t.SummaryError),
 		HasJoined:        hasJoined,
 	}
+}
+
+func (h *Handler) takeoverDTOWithCreator(t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {
+	dto := toTakeoverDTOWithCreator(h.db, t, joinedCount, hasJoined)
+	dto.KookJumpURL = kookChannelJumpURL(h.kookGuildID(), dto.KookChannelID)
+	return dto
+}
+
+func kookChannelJumpURL(guildID, channelID string) string {
+	if guildID == "" || channelID == "" {
+		return ""
+	}
+	query := url.Values{"g": {guildID}, "c": {channelID}}
+	return "https://www.kookapp.cn/direct/channel?" + query.Encode()
 }
 
 func toTakeoverDTOWithCreator(db *gorm.DB, t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {

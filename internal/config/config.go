@@ -16,6 +16,7 @@ type Config struct {
 	WechatBotDBDSN         string
 	JWTSecret              string
 	UserTokenTTL           time.Duration
+	DesktopTokenTTL        time.Duration
 	AdminTokenSecret       string
 	AdminTokenTTL          time.Duration
 	WXAppID                string
@@ -57,6 +58,7 @@ func Load() Config {
 		WechatBotDBDSN:         env("WECHAT_BOT_DB_DSN", ""),
 		JWTSecret:              env("JWT_SECRET", "change-me-user-token-secret"),
 		UserTokenTTL:           durationHours("USER_TOKEN_TTL_HOURS", 24*30),
+		DesktopTokenTTL:        durationHours("DESKTOP_TOKEN_TTL_HOURS", 24*180),
 		AdminTokenSecret:       env("ADMIN_TOKEN_SECRET", "change-me-admin-token-secret"),
 		AdminTokenTTL:          durationHours("ADMIN_TOKEN_TTL_HOURS", 2),
 		WXAppID:                env("WX_APP_ID", ""),

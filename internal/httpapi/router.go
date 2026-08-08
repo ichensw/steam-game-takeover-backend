@@ -20,6 +20,10 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.GET("/app-config", h.GetAppConfig)
 	api.POST("/auth/wx-login", h.WXLogin)
 	api.POST("/auth/bot-login", h.BotLogin)
+	api.POST("/desktop-bindings", h.CreateDesktopBinding)
+	api.POST("/desktop-bindings/:sessionId/claim", h.ClaimDesktopBinding)
+	api.GET("/desktop-bindings/:sessionId", h.UserAuth(), h.GetDesktopBinding)
+	api.POST("/desktop-bindings/:sessionId/approve", h.UserAuth(), h.ApproveDesktopBinding)
 
 	api.GET("/takeovers", h.UserAuth(), h.ListTakeovers)
 	api.GET("/takeovers/summary", h.UserAuth(), h.ListTakeoverSummaries)
@@ -41,6 +45,7 @@ func NewRouter(h *Handler) *gin.Engine {
 	api.GET("/me/profile", h.UserAuth(), h.GetProfile)
 	api.GET("/me/summary", h.UserAuth(), h.GetMeSummary)
 	api.GET("/me/takeovers", h.UserAuth(), h.ListMyTakeovers)
+	api.DELETE("/me/desktop-devices/current", h.UserAuth(), h.RevokeCurrentDesktopDevice)
 	api.GET("/me/credit-logs", h.UserAuth(), h.ListMyCreditLogs)
 	api.GET("/me/blocked-users", h.UserAuth(), h.ListBlockedUsers)
 	api.PUT("/me/profile", h.UserAuth(), h.SaveProfile)

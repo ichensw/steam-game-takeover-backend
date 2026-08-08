@@ -112,7 +112,7 @@ func (h *Handler) AdminCreateTakeover(c *gin.Context) {
 	content := "create takeover: " + parsed.Title
 	_ = h.writeAdminLog("TAKEOVER_CREATE", "takeover", takeover.ID, &content)
 	h.refreshTakeoverSummary(&takeover)
-	ok(c, "created", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, true))
+	ok(c, "created", h.takeoverDTOWithCreator(takeover, joinedCount, true))
 }
 
 func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
@@ -219,7 +219,7 @@ func (h *Handler) AdminUpdateTakeover(c *gin.Context) {
 	content := "update takeover: " + parsed.Title
 	_ = h.writeAdminLog("TAKEOVER_UPDATE", "takeover", takeoverID, &content)
 	h.refreshTakeoverSummary(&takeover)
-	ok(c, "saved", toTakeoverDTOWithCreator(h.db, takeover, joinedCount, false))
+	ok(c, "saved", h.takeoverDTOWithCreator(takeover, joinedCount, false))
 }
 
 func (h *Handler) AdminDeleteTakeover(c *gin.Context) {
@@ -724,7 +724,7 @@ func (h *Handler) AdminListTakeovers(c *gin.Context) {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
 			return
 		}
-		dto := toTakeoverDTOWithCreator(h.db, takeover, joined, false)
+		dto := h.takeoverDTOWithCreator(takeover, joined, false)
 		members, err := h.takeoverMembers(takeover.ID, true, 5)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
