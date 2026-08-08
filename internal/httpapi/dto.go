@@ -234,8 +234,7 @@ func kookChannelJumpURL(guildID, channelID string) string {
 	if guildID == "" || channelID == "" {
 		return ""
 	}
-	query := url.Values{"g": {guildID}, "c": {channelID}}
-	return "https://www.kookapp.cn/direct/channel?" + query.Encode()
+	return "https://www.kookapp.cn/app/channels/" + url.PathEscape(guildID) + "/" + url.PathEscape(channelID)
 }
 
 func toTakeoverDTOWithCreator(db *gorm.DB, t model.Takeover, joinedCount int64, hasJoined bool) takeoverDTO {

@@ -35,7 +35,7 @@ func TestDesktopTokenClaims(t *testing.T) {
 
 func TestKookChannelJumpURL(t *testing.T) {
 	got := kookChannelJumpURL("guild 1", "channel/2")
-	want := "https://www.kookapp.cn/direct/channel?c=channel%2F2&g=guild+1"
+	want := "https://www.kookapp.cn/app/channels/guild%201/channel%2F2"
 	if got != want {
 		t.Fatalf("url = %q, want %q", got, want)
 	}
