@@ -161,6 +161,7 @@ func (h *Handler) StreamKookDanmaku(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("Content-Type", "text/event-stream")
+	c.Header("X-Accel-Buffering", "no")
 	fmt.Fprint(c.Writer, ": connected\n\n")
 	flusher.Flush()
 
