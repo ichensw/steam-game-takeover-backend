@@ -406,7 +406,9 @@ func (h *Handler) AdminListUsers(c *gin.Context) {
 		pageSize = 100
 	}
 
-	query := h.db.Model(&model.User{}).Where("is_deleted = ?", false)
+	query := h.db.Model(&model.User{}).
+		Where("is_deleted = ?", false).
+		Where("COALESCE(TRIM(nickname), '') <> '' OR COALESCE(TRIM(steam_id), '') <> ''")
 	switch strings.TrimSpace(c.Query("status")) {
 	case "banned":
 		query = query.Where("is_banned = ?", true)
