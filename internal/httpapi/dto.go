@@ -56,6 +56,7 @@ type memberDTO struct {
 	Remark       string `json:"remark"`
 	CreditScore  uint   `json:"creditScore"`
 	CreditStatus string `json:"creditStatus"`
+	PointLevel   string `json:"pointLevel"`
 	JoinedAt     string `json:"joinedAt,omitempty"`
 	IsSelf       bool   `json:"isSelf"`
 	HasReported  bool   `json:"hasReported"`
@@ -128,6 +129,7 @@ type memberRow struct {
 	AvatarURL   *string
 	Remark      *string
 	CreditScore uint
+	PointsUnits uint64
 	JoinedAt    time.Time
 }
 
@@ -254,6 +256,7 @@ func toMemberDTO(row memberRow, includeOpenID bool) memberDTO {
 		Remark:       stringValue(row.Remark),
 		CreditScore:  row.CreditScore,
 		CreditStatus: creditStatus(row.CreditScore),
+		PointLevel:   pointLevel(row.PointsUnits).Name,
 		JoinedAt:     row.JoinedAt.Format("2006-01-02 15:04:05"),
 	}
 	if includeOpenID {

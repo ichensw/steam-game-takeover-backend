@@ -198,9 +198,12 @@ func TestMemberRemarkNormalization(t *testing.T) {
 
 func TestMemberDTOIncludesRemark(t *testing.T) {
 	remark := "可能晚到"
-	dto := toMemberDTO(memberRow{Remark: &remark}, false)
+	dto := toMemberDTO(memberRow{Remark: &remark, PointsUnits: 1200}, false)
 	if dto.Remark != remark {
 		t.Fatalf("Remark = %q, want %q", dto.Remark, remark)
+	}
+	if dto.PointLevel != "队长" {
+		t.Fatalf("PointLevel = %q, want %q", dto.PointLevel, "队长")
 	}
 }
 

@@ -1361,7 +1361,7 @@ func countValidJoinedMembers(db *gorm.DB, takeoverID uint64) (int64, error) {
 func (h *Handler) takeoverMembers(takeoverID uint64, includeOpenID bool, limit int) ([]memberDTO, error) {
 	var rows []memberRow
 	query := h.db.Table("ttw_takeover_member AS m").
-		Select("u.id AS user_id, u.openid AS open_id, u.nickname, u.steam_id, u.gender, u.avatar_url, m.remark, u.credit_score, m.gmt_create AS joined_at").
+		Select("u.id AS user_id, u.openid AS open_id, u.nickname, u.steam_id, u.gender, u.avatar_url, m.remark, u.credit_score, u.points_units, m.gmt_create AS joined_at").
 		Joins("JOIN ttw_user AS u ON u.id = m.user_id").
 		Where("m.takeover_id = ? AND m.member_state = ? AND u.is_deleted = ?", takeoverID, model.MemberStateJoined, false).
 		Order("m.gmt_create ASC")
