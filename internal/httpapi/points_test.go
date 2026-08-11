@@ -33,11 +33,11 @@ func TestPointLevel(t *testing.T) {
 		progress     int
 		nextAtPoints float64
 	}{
-		{units: 0, name: "新人", nextName: "常客", progress: 0, nextAtPoints: 10},
-		{units: 50, name: "新人", nextName: "常客", progress: 50, nextAtPoints: 10},
-		{units: 100, name: "常客", nextName: "活跃", progress: 0, nextAtPoints: 30},
+		{units: 0, name: "新人", nextName: "兔友", progress: 0, nextAtPoints: 10},
+		{units: 50, name: "新人", nextName: "兔友", progress: 50, nextAtPoints: 10},
+		{units: 100, name: "兔友", nextName: "活跃", progress: 0, nextAtPoints: 30},
 		{units: 450, name: "活跃", nextName: "核心", progress: 50, nextAtPoints: 60},
-		{units: 2400, name: "传奇", nextName: "", progress: 100, nextAtPoints: 240},
+		{units: 2400, name: "王牌", nextName: "", progress: 100, nextAtPoints: 240},
 	}
 
 	for _, tt := range tests {
@@ -78,6 +78,17 @@ func TestRankedPointItemsShareCompetitionRank(t *testing.T) {
 	items := rankedPointItems(rows)
 	if items[0].Rank != 1 || items[1].Rank != 1 || items[2].Rank != 3 {
 		t.Fatalf("unexpected ranks: %d, %d, %d", items[0].Rank, items[1].Rank, items[2].Rank)
+	}
+}
+
+func TestRankedPointItemsUseAccountPointsForLevel(t *testing.T) {
+	items := rankedPointItems([]pointRankingRow{{
+		UserID:             1,
+		PointsUnits:        100,
+		AccountPointsUnits: 2400,
+	}})
+	if items[0].Points != 10 || items[0].Level != "王牌" {
+		t.Fatalf("unexpected ranking item: %+v", items[0])
 	}
 }
 

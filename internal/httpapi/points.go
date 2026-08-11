@@ -48,11 +48,12 @@ type pointRankingItem struct {
 }
 
 type pointRankingRow struct {
-	UserID      uint64
-	Nickname    *string
-	AvatarURL   *string
-	Gender      *uint8
-	PointsUnits int64
+	UserID             uint64
+	Nickname           *string
+	AvatarURL          *string
+	Gender             *uint8
+	PointsUnits        int64
+	AccountPointsUnits int64
 }
 
 func pointsValue(units int64) float64 {
@@ -87,11 +88,11 @@ func pointLevel(units uint64) pointLevelInfo {
 	}
 	levels := []level{
 		{name: "新人", min: 0},
-		{name: "常客", min: 100},
+		{name: "兔友", min: 100},
 		{name: "活跃", min: 300},
 		{name: "核心", min: 600},
-		{name: "领队", min: 1200},
-		{name: "传奇", min: 2400},
+		{name: "队长", min: 1200},
+		{name: "王牌", min: 2400},
 	}
 	for index := len(levels) - 1; index >= 0; index-- {
 		current := levels[index]
@@ -407,17 +408,17 @@ func loadPointRankings(db *gorm.DB, period string, now time.Time) ([]pointRankin
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 		end := start.AddDate(0, 1, 0)
 		err := db.Table("ttw_user_point_log AS l").
-			Select("u.id AS user_id, u.nickname, u.avatar_url, u.gender, SUM(l.point_delta_units) AS points_units").
+			Select("u.id AS user_id, u.nickname, u.avatar_url, u.gender, SUM(l.point_delta_units) AS points_units, u.points_units AS account_points_units").
 			Joins("JOIN ttw_user AS u ON u.id = l.user_id").
 			Where("u.is_deleted = ? AND u.is_banned = ? AND l.effective_at >= ? AND l.effective_at < ?", false, false, start, end).
-			Group("u.id, u.nickname, u.avatar_url, u.gender").
+			Group("u.id, u.nickname, u.avatar_url, u.gender, u.points_units").
 			Having("SUM(l.point_delta_units) > 0").
 			Order("points_units DESC, user_id ASC").
 			Scan(&rows).Error
 		return rows, err
 	}
 	err := db.Model(&model.User{}).
-		Select("id AS user_id, nickname, avatar_url, gender, points_units").
+		Select("id AS user_id, nickname, avatar_url, gender, points_units, points_units AS account_points_units").
 		Where("is_deleted = ? AND is_banned = ? AND points_units > 0", false, false).
 		Order("points_units DESC, id ASC").
 		Scan(&rows).Error
@@ -433,7 +434,7 @@ func rankedPointItems(rows []pointRankingRow) []pointRankingItem {
 			rank = int64(index + 1)
 			previous = row.PointsUnits
 		}
-		units := uint64(row.PointsUnits)
+		units := uint64(row.AccountPointsUnits)
 		items = append(items, pointRankingItem{
 			Rank:      rank,
 			UserID:    row.UserID,
