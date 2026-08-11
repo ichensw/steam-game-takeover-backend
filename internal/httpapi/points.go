@@ -407,19 +407,21 @@ func loadPointRankings(db *gorm.DB, period string, now time.Time) ([]pointRankin
 	if period == "month" {
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 		end := start.AddDate(0, 1, 0)
-		err := db.Table("ttw_user_point_log AS l").
-			Select("u.id AS user_id, u.nickname, u.avatar_url, u.gender, SUM(l.point_delta_units) AS points_units, u.points_units AS account_points_units").
-			Joins("JOIN ttw_user AS u ON u.id = l.user_id").
-			Where("u.is_deleted = ? AND u.is_banned = ? AND l.effective_at >= ? AND l.effective_at < ?", false, false, start, end).
-			Group("u.id, u.nickname, u.avatar_url, u.gender, u.points_units").
-			Having("SUM(l.point_delta_units) > 0").
-			Order("points_units DESC, user_id ASC").
+		monthlyPoints := db.Table("ttw_user_point_log").
+			Select("user_id, SUM(point_delta_units) AS points_units").
+			Where("effective_at >= ? AND effective_at < ?", start, end).
+			Group("user_id")
+		err := db.Table("ttw_user AS u").
+			Select("u.id AS user_id, u.nickname, u.avatar_url, u.gender, COALESCE(m.points_units, 0) AS points_units, u.points_units AS account_points_units").
+			Joins("LEFT JOIN (?) AS m ON m.user_id = u.id", monthlyPoints).
+			Where("u.is_deleted = ? AND u.is_banned = ?", false, false).
+			Order("COALESCE(m.points_units, 0) DESC, u.id ASC").
 			Scan(&rows).Error
 		return rows, err
 	}
 	err := db.Model(&model.User{}).
 		Select("id AS user_id, nickname, avatar_url, gender, points_units, points_units AS account_points_units").
-		Where("is_deleted = ? AND is_banned = ? AND points_units > 0", false, false).
+		Where("is_deleted = ? AND is_banned = ?", false, false).
 		Order("points_units DESC, id ASC").
 		Scan(&rows).Error
 	return rows, err
@@ -430,7 +432,7 @@ func rankedPointItems(rows []pointRankingRow) []pointRankingItem {
 	var rank int64
 	var previous int64 = -1
 	for index, row := range rows {
-		if row.PointsUnits != previous {
+		if index == 0 || row.PointsUnits != previous {
 			rank = int64(index + 1)
 			previous = row.PointsUnits
 		}
@@ -451,7 +453,7 @@ func pointRankForUser(rows []pointRankingRow, userID uint64) int64 {
 	var rank int64
 	var previous int64 = -1
 	for index, row := range rows {
-		if row.PointsUnits != previous {
+		if index == 0 || row.PointsUnits != previous {
 			rank = int64(index + 1)
 			previous = row.PointsUnits
 		}

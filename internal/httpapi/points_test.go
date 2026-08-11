@@ -92,6 +92,21 @@ func TestRankedPointItemsUseAccountPointsForLevel(t *testing.T) {
 	}
 }
 
+func TestPointRankForUserIncludesZeroAndNegativePoints(t *testing.T) {
+	rows := []pointRankingRow{
+		{UserID: 1, PointsUnits: 10},
+		{UserID: 2, PointsUnits: 0},
+		{UserID: 3, PointsUnits: 0},
+		{UserID: 4, PointsUnits: -1},
+	}
+	if rank := pointRankForUser(rows, 3); rank != 2 {
+		t.Fatalf("zero-point rank = %d, want 2", rank)
+	}
+	if rank := pointRankForUser(rows, 4); rank != 4 {
+		t.Fatalf("negative-point rank = %d, want 4", rank)
+	}
+}
+
 func TestPointRoutesAreRegistered(t *testing.T) {
 	want := map[string]bool{
 		"GET /api/point-rankings":                     true,
