@@ -228,24 +228,19 @@ func (h *Handler) AdminDeleteTakeover(c *gin.Context) {
 		fail(c, http.StatusBadRequest, CodeParamInvalid, "invalid takeover id")
 		return
 	}
-	var takeover model.Takeover
-	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
+	admin, _ := currentAdmin(c)
+	if err := settleTakeoverPoints(h.db, takeoverID, time.Now()); err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "delete failed")
+		return
+	}
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		return deleteTakeoverWithPointReversal(tx, takeoverID, nullableUint64(admin.ID))
+	}); err != nil {
 		if isNotFound(err) {
 			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 			return
 		}
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
-	}
-	result := h.db.Model(&model.Takeover{}).
-		Where("id = ? AND is_deleted = ?", takeoverID, false).
-		Update("is_deleted", true)
-	if result.Error != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "delete failed")
-		return
-	}
-	if result.RowsAffected == 0 {
-		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
 		return
 	}
 	_ = h.writeAdminLog("TAKEOVER_DELETE", "takeover", takeoverID, nil)
@@ -500,6 +495,7 @@ var wxUserSortFields = map[string]string{
 	"steamId":       "steam_id",
 	"isBanned":      "is_banned",
 	"creditScore":   "credit_score",
+	"points":        "points_units",
 	"lastLoginTime": "last_login_time",
 	"createdAt":     "gmt_create",
 }

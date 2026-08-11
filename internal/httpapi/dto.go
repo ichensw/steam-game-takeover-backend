@@ -11,20 +11,22 @@ import (
 )
 
 type userDTO struct {
-	ID                  uint64 `json:"id"`
-	Nickname            string `json:"nickname"`
-	SteamID             string `json:"steamId"`
-	Gender              *uint8 `json:"gender"`
-	AvatarURL           string `json:"avatarUrl"`
-	ProfileCompleted    bool   `json:"profileCompleted"`
-	IsAdmin             bool   `json:"isAdmin"`
-	CanViewAllTakeovers bool   `json:"canViewAllTakeovers"`
-	IsBanned            bool   `json:"isBanned"`
-	BanReason           string `json:"banReason,omitempty"`
-	BannedAt            string `json:"bannedAt,omitempty"`
-	PublishWhitelisted  bool   `json:"publishWhitelisted"`
-	CreditScore         uint   `json:"creditScore"`
-	CreditStatus        string `json:"creditStatus"`
+	ID                  uint64  `json:"id"`
+	Nickname            string  `json:"nickname"`
+	SteamID             string  `json:"steamId"`
+	Gender              *uint8  `json:"gender"`
+	AvatarURL           string  `json:"avatarUrl"`
+	ProfileCompleted    bool    `json:"profileCompleted"`
+	IsAdmin             bool    `json:"isAdmin"`
+	CanViewAllTakeovers bool    `json:"canViewAllTakeovers"`
+	IsBanned            bool    `json:"isBanned"`
+	BanReason           string  `json:"banReason,omitempty"`
+	BannedAt            string  `json:"bannedAt,omitempty"`
+	PublishWhitelisted  bool    `json:"publishWhitelisted"`
+	CreditScore         uint    `json:"creditScore"`
+	CreditStatus        string  `json:"creditStatus"`
+	Points              float64 `json:"points"`
+	PointLevel          string  `json:"pointLevel"`
 }
 
 type adminWXUserDTO struct {
@@ -175,6 +177,8 @@ func toUserDTOWithPublishWhitelist(user model.User, whitelist map[string]bool) u
 		PublishWhitelisted:  (openID != "" && whitelist[openID]) || (steamID != "" && whitelist[steamID]),
 		CreditScore:         user.CreditScore,
 		CreditStatus:        creditStatus(user.CreditScore),
+		Points:              pointsValue(int64(user.PointsUnits)),
+		PointLevel:          pointLevel(user.PointsUnits).Name,
 	}
 }
 

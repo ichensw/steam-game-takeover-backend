@@ -93,6 +93,7 @@ type User struct {
 	BannedByAdminID     *uint64    `gorm:"column:banned_by_admin_id"`
 	IsDeleted           bool       `gorm:"column:is_deleted"`
 	CreditScore         uint       `gorm:"column:credit_score;default:100"`
+	PointsUnits         uint64     `gorm:"column:points_units;default:0;index:idx_points_units"`
 	LastLoginTime       *time.Time `gorm:"column:last_login_time"`
 	GmtCreate           time.Time  `gorm:"column:gmt_create;autoCreateTime"`
 	GmtModified         time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`
@@ -114,6 +115,24 @@ type UserCreditLog struct {
 }
 
 func (UserCreditLog) TableName() string { return "ttw_user_credit_log" }
+
+type UserPointLog struct {
+	ID               uint64    `gorm:"primaryKey;column:id"`
+	UserID           uint64    `gorm:"column:user_id;index:idx_user_id"`
+	PointDeltaUnits  int64     `gorm:"column:point_delta_units"`
+	PointBeforeUnits uint64    `gorm:"column:point_before_units"`
+	PointAfterUnits  uint64    `gorm:"column:point_after_units"`
+	ReasonType       string    `gorm:"column:reason_type;size:32"`
+	Reason           *string   `gorm:"column:reason;size:255"`
+	TakeoverID       *uint64   `gorm:"column:takeover_id;index:idx_takeover_id"`
+	OperatorAdminID  *uint64   `gorm:"column:operator_admin_id"`
+	RelatedReportID  *uint64   `gorm:"column:related_report_id"`
+	BusinessKey      *string   `gorm:"column:business_key;size:128;uniqueIndex:uk_business_key"`
+	EffectiveAt      time.Time `gorm:"column:effective_at;index:idx_effective_at"`
+	GmtCreate        time.Time `gorm:"column:gmt_create;autoCreateTime"`
+}
+
+func (UserPointLog) TableName() string { return "ttw_user_point_log" }
 
 type KookMember struct {
 	ID              uint64     `gorm:"primaryKey;column:id"`
@@ -273,6 +292,7 @@ type Takeover struct {
 	SummaryError     *string    `gorm:"column:summary_error;size:255"`
 	SummaryUpdatedAt *time.Time `gorm:"column:summary_updated_at"`
 	TakeoverState    uint8      `gorm:"column:takeover_state"`
+	PointsSettledAt  *time.Time `gorm:"column:points_settled_at;index:idx_points_settlement"`
 	IsDeleted        bool       `gorm:"column:is_deleted"`
 	GmtCreate        time.Time  `gorm:"column:gmt_create;autoCreateTime;index:idx_gmt_create"`
 	GmtModified      time.Time  `gorm:"column:gmt_modified;autoUpdateTime"`

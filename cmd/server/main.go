@@ -36,6 +36,7 @@ func main() {
 	handler := httpapi.NewHandler(cfg, db, wechatBotDB)
 	router := httpapi.NewRouter(handler)
 	handler.StartTakeoverReminderWorker(context.Background())
+	handler.StartTakeoverPointWorker(context.Background())
 	handler.StartDailyTakeoverExpirationWorker(context.Background())
 	handler.StartKookChannelSortWorker(context.Background())
 	log.Printf("server listening on %s", cfg.Addr)

@@ -65,6 +65,12 @@ func (h *Handler) GetProfile(c *gin.Context) {
 
 func (h *Handler) GetMeSummary(c *gin.Context) {
 	user, _ := currentUser(c)
+	monthlyRank, allRank, err := h.pointRanksForUser(user.ID, time.Now())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
+		return
+	}
+	level := pointLevel(user.PointsUnits)
 
 	var createdCount int64
 	if err := h.db.Model(&model.Takeover{}).
@@ -118,6 +124,15 @@ func (h *Handler) GetMeSummary(c *gin.Context) {
 		"createdCount": createdCount,
 		"joinedCount":  joinedCount,
 		"recent":       recent,
+		"pointSummary": gin.H{
+			"points":       pointsValue(int64(user.PointsUnits)),
+			"level":        level.Name,
+			"nextLevel":    level.NextName,
+			"progress":     level.Progress,
+			"nextAtPoints": level.NextAtPoints,
+			"monthlyRank":  monthlyRank,
+			"allRank":      allRank,
+		},
 	})
 }
 

@@ -562,6 +562,17 @@ func (h *Handler) handleReport(c *gin.Context, reportID uint64, state uint8, pen
 			if err := recordCreditLog(tx, user.ID, user.CreditScore, score, "report_penalty", firstNonEmpty(note, "举报核实扣分"), nullableUint64(admin.ID), nullableUint64(report.ID)); err != nil {
 				return err
 			}
+			if err := reverseTakeoverPointAward(
+				tx,
+				report.TakeoverID,
+				report.ReportedUserID,
+				pointReasonReportReversal,
+				firstNonEmpty(note, "举报核实撤回积分"),
+				nullableUint64(admin.ID),
+				nullableUint64(report.ID),
+			); err != nil {
+				return err
+			}
 		}
 
 		updates := map[string]interface{}{

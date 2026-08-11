@@ -779,28 +779,18 @@ func (h *Handler) DeleteTakeover(c *gin.Context) {
 		fail(c, http.StatusForbidden, CodeAdminUnauthorized, "admin unauthorized")
 		return
 	}
-	if err := syncExpiredTakeovers(h.db, time.Now()); err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
-	}
-	if err := h.db.Where("id = ? AND is_deleted = ?", takeoverID, false).First(&takeover).Error; err != nil {
-		fail(c, http.StatusInternalServerError, CodeSystemError, "query failed")
-		return
-	}
-	if takeover.TakeoverState == model.TakeoverStateClosed {
-		fail(c, http.StatusBadRequest, CodeParamInvalid, "ended takeover cannot be deleted")
-		return
-	}
-
-	result := h.db.Model(&model.Takeover{}).
-		Where("id = ? AND is_deleted = ?", takeoverID, false).
-		Update("is_deleted", true)
-	if result.Error != nil {
+	if err := settleTakeoverPoints(h.db, takeoverID, time.Now()); err != nil {
 		fail(c, http.StatusInternalServerError, CodeSystemError, "delete failed")
 		return
 	}
-	if result.RowsAffected == 0 {
-		fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		return deleteTakeoverWithPointReversal(tx, takeoverID, nil)
+	}); err != nil {
+		if isNotFound(err) {
+			fail(c, http.StatusNotFound, CodeTakeoverNotFound, "takeover not found")
+			return
+		}
+		fail(c, http.StatusInternalServerError, CodeSystemError, "delete failed")
 		return
 	}
 	_ = h.writeAdminLog("TAKEOVER_DELETE", "takeover", takeoverID, nil)
